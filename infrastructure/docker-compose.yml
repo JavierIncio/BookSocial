@@ -1,0 +1,55 @@
+name: booksocial
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: booksocial-postgres
+    environment:
+      POSTGRES_USER: booksocial
+      POSTGRES_PASSWORD: booksocial
+      POSTGRES_DB: booksocial
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booksocial"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongodb:
+    image: mongo:8.0
+    container_name: booksocial-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: booksocial
+      MONGO_INITDB_ROOT_PASSWORD: booksocial
+      MONGO_INITDB_DATABASE: booksocial
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: booksocial-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  mongodb-data:
+  rabbitmq-data:

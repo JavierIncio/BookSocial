@@ -1,0 +1,29 @@
+# --- Java / Maven ---
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+.idea/
+*.iml
+.vscode/
+
+# --- Node / Angular ---
+node_modules/
+dist/
+.angular/cache/
+*.log
+
+# --- Entorno / secretos ---
+.env
+.env.*
+application-local.yml
+application-local.yaml
+secrets/
+*.pem
+*.key
+
+# --- Infraestructura ---
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform/
