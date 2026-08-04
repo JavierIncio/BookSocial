@@ -8,29 +8,29 @@ Guía detallada del proceso de desarrollo del proyecto. Se actualiza **al final 
 
 ## Contexto global
 
-| Concepto | Decisión |
-| --- | --- |
-| Repositorio | Monorepo en GitHub (privado) — `https://github.com/JavierIncio/BookSocial.git` |
-| Branch principal | `main` |
-| Backend | Microservicios Java 21 + Spring Boot 3.5.x, build con **Maven + wrapper** (`mvnw`) |
-| Frontend | Angular 21 (CLI 21.2.19) + PWA |
-| Comunicación | REST síncrona vía API Gateway + eventos asíncronos con RabbitMQ |
-| Persistencia | Cada servicio es propietario de sus datos: PostgreSQL (command side) + MongoDB (query side) |
-| CI/CD | GitHub Actions (workflow `ci.yml`), filosofía GitOps, despliegue incremental |
-| Infraestructura | Docker + Docker Compose (local), Terraform (despliegue, fase posterior) |
-| Observabilidad | Prometheus + Grafana, logs JSON, traces distribuidas (fase posterior) |
+| Concepto         | Decisión                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| Repositorio      | Monorepo en GitHub (privado) — `https://github.com/JavierIncio/BookSocial.git`              |
+| Branch principal | `main`                                                                                      |
+| Backend          | Microservicios Java 21 + Spring Boot 4.1.0, build con **Maven + wrapper** (`mvnw`)          |
+| Frontend         | Angular 21 (CLI 21.2.19) + PWA                                                              |
+| Comunicación     | REST síncrona vía API Gateway + eventos asíncronos con RabbitMQ                             |
+| Persistencia     | Cada servicio es propietario de sus datos: PostgreSQL (command side) + MongoDB (query side) |
+| CI/CD            | GitHub Actions (workflow `ci.yml`), filosofía GitOps, despliegue incremental                |
+| Infraestructura  | Docker + Docker Compose (local), Terraform (despliegue, fase posterior)                     |
+| Observabilidad   | Prometheus + Grafana, logs JSON, traces distribuidas (fase posterior)                       |
 
 ### Entorno local verificado
 
-| Herramienta | Versión |
-| --- | --- |
-| JDK (Temurin) | 21.0.12 LTS — `JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.12.8-hotspot` |
-| Maven | 3.9.16 (instalado local y gestionado por el wrapper) |
-| Node / npm | 24.11.1 / 11.11.0 |
-| Angular CLI | 21.2.19 |
-| Docker / Compose | 29.5.3 / v5.1.4 |
-| Git | 2.51.2 |
-| Terraform | 1.14.9 |
+| Herramienta      | Versión                                                                           |
+| ---------------- | --------------------------------------------------------------------------------- |
+| JDK (Temurin)    | 21.0.12 LTS — `JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.12.8-hotspot` |
+| Maven            | 3.9.16 (instalado local y gestionado por el wrapper)                              |
+| Node / npm       | 24.11.1 / 11.11.0                                                                 |
+| Angular CLI      | 21.2.19                                                                           |
+| Docker / Compose | 29.5.3 / v5.1.4                                                                   |
+| Git              | 2.51.2                                                                            |
+| Terraform        | 1.14.9                                                                            |
 
 ---
 
@@ -145,7 +145,7 @@ mvn -v   # -> Apache Maven 3.9.x, Java version: 21.0.x
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.5.3</version>
+    <version>4.1.0</version>
     <relativePath/>
   </parent>
 
@@ -198,7 +198,7 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
 
 jobs:
@@ -210,8 +210,8 @@ jobs:
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
-          java-version: '21'
+          distribution: "temurin"
+          java-version: "21"
           cache: maven
 
       - name: Build backend with Maven wrapper
@@ -221,6 +221,7 @@ jobs:
 ```
 
 Notas:
+
 - Se dispara en cada push a `main` y en cada pull request.
 - `setup-java` con caché Maven acelera builds posteriores.
 - Se usa el **wrapper** (`./mvnw`) para que CI no dependa de Maven instalado.
