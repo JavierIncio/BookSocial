@@ -2,6 +2,9 @@ spring:
   application:
     name: identity-service
 
+  config:
+    import: "optional:file:.env[.properties]"
+
   datasource:
     url: jdbc:postgresql://localhost:5432/booksocial
     username: booksocial
@@ -18,7 +21,7 @@ spring:
       client:
         registration:
             google:
-                client-id: 1011242572347-ejbkmmefs7f37i2tlsd118mlrbbop61a.apps.googleusercontent.com
+                client-id: ${GOOGLE_CLIENT_ID}
                 client-secret: ${GOOGLE_CLIENT_SECRET}
 
 server:
@@ -30,7 +33,7 @@ app:
     password: admin12345
 
   jwt:
-    secret: o5sqlPeCocxouyW+l8fFpGrAaNUJ1m/dkXnpEb5YQjZqZd+m4vFtdPqwr0tcM2Zy
+    secret: ${APP_JWT_SECRET}
     access-token-ttl: 15m
     refresh-token-ttl: 7d
     issuer: booksocial-identity

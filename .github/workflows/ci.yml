@@ -11,6 +11,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    env:
+      APP_JWT_SECRET: ${{ secrets.APP_JWT_SECRET }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+
     steps:
       - uses: actions/checkout@v5
 

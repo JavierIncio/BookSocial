@@ -266,7 +266,9 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 
 **Objetivo**: primer servicio real: registro con email/contraseña, login con OAuth2 Google, emisión de JWT + refresh tokens, roles (`ADMIN`, `MODERATOR`, `USER`, `MINOR_USER` con edad calculada desde la fecha de nacimiento) y un gateway con filtro de autenticación. Frontend Angular 21 con login, registro y guardas de rutas.
 
-**Progreso**: pasos 1–3 completados (identity-service con registro, JWT y OAuth2 Google). Pendientes: gateway, Angular, Docker Compose y ampliación del CI.
+**Progreso**: pasos 1–4 completados (identity-service con registro, JWT y OAuth2 Google, y gateway WebMVC con filtro de validación JWT y headers `X-User-*` strip-then-assert). Pendientes: Angular, Docker Compose y ampliación del CI.
+
+> Gestión de secretos: los valores reales viven en `.env` por módulo (`.env`, `.env.*` en `.gitignore`), cargados con `spring.config.import=optional:file:.env[.properties]`. En CI se inyectan como secrets (`APP_JWT_SECRET`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`) en el bloque `env:` de `.github/workflows/ci.yml`.
 
 ### Fase 1.1 — Generación del identity-service ✅ Completada
 
@@ -358,7 +360,7 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 
 ### Pendiente de la Fase 1
 
-4. Generar `gateway` (Spring Cloud Gateway) con filtro de validación JWT.
+4. [x] Generar `gateway` (Spring Cloud Gateway) con filtro de validación JWT (Fase 1.5: rutas a `identity`, `JwtService`/`JwtAuthFilter`/`SecurityConfig`, entry point 401 JSON y headers `X-User-Id`/`X-User-Email`/`X-User-Roles` strip-then-assert).
 5. Crear el proyecto Angular 21 (`ng new`) en `frontend/` con login/registro y guardas.
 6. Levantar todo con Docker Compose y ampliar el CI para compilar ambos servicios.
 7. Actualizar este documento al cerrar la fase.

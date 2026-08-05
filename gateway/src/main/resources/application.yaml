@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: gateway
+
+  config:
+    import: "optional:file:.env[.properties]"
+
+  threads:
+    virtual:
+      enabled: true
+
+  cloud:
+    gateway:
+      server:
+        webmvc:
+          routes:
+            - id: identity
+              uri: http://localhost:8081
+              predicates:
+                - Path=/auth/**,/users/**
+
+server:
+  port: 8080
+
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET}
+    issuer: booksocial-identity
