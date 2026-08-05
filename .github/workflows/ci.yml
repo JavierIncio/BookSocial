@@ -1,7 +1,7 @@
 name: CI
 #  Se dispara en cada push a main y en cada pull request. 
 #  Usa el runner de GitHub (Ubuntu), instala JDK 21 Temurin con caché de dependencias Maven, y ejecuta el build del parent POM con el wrapper (así CI no depende de Maven instalado). 
-#  Por ahora verify no compila nada de negocio porque aún no hay módulos: sirve para validar que el pipeline y el wrapper funcionan.
+#  El contenedor de servicio PostgreSQL cubre la dependencia de identity-service (datasource booksocial/booksocial en localhost:5432).
 
 on:
   push:
@@ -16,6 +16,21 @@ jobs:
       APP_JWT_SECRET: ${{ secrets.APP_JWT_SECRET }}
       GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
       GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: booksocial
+          POSTGRES_USER: booksocial
+          POSTGRES_PASSWORD: booksocial
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U booksocial -d booksocial"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@v5
