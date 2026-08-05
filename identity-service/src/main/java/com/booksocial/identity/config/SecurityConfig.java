@@ -2,6 +2,8 @@ package com.booksocial.identity.config;
 
 import com.booksocial.identity.repository.UserRepository;
 import com.booksocial.identity.security.JwtAuthFilter;
+import com.booksocial.identity.security.OAuth2AuthenticationFailureHandler;
+import com.booksocial.identity.security.OAuth2AuthenticationSuccessHandler;
 import com.booksocial.identity.security.RestAuthenticationEntryPoint;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -60,13 +62,18 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http,
                                     JwtAuthFilter jwtAuthFilter,
-                                    RestAuthenticationEntryPoint entryPoint) throws Exception {
+                                    RestAuthenticationEntryPoint entryPoint,
+                                    OAuth2AuthenticationSuccessHandler successHandler,
+                                    OAuth2AuthenticationFailureHandler failureHandler) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .exceptionHandling(eh -> eh.authenticationEntryPoint(entryPoint))
+                .oauth2Login(o -> o.successHandler(successHandler).failureHandler(failureHandler))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/auth/register", "/auth/login", "/auth/refresh", "/auth/logout").permitAll()
+                        .requestMatchers(
+                                "/auth/register", "/auth/login", "/auth/refresh", "/auth/logout",
+                                "/oauth2/authorization/**", "/login/oauth2/code/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

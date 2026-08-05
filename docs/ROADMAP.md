@@ -262,15 +262,102 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 
 ---
 
-## Fase 1 — Identity Service + Gateway + Security + Angular 21 ⏳ Pendiente
+## Fase 1 — Identity Service + Gateway + Security + Angular 21 ⏳ En curso
 
 **Objetivo**: primer servicio real: registro con email/contraseña, login con OAuth2 Google, emisión de JWT + refresh tokens, roles (`ADMIN`, `MODERATOR`, `USER`, `MINOR_USER` con edad calculada desde la fecha de nacimiento) y un gateway con filtro de autenticación. Frontend Angular 21 con login, registro y guardas de rutas.
 
-Pasos previstos:
+**Progreso**: pasos 1–3 completados (identity-service con registro, JWT y OAuth2 Google). Pendientes: gateway, Angular, Docker Compose y ampliación del CI.
 
-1. Generar `identity-service` (Spring Initializr) y añadirlo como módulo del parent POM.
-2. Modelo de usuarios y roles en PostgreSQL; cálculo de edad en el registro.
-3. Spring Security + JWT (access + refresh) y OAuth2 con Google.
+### Fase 1.1 — Generación del identity-service ✅ Completada
+
+**Objetivo**: crear el microservicio `identity-service` con Spring Initializr y conectarlo al parent POM del monorepo.
+
+- Generar el proyecto (Java 21, Spring Boot 4.1.0, web, data-jpa, validation, security) en `identity-service/`.
+- Añadirlo a `<modules>` del parent POM de la raíz.
+- Configurar en `application.yml`: datasource PostgreSQL (`booksocial`/`booksocial`) y puerto `8081` (para no chocar con el futuro gateway).
+
+> Decisión de versión: se alineó el monorepo a **Spring Boot 4.1.0** (commit `abcb588`), dejando el parent POM como única fuente de versión para todos los servicios.
+
+### Fase 1.2 — Modelo de usuario, roles y registro con seed admin ✅ Completada
+
+**Objetivo**: entidad `User`, roles, registro con validación y edad calculada, y seed del primer administrador.
+
+- `domain/User`: email único, `password_hash`, `first_name`, `last_name`, `birth_date`, roles como colección embebida en `user_roles`, `enabled`, timestamps y `google_id` (este último se aprovecha en la fase 1.4).
+- `domain/Role`: `ADMIN`, `MODERATOR`, `USER`, `MINOR_USER`.
+- `UserService.register`: rechaza email duplicado (`EmailAlreadyExistsException`), encripta con BCrypt y asigna rol `MINOR_USER` si la edad calculada (`Period.between`) es < 18, `USER` en caso contrario.
+- `config/AdminDataInitializer`: crea el admin (credenciales `app.admin.*` en `application.yml`) con roles `ADMIN` + `USER` si no existe.
+- DTOs `RegisterRequest` (con bean validation) y `UserResponse` (devuelve la edad, nunca la password).
+
+### Fase 1.3 — Spring Security con JWT access/refresh ✅ Completada
+
+**Objetivo**: proteger la API, emitir JWT en login/registro, rotar refresh tokens y soportar logout.
+
+- Dependencias: `spring-boot-starter-security` + `jjwt` (api/impl/jackson) en `identity-service/pom.xml`.
+- `security/JwtService`: JWT HS256 con secret base64 de `app.jwt.secret`, claims `uid`, `roles`, `type` (`access`/`refresh`), TTL de 15 min / 7 días.
+- `security/JwtAuthFilter`: valida el `Authorization: Bearer` y solo autentica tokens de tipo `access`.
+- `security/RestAuthenticationEntryPoint`: respuestas JSON `401` para peticiones no autenticadas.
+- `service/RefreshTokenService`: guarda el **hash SHA-256** del refresh token (nunca el valor en claro), valida no revocado + no expirado y revoca al rotar.
+- `service/AuthService` + `controller/AuthController`: `/auth/register`, `/auth/login`, `/auth/refresh` (rotación), `/auth/logout` (revocación); `controller/UserController` con `/users/me`.
+- `config/SecurityConfig`: CSRF off, sesiones `STATELESS`, `permitAll` para los endpoints `/auth/*`, resto autenticado.
+- `exception/GlobalExceptionHandler`: errores JSON uniformes.
+
+#### Errores encontrados en la Fase 1.3 (con solución directa)
+
+**1. `POST /auth/logout` devolvía `401`**
+
+- Causa: `/auth/logout` no estaba en la lista de `permitAll` y el cliente no envía access token al cerrar sesión (solo la cookie).
+- Solución aplicada: añadir `/auth/logout` a `permitAll` en `SecurityConfig` (commit `d78cd79`).
+
+**2. Log de depuración en producción**
+
+- Causa: `System.out.println` imprimía el header `Authorization` en cada petición en `JwtAuthFilter`.
+- Solución aplicada: eliminar el log en el mismo commit `d78cd79`.
+
+### Fase 1.4 — Login OAuth2 con Google ✅ Completada (pendiente de commit)
+
+**Objetivo**: login con la cuenta de Google, creación o vínculo automático del usuario y emisión de los JWT propios del servicio.
+
+- Dependencia: `spring-boot-starter-oauth2-client`.
+- Credenciales en `application.yml` (`spring.security.oauth2.client.registration.google`): el `client-id` se mantiene en el repositorio y el **`client-secret` se carga desde la variable de entorno `GOOGLE_CLIENT_SECRET`** (nunca en git).
+- Consola de Google Cloud (OAuth consent screen en modo Testing): redirect URI `http://localhost:8081/login/oauth2/code/google`; las cuentas de prueba se añaden como **Test users**.
+- `UserService.linkOrCreateOAuthUser`: busca por `google_id` (claim `sub`); si no lo encuentra, busca por email y vincula el `google_id`; si no existe, crea el usuario con password aleatoria e inutilizable, sin `birth_date` y rol `USER`.
+- `security/TokenCookieService`: cookie `refresh_token` `httpOnly`, `SameSite=Lax`, `path=/`, con la vida del refresh token; `clear()` para el logout.
+- `security/OAuth2AuthenticationSuccessHandler`: vincula/crea el usuario, emite tokens, fija la cookie y redirige a `app.oauth2.frontend-redirect-uri#access_token=...`.
+- `security/OAuth2AuthenticationFailureHandler`: redirige a `frontend-redirect-uri#error=access_denied`.
+- `config/SecurityConfig`: sesión `IF_REQUIRED` (el flujo OAuth2 guarda el parámetro `state` en la sesión HTTP) y `permitAll` para `/oauth2/authorization/**` y `/login/oauth2/code/**`.
+- `/auth/refresh` y `/auth/logout` aceptan el refresh token desde la cookie **o** desde el body JSON (retrocompatibilidad con 1.3).
+- `UserRepository.findByGoogleId`.
+
+#### Errores encontrados en la Fase 1.4 (con solución directa)
+
+**1. `IncorrectResultSizeDataAccessException ... expected 1 but found 3` al completar el login de Google**
+
+- Causa: el vínculo leía el atributo de Google con la clave errónea (`attrs.get("googleId")`); el identificador persistente del OIDC claim es **`sub`**.
+- Solución aplicada: leer `attrs.get("sub")` en `linkOrCreateOAuthUser`.
+
+**2. `401` al probar `/auth/register` y `/auth/login` con `curl.exe` desde PowerShell 5.1**
+
+- Causa: PowerShell elimina las comillas dobles al pasar el JSON como argumento → Spring recibe `{email:...}` (JSON inválido) y el `RestAuthenticationEntryPoint` responde `401` en lugar de `400`.
+- Solución aplicada: usar `Invoke-RestMethod` (con `ConvertTo-Json`) o guardar el body en un archivo y llamar a `curl --data-binary "@body.json"`.
+
+**3. `#error=access_denied` al probar con una segunda cuenta de Google**
+
+- Causa: la aplicación OAuth2 está en modo **Testing** y esa cuenta no estaba en la lista de **Test users** de la pantalla de consentimiento.
+- Solución aplicada: añadir la cuenta en OAuth consent screen → Audience → Test users.
+
+#### Criterios de salida de la Fase 1.4
+
+- [x] Login con Google crea el usuario con `google_id` y rol `USER`.
+- [x] Login con una cuenta ya registrada por email la vincula (sin duplicados).
+- [x] `GET /users/me` devuelve el usuario autenticado por Google.
+- [x] Cookie `refresh_token` `httpOnly` + `SameSite=Lax`; rotación en `/auth/refresh`.
+- [x] `/auth/refresh` y `/auth/logout` funcionan con cookie y con body JSON.
+- [x] Cancelar el login redirige a `#error=access_denied`.
+- [x] El `client-secret` de Google queda fuera del repositorio (variable de entorno).
+- [x] Versión funcional: identity-service con registro, JWT y login Google.
+
+### Pendiente de la Fase 1
+
 4. Generar `gateway` (Spring Cloud Gateway) con filtro de validación JWT.
 5. Crear el proyecto Angular 21 (`ng new`) en `frontend/` con login/registro y guardas.
 6. Levantar todo con Docker Compose y ampliar el CI para compilar ambos servicios.

@@ -4,24 +4,26 @@ import com.booksocial.identity.dto.LoginRequest;
 import com.booksocial.identity.dto.RefreshRequest;
 import com.booksocial.identity.dto.RegisterRequest;
 import com.booksocial.identity.dto.TokenResponse;
+import com.booksocial.identity.exception.InvalidRefreshTokenException;
+import com.booksocial.identity.security.TokenCookieService;
 import com.booksocial.identity.service.AuthService;
-import com.nimbusds.oauth2.sdk.TokenRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
 
     private final AuthService authService;
+    private final TokenCookieService cookieService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, TokenCookieService cookieService) {
         this.authService = authService;
+        this.cookieService = cookieService;
     }
 
     @PostMapping("/register")
@@ -35,13 +37,31 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public TokenResponse refresh(@Valid @RequestBody RefreshRequest request) {
-        return authService.refresh(request.refreshToken());
+    public TokenResponse refresh(@RequestBody(required = false) RefreshRequest request,
+                                 @CookieValue(name = "refresh_token", required = false) String refreshTokenCookie,
+                                 HttpServletResponse response) {
+        String refreshToken = refreshTokenCookie != null
+                ? refreshTokenCookie
+                : (request != null ? request.refreshToken() : null);
+        if (refreshToken == null)
+            throw new InvalidRefreshTokenException();
+
+        TokenResponse tokens = authService.refresh(refreshToken);
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieService.create(tokens.refreshToken()).toString());
+        return tokens;
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest request) {
-        authService.logout(request.refreshToken());
+    public ResponseEntity<Void> logout(@RequestBody(required = false) RefreshRequest request,
+                                       @CookieValue(name = "refresh_token", required = false) String refreshTokenCookie,
+                                       HttpServletResponse response) {
+        String refreshToken = refreshTokenCookie != null
+                ? refreshTokenCookie
+                : (request != null ? request.refreshToken() : null);
+        if (refreshToken != null)
+            authService.logout(refreshToken);
+
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieService.clear().toString());
         return ResponseEntity.noContent().build();
     }
 }

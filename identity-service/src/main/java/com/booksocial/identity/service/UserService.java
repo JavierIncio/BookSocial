@@ -9,8 +9,10 @@ import com.booksocial.identity.exception.EmailAlreadyExistsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -53,6 +55,34 @@ public class UserService{
         return new UserResponse(
                 user.getId(), user.getEmail(), user.getFirstName(), user.getLastName(),
                 user.getAge(), user.getRoles().stream().map(Role::name).collect(Collectors.toSet()));
+    }
+
+    public User linkOrCreateOAuthUser(Map<String, Object> attrs) {
+        String googleId = (String) attrs.get("sub");
+        String email = (String) attrs.get("email");
+        if (email == null || email.isBlank())
+            throw new IllegalArgumentException("Google did not provide an email.");
+
+        Optional<User> userByGoogleId = userRepository.findByGoogleId(googleId);
+        if (userByGoogleId.isPresent())
+            return userByGoogleId.get();
+
+        Optional<User> userByEmail = userRepository.findByEmail(email);
+        if (userByEmail.isPresent()){
+            User existingUser = userByEmail.get();
+            existingUser.setGoogleId(googleId);
+            return userRepository.save(existingUser);
+        }
+
+        User user = new User();
+        user.setEmail(email);
+        user.setPasswordHash(encoder.encode(UUID.randomUUID().toString()));
+        user.setFirstName((String) attrs.get("given_name"));
+        user.setLastName((String) attrs.get("family_name"));
+        user.setEnabled(true);
+        user.setRoles(Set.of(Role.USER));
+        user.setGoogleId(googleId);
+        return userRepository.save(user);
     }
 
 }

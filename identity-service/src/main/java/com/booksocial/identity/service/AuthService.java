@@ -57,7 +57,7 @@ public class AuthService {
         refreshTokenService.revoke(rawToken);
     }
 
-    private TokenResponse issueTokens(User user) {
+    public TokenResponse issueTokens(User user) {
         String accessToken = jwtService.generateAccessToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
         refreshTokenService.store(user, refreshToken, Instant.now().plus(jwtService.refreshTokenTtl()));

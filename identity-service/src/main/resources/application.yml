@@ -13,6 +13,14 @@ spring:
 
     open-in-view: false
 
+  security:
+    oauth2:
+      client:
+        registration:
+            google:
+                client-id: 1011242572347-ejbkmmefs7f37i2tlsd118mlrbbop61a.apps.googleusercontent.com
+                client-secret: ${GOOGLE_CLIENT_SECRET}
+
 server:
   port: 8081
 
@@ -26,3 +34,6 @@ app:
     access-token-ttl: 15m
     refresh-token-ttl: 7d
     issuer: booksocial-identity
+
+  oauth2:
+    frontend-redirect-uri: http://localhost:4200/oauth2/callback
