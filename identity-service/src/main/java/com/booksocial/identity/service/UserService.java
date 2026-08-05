@@ -2,6 +2,7 @@ package com.booksocial.identity.service;
 
 import com.booksocial.identity.domain.Role;
 import com.booksocial.identity.domain.User;
+import com.booksocial.identity.dto.UserResponse;
 import com.booksocial.identity.repository.UserRepository;
 import com.booksocial.identity.dto.RegisterRequest;
 import com.booksocial.identity.exception.EmailAlreadyExistsException;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class UserService{
@@ -45,6 +47,12 @@ public class UserService{
 
         userRepository.save(user);
         return user;
+    }
+
+    public UserResponse toResponse(User user) {
+        return new UserResponse(
+                user.getId(), user.getEmail(), user.getFirstName(), user.getLastName(),
+                user.getAge(), user.getRoles().stream().map(Role::name).collect(Collectors.toSet()));
     }
 
 }

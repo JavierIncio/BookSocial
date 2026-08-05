@@ -1,5 +1,4 @@
 spring:
-
   application:
     name: identity-service
 
@@ -21,3 +20,9 @@ app:
   admin:
     email: admin@booksocial.com
     password: admin12345
+
+  jwt:
+    secret: o5sqlPeCocxouyW+l8fFpGrAaNUJ1m/dkXnpEb5YQjZqZd+m4vFtdPqwr0tcM2Zy
+    access-token-ttl: 15m
+    refresh-token-ttl: 7d
+    issuer: booksocial-identity
