@@ -1,8 +1,0 @@
-name: TriggerTest
-on: push
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Ping
-        run: echo "trigger test ok"
