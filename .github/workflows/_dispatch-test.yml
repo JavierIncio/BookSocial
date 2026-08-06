@@ -1,0 +1,9 @@
+name: DispatchTest
+on:
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping
+        run: echo "dispatch test ok"
