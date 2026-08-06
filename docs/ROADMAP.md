@@ -262,11 +262,11 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 
 ---
 
-## Fase 1 — Identity Service + Gateway + Security + Angular 21 ⏳ En curso
+## Fase 1 — Identity Service + Gateway + Security + Angular 21 ✅ Completada
 
 **Objetivo**: primer servicio real: registro con email/contraseña, login con OAuth2 Google, emisión de JWT + refresh tokens, roles (`ADMIN`, `MODERATOR`, `USER`, `MINOR_USER` con edad calculada desde la fecha de nacimiento) y un gateway con filtro de autenticación. Frontend Angular 21 con login, registro y guardas de rutas.
 
-**Progreso**: pasos 1–5 completados (identity-service con registro, JWT y OAuth2 Google; gateway WebMVC con filtro de validación JWT y headers `X-User-*` strip-then-assert; frontend Angular 21 con login, registro, OAuth2 y guardas). Pendientes: Docker Compose y ampliación del CI.
+**Progreso**: Fase 1 completada — pasos 1–7 (identity-service con registro, JWT y OAuth2 Google; gateway WebMVC con filtro de validación JWT y headers `X-User-*` strip-then-assert; frontend Angular 21 con login, registro, OAuth2 y guardas; backend contenerizado con Docker Compose y CI ampliado con job de frontend).
 
 > Gestión de secretos: los valores reales viven en `.env` por módulo (`.env`, `.env.*` en `.gitignore`), cargados con `spring.config.import=optional:file:.env[.properties]`. En CI se inyectan como secrets (`APP_JWT_SECRET`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`) en el bloque `env:` de `.github/workflows/ci.yml`.
 
@@ -358,11 +358,59 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - [x] El `client-secret` de Google queda fuera del repositorio (variable de entorno).
 - [x] Versión funcional: identity-service con registro, JWT y login Google.
 
-### Pendiente de la Fase 1
+### Fase 1.7 — Contenerización con Docker Compose y ampliación del CI ✅ Completada
 
-4. [x] Generar `gateway` (Spring Cloud Gateway) con filtro de validación JWT (Fase 1.5: rutas a `identity`, `JwtService`/`JwtAuthFilter`/`SecurityConfig`, entry point 401 JSON y headers `X-User-Id`/`X-User-Email`/`X-User-Roles` strip-then-assert).
-5. [x] Crear el proyecto Angular 21 (`ng new`) en `frontend/` con login/registro y guardas.
-6. Levantar todo con Docker Compose y ampliar el CI para compilar ambos servicios.
-7. Actualizar este documento al cerrar la fase.
+**Objetivo**: levantar el backend completo (postgres + identity-service + gateway) con Docker Compose, dejar los microservicios preparados para contenerizarse (Actuator + configuración overridable por variable de entorno) y ampliar el CI para compilar el frontend Angular.
+
+#### Paso A — Preparación de los servicios para contenerización
+
+- `spring-boot-starter-actuator` añadido a `gateway/pom.xml` y `identity-service/pom.xml`.
+- Bloque `management.endpoints.web.exposure.include: health` en ambas configuraciones.
+- `/actuator/health` en `permitAll` de ambos `SecurityConfig` (healthcheck sin autenticación).
+- Configuración overridable por entorno: el gateway lee `IDENTITY_SERVICE_URI` (default `http://localhost:8081`) y el identity-service lee `SPRING_DATASOURCE_URL` (default `jdbc:postgresql://localhost:5432/booksocial`).
+
+#### Paso B — Dockerfiles multi-stage
+
+- `identity-service/Dockerfile` y `gateway/Dockerfile`: stage de build `maven:3.9-eclipse-temurin-21` con `./mvnw -B -pl <módulo> -am package -DskipTests`; stage runtime `eclipse-temurin:21-jre` con `curl` instalado y `ENTRYPOINT ["java","-jar","app.jar"]`.
+- `.dockerignore` raíz: excluye `**/target/`, `**/node_modules/`, `.git/`, `**/.env*` y las carpetas `frontend/`, `infrastructure/`, `docs/`, `.github/` (los secretos `.env` nunca entran a las imágenes).
+
+#### Paso C — docker-compose ampliado
+
+- `infrastructure/docker-compose.yml`: nuevos servicios `identity-service` (puerto 8081, `env_file: ../identity-service/.env`, `SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/booksocial`, healthcheck curl a `/actuator/health`, `depends_on: postgres` `service_healthy`) y `gateway` (puerto 8080, `env_file: ../gateway/.env`, `IDENTITY_SERVICE_URI=http://identity-service:8081`, healthcheck curl a `/actuator/health`, `depends_on: identity-service` `service_healthy`).
+- Arranque con un solo comando: `docker compose -f infrastructure/docker-compose.yml up -d --build`.
+
+#### Paso D — CI ampliado
+
+- `.github/workflows/ci.yml`: nuevo job `frontend` (Node 24 con caché npm, `npm ci` + `ng build` con `working-directory: frontend`). El job `build` de backend (Maven + Postgres service + secrets) queda intacto.
+
+#### Paso E — Verificación E2E en Docker
+
+- 5 contenedores healthy (postgres, mongodb, rabbitmq, identity-service, gateway).
+- Suite API vía gateway: register → `/users/me` → login con cookie `refresh_token` → refresh → logout, todo `200`/`204`.
+- Healthchecks `/actuator/health` `UP` en 8080 y 8081.
+- Frontend `ng serve` en el host (:4200) con proxy a :8080; flujo completo en navegador: register → home → F5 → logout → login → Google (incógnito).
+
+#### Errores encontrados en la Fase 1.7 (con solución directa)
+
+**1. `GET /oauth2/authorization/google` devuelve `401` a través del gateway**
+
+- Causa: el gateway no tiene esa ruta en `permitAll`. No es un fallo: el frontend no pasa por el gateway para OAuth2, `googleAuthUrl` apunta directamente a `http://localhost:8081/oauth2/authorization/google` (puerto publicado en compose), y el flujo de Google funciona correctamente en navegador.
+
+#### Criterios de salida de la Fase 1.7
+
+- [x] Backend completo levantado con Docker Compose (5 contenedores healthy).
+- [x] Healthchecks con Actuator `/actuator/health` sin autenticación.
+- [x] Configuración overridable por variable de entorno (`IDENTITY_SERVICE_URI`, `SPRING_DATASOURCE_URL`).
+- [x] Secretos fuera de las imágenes (`.env` excluido por `.dockerignore`, inyectado con `env_file`).
+- [x] CI compila backend y frontend.
+- [x] E2E completo: backend en Docker + frontend en el host + API verde vía gateway.
+- [x] Versión funcional: todo el stack de la Fase 1 con un solo `docker compose up`.
+
+### Cierre de la Fase 1
+
+- [x] Fase 1.5 — Generar `gateway` (Spring Cloud Gateway) con filtro de validación JWT (rutas a `identity`, `JwtService`/`JwtAuthFilter`/`SecurityConfig`, entry point 401 JSON y headers `X-User-Id`/`X-User-Email`/`X-User-Roles` strip-then-assert).
+- [x] Fase 1.6 — Crear el proyecto Angular 21 (`ng new`) en `frontend/` con login/registro, guardas, interceptor JWT y fixes de auth en identity-service.
+- [x] Fase 1.7 — Levantar todo con Docker Compose y ampliar el CI para compilar ambos servicios.
+- [x] Actualizar este documento al cerrar la fase.
 
 ---

@@ -15,7 +15,7 @@ spring:
         webmvc:
           routes:
             - id: identity
-              uri: http://localhost:8081
+              uri: ${IDENTITY_SERVICE_URI:http://localhost:8081}
               predicates:
                 - Path=/auth/**,/users/**
 
@@ -26,3 +26,9 @@ app:
   jwt:
     secret: ${APP_JWT_SECRET}
     issuer: booksocial-identity
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

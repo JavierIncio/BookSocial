@@ -49,6 +49,48 @@ services:
       timeout: 5s
       retries: 10
 
+  identity-service:
+    build:
+      context: ..
+      dockerfile: identity-service/Dockerfile
+    container_name: booksocial-identity
+    ports:
+      - "8081:8081"
+    env_file:
+      - ../identity-service/.env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/booksocial
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: gateway/Dockerfile
+    container_name: booksocial-gateway
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../gateway/.env
+    environment:
+      IDENTITY_SERVICE_URI: http://identity-service:8081
+    depends_on:
+      identity-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
 volumes:
   postgres-data:
   mongodb-data:

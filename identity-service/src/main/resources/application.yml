@@ -6,7 +6,7 @@ spring:
     import: "optional:file:.env[.properties]"
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/booksocial
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/booksocial}
     username: booksocial
     password: booksocial
 
@@ -40,3 +40,9 @@ app:
 
   oauth2:
     frontend-redirect-uri: http://localhost:4200/oauth2/callback
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

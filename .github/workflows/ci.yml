@@ -1,11 +1,11 @@
 name: CI
-#  Se dispara en cada push a main y en cada pull request. 
-#  Usa el runner de GitHub (Ubuntu), instala JDK 21 Temurin con caché de dependencias Maven, y ejecuta el build del parent POM con el wrapper (así CI no depende de Maven instalado). 
+#  Se dispara en cada push a main y en cada pull request.
+#  Usa el runner de GitHub (Ubuntu), instala JDK 21 Temurin con caché de dependencias Maven, y ejecuta el build del parent POM con el wrapper (así CI no depende de Maven instalado).
 #  El contenedor de servicio PostgreSQL cubre la dependencia de identity-service (datasource booksocial/booksocial en localhost:5432).
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
 
 jobs:
@@ -38,11 +38,32 @@ jobs:
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
-          distribution: 'temurin'
-          java-version: '21'
+          distribution: "temurin"
+          java-version: "21"
           cache: maven
 
       - name: Build backend with Maven wrapper
         run: |
           chmod +x mvnw
           ./mvnw -B clean verify
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
