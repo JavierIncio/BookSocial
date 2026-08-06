@@ -27,13 +27,19 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<TokenResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
+    public ResponseEntity<TokenResponse> register(@Valid @RequestBody RegisterRequest request,
+                                                  HttpServletResponse response) {
+        TokenResponse tokens = authService.register(request);
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieService.create(tokens.refreshToken()).toString());
+        return ResponseEntity.status(HttpStatus.CREATED).body(tokens);
     }
 
+
     @PostMapping("/login")
-    public TokenResponse login(@Valid @RequestBody LoginRequest request) {
-        return authService.login(request);
+    public TokenResponse login(@Valid @RequestBody LoginRequest request, HttpServletResponse response) {
+        TokenResponse tokens = authService.login(request);
+        response.addHeader(HttpHeaders.SET_COOKIE, cookieService.create(tokens.refreshToken()).toString());
+        return tokens;
     }
 
     @PostMapping("/refresh")

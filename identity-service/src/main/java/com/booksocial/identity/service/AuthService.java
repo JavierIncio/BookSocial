@@ -7,6 +7,7 @@ import com.booksocial.identity.dto.TokenResponse;
 import com.booksocial.identity.exception.InvalidRefreshTokenException;
 import com.booksocial.identity.security.JwtService;
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Service;
@@ -42,10 +43,15 @@ public class AuthService {
     }
 
     public TokenResponse refresh(String rawToken) {
-        Claims claims = jwtService.parse(rawToken);
-        if(!JwtService.TYPE_REFRESH.equals(claims.get("type",  String.class)))
+        Claims claims;
+        try {
+            claims = jwtService.parse(rawToken);
+        } catch (JwtException e) {
             throw new InvalidRefreshTokenException();
-        if(!refreshTokenService.isValid(rawToken))
+        }
+        if (!JwtService.TYPE_REFRESH.equals(claims.get("type", String.class)))
+            throw new InvalidRefreshTokenException();
+        if (!refreshTokenService.isValid(rawToken))
             throw new InvalidRefreshTokenException();
 
         User user = userService.findByEmail(claims.getSubject()).orElseThrow();

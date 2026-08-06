@@ -1,0 +1,18 @@
+:host {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+.callback-loading {
+  color: #666;
+}
+
+.callback-error {
+  text-align: center;
+
+  p {
+    color: #c62828;
+  }
+}
