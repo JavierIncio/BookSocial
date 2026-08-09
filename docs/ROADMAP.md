@@ -310,11 +310,6 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - Causa: `/auth/logout` no estaba en la lista de `permitAll` y el cliente no envía access token al cerrar sesión (solo la cookie).
 - Solución aplicada: añadir `/auth/logout` a `permitAll` en `SecurityConfig` (commit `d78cd79`).
 
-**2. Log de depuración en producción**
-
-- Causa: `System.out.println` imprimía el header `Authorization` en cada petición en `JwtAuthFilter`.
-- Solución aplicada: eliminar el log en el mismo commit `d78cd79`.
-
 ### Fase 1.4 — Login OAuth2 con Google ✅ Completada (pendiente de commit)
 
 **Objetivo**: login con la cuenta de Google, creación o vínculo automático del usuario y emisión de los JWT propios del servicio.
