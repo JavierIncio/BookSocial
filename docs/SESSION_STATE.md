@@ -18,18 +18,20 @@ Continuar el monorepo **BookSocial** (Fase 1 cerrada). El stack de la Fase 1 est
 - Usuarios de prueba en Postgres: `e2e.final@test.com/Test123456`, `admin@booksocial.com/admin12345`.
 - En PowerShell 5.1: `rg` no disponible; JSON inline en `curl.exe` se corrompe (401 falso) — usar `Invoke-RestMethod` con `ConvertTo-Json` o `curl --data "@archivo"`; `gh` no instalado (verificar Actions en navegador).
 - Backend de la Fase 1: identidad con roles ADMIN/MODERATOR/USER/MINOR_USER (edad desde `birth_date`), JWT access 15min + refresh en cookie httpOnly con rotación/revocación (hash SHA-256).
+- Frontend (convención): estado reactivo con **signals** (`signal` + `asReadonly()`, sin `BehaviorSubject`) e inyección **`inject()`** en servicios, guards y componentes (modelo standalone; sin inyección por constructor).
 
 ## Work State
 
 ### Completed
 
+- **Refactor frontend (sin commitear)**: `AuthService` migrado de `BehaviorSubject` a signals (`accessToken`/`isAuthenticated` como `asReadonly()`) y de inyección por constructor a `inject(HttpClient)` en `AuthService` y `UserService`; consumidores actualizados a llamada de signal (`auth.accessToken()`, `auth.isAuthenticated()`). Verificado con `ng build` sin errores.
 - **Fase 1.7 cerrada** (commit `43345eb`): Dockerfiles multi-stage (`maven:3.9-eclipse-temurin-21` → `eclipse-temurin:21-jre` + curl) para identity-service y gateway; `.dockerignore` raíz; compose ampliado con env overrides (`SPRING_DATASOURCE_URL`, `IDENTITY_SERVICE_URI`) y `depends_on: service_healthy`; Actuator `/actuator/health` en permitAll; job `frontend` en `.github/workflows/ci.yml` (Node 24 + npm caché, `npm ci` + `ng build`).
 - **E2E verificado**: 5 contenedores healthy; API vía gateway register → `/users/me` → login (cookie refresh con `jti`) → refresh → logout; OAuth2 en navegador; `ng serve` :4200 con proxy a :8080.
 - **ROADMAP.md actualizado**: Fase 1 ✅ Completada, sección Fase 1.7 con pasos A–E, errores (OAuth2 401 vía gateway = esperado) y criterios de salida; Fase 2 aún sin abrir.
 
 ### Active
 
-- Nada: sesión en punto de parada, trabajo commiteado y pusheado.
+- **Commit pendiente del refactor de frontend** (signals + `inject()`): revisar diff, commitear y pushear (convención de cierre de sesión).
 
 ### Blocked
 
