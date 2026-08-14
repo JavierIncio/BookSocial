@@ -471,6 +471,43 @@ El **Identity Service** es el microservicio responsable de todo lo relacionado c
 
 En la arquitectura del proyecto, este servicio escucha en el puerto `8081`, mientras que el Gateway utiliza el `8080`.
 
+#### Generación del servicio y dependencias (`pom.xml`)
+
+El servicio se generó con **Spring Initializr** (start.spring.io) con Java 21 y Spring Boot 4.1.0, y su POM hereda del parent `booksocial-parent`. Por eso **no repite versiones**: las hereda del parent POM y del BOM de Spring Cloud (sección 0.2). Dependencias del `identity-service/pom.xml` y para qué sirve cada una:
+
+| Dependencia                                | Para qué sirve                                                  |
+| ------------------------------------------ | --------------------------------------------------------------- |
+| `spring-boot-starter-webmvc`               | Controllers REST (`@RestController`) y servidor web embebido    |
+| `spring-boot-starter-data-jpa`             | Hibernate (ORM) y repositorios Spring Data                      |
+| `spring-boot-starter-validation`           | Bean Validation en los DTOs (`@NotBlank`, `@Email`, `@Size`...) |
+| `spring-boot-starter-security`             | Spring Security: `SecurityFilterChain`, filtros, BCrypt         |
+| `spring-boot-starter-oauth2-client`        | Login con Google (cliente OAuth2)                               |
+| `jjwt-api` / `jjwt-impl` / `jjwt-jackson`  | Crear y validar JWT (JJWT 0.12.6)                               |
+| `postgresql`                               | Driver JDBC de PostgreSQL                                       |
+| `spring-boot-starter-actuator`             | `/actuator/health` para los healthchecks                        |
+| `spring-boot-devtools` (runtime, opcional) | Recarga automática en desarrollo                                |
+
+> Nota: los starters de test llevan sufijo `-test` (p.ej. `spring-boot-starter-security-test`, `spring-boot-starter-data-jpa-test`). Además, `jjwt-impl` y `jjwt-jackson` están en scope `runtime` porque solo se necesitan en ejecución, no al compilar el código.
+
+#### Clase principal
+
+```java
+@SpringBootApplication
+public class IdentityServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(IdentityServiceApplication.class, args);
+    }
+}
+```
+
+`@SpringBootApplication` combina tres anotaciones:
+
+- `@Configuration`: la clase puede declarar beans.
+- `@EnableAutoConfiguration`: Spring Boot configura automáticamente lo que encuentra en el classpath (el DataSource si hay driver de BD, Spring Security, etc.).
+- `@ComponentScan`: busca componentes (entidades, repositorios, servicios, controllers, configuraciones) en el paquete base `com.booksocial.identity` y sus subpaquetes.
+
+El resto de clases del servicio "aparece" en el contexto de Spring porque vive bajo ese paquete base.
+
 ### 1.1 — `application.yml`
 
 El `application.yml` contiene la **configuración externa** del Identity Service.
@@ -983,6 +1020,27 @@ HTTP Response
 
 ### 1.4 - Servicios: la lógica de negocio
 
+#### Repositorios (Spring Data JPA)
+
+Antes de los servicios conviene ver la capa de datos. `JpaRepository<User, Long>` proporciona por herencia el CRUD básico (`save`, `findById`, `findAll`, `delete`...). Los métodos de búsqueda personalizados solo hay que **declararlos**; Spring Data genera la implementación a partir del **nombre del método**:
+
+```java
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);       // SELECT ... WHERE email = ?
+    Optional<User> findByGoogleId(String googleId); // SELECT ... WHERE google_id = ?
+    boolean existsByEmail(String email);            // SELECT EXISTS(SELECT 1 WHERE email = ?)
+}
+
+public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long> {
+    Optional<RefreshToken> findByTokenHash(String tokenHash);
+    boolean existsByTokenHash(String tokenHash);
+}
+```
+
+- `Optional` en la firma obliga a quien llama a decidir qué hacer si el resultado no existe (devolver `401`, lanzar excepción...), evitando el clásico `null`.
+- `existsByEmail` se usa en el registro para comprobar duplicados **sin traer el objeto completo** a memoria.
+- `findByTokenHash` se usa para validar/revocar refresh tokens buscando por el hash SHA-256 (sección `RefreshTokenService`).
+
 #### `UserService`
 
 ##### `register()`
@@ -1132,6 +1190,49 @@ Si alguien intenta volver a utilizar Refresh A, devolverá un código de error *
 
 El logout no necesita destruir el `access token`, ya que es de corta duración y stateless. En cambio, se revoca el `refresh token` y se elimina la **cookie**.
 
+#### `RefreshTokenService`
+
+Es el servicio que persiste y valida los refresh tokens. Su regla de oro: **en la base de datos nunca se guarda el token en claro**, solo su hash SHA-256:
+
+```java
+public void store(User user, String rawToken, Instant expiresAt) {
+    RefreshToken rt = new RefreshToken();
+    rt.setUser(user);
+    rt.setTokenHash(hash(rawToken));
+    rt.setExpiresAt(expiresAt);
+    rt.setRevoked(false);
+    rt.setCreatedAt(Instant.now());
+    repository.save(rt);
+}
+```
+
+El método privado `hash()`:
+
+```java
+private String hash(String rawToken) {
+    MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    byte[] hash = digest.digest(rawToken.getBytes(StandardCharsets.UTF_8));
+    return HexFormat.of().formatHex(hash);   // 64 caracteres hexadecimales
+}
+```
+
+SHA-256 es un **hash** (unidireccional): no se puede recuperar el token a partir del hash. Si la base de datos se filtra, los atacantes obtienen hashes inútiles.
+
+Operaciones:
+
+- `store(user, token, expiresAt)`: guarda el hash al emitir tokens.
+- `isValid(token)`: busca el hash en BD y comprueba `!revoked && expiresAt.isAfter(now)`:
+
+  ```java
+  return repository.findByTokenHash(hash(rawToken))
+          .map(rt -> !rt.isRevoked() && rt.getExpiresAt().isAfter(Instant.now()))
+          .orElse(false);
+  ```
+
+- `revoke(token)`: localiza por hash y marca `revoked = true` (se usa en el logout y en la rotación).
+
+> El flujo al hacer login: se genera el token en claro → se devuelve al cliente → en BD se guarda **solo el hash**. Cada validación posterior parte del token que envía el cliente y compara su hash con el almacenado.
+
 ### 1.5 — Seguridad
 
 #### `JwtService`
@@ -1216,6 +1317,22 @@ Gateway
 ```
 
 Esto permite que el `Gateway` pueda validar el token sin llamar al `Identity Service` en cada request. El sistema es **_stateless_** para la validación del _access token_.
+
+##### ¿Cómo se ve un JWT por dentro?
+
+Un JWT es un string con **tres partes separadas por puntos**: `header.payload.signature`. Las tres están codificadas en **base64url** (los signos `+`, `/`, `=` se sustituyen por `-`, `_`, y se omiten los rellenos).
+
+```
+eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqYXZpZXJA... .SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+└────────────┬───────────┘ └──────────┬───────────┘ └──────────────┬──────────────┘
+        header (algoritmo)       payload (claims)           firma (HS256)
+```
+
+1. **Header**: indica el algoritmo de firma, `{"alg":"HS256"}`.
+2. **Payload**: los claims (el JSON que se vio arriba: `sub`, `uid`, `roles`, `type`, `jti`, `iss`, `iat`, `exp`). **Ojo**: base64url **no es cifrado** — cualquiera puede decodificarlo y leer el payload. Por eso los tokens solo llevan datos no sensibles (email, id, roles), y nunca el `password_hash`.
+3. **Firma**: se calcula como `HMAC-SHA256(header + "." + payload, APP_JWT_SECRET)`. Si alguien modifica el payload, la firma ya no coincide y `jwtService.parse()` lanza `JwtException`.
+
+Este diseño explica por qué **no se puede confiar en el payload sin verificar la firma**: la firma es lo que garantiza que el token no fue alterado y que fue emitido por quien conoce el secret.
 
 #### `JwtAuthFilter`
 
@@ -1439,12 +1556,12 @@ El frontend recibe `#error=access_denied` y puede mostrar el mensaje correspondi
 
 Expone los endpoints de autenticación:
 
-| Endpoint               | Descripción                                                         |
-| ---------------------- | ------------------------------------------------------------------- |
-| `POST /auth/register`  | Registra un usuario, devuelve `201` + tokens + cookie refresh       |
-| `POST /auth/login`     | Autentica, devuelve `200` + tokens + cookie refresh                 |
-| `POST /auth/refresh`   | Rota el refresh token (desde cookie **o** body) y emite un par nuevo|
-| `POST /auth/logout`    | Revoca el refresh token, limpia la cookie, devuelve `204`           |
+| Endpoint              | Descripción                                                          |
+| --------------------- | -------------------------------------------------------------------- |
+| `POST /auth/register` | Registra un usuario, devuelve `201` + tokens + cookie refresh        |
+| `POST /auth/login`    | Autentica, devuelve `200` + tokens + cookie refresh                  |
+| `POST /auth/refresh`  | Rota el refresh token (desde cookie **o** body) y emite un par nuevo |
+| `POST /auth/logout`   | Revoca el refresh token, limpia la cookie, devuelve `204`            |
 
 Detalle de `/auth/refresh` y `/auth/logout`: admiten el refresh token desde la **cookie** `refresh_token` o desde el **body** JSON (`RefreshRequest`), lo que mantiene compatibilidad con clientes que no usan cookies:
 
@@ -1478,12 +1595,12 @@ admin.setRoles(Set.of(Role.ADMIN, Role.USER));
 
 `@RestControllerAdvice` centraliza la transformación de excepciones en **JSON uniforme**:
 
-| Excepción                         | HTTP | Respuesta                                              |
-| --------------------------------- | ---- | ------------------------------------------------------ |
-| `EmailAlreadyExistsException`     | 409  | `{"error":"email_already_exists"}`                     |
-| `InvalidRefreshTokenException`    | 401  | `{"error":"invalid_refresh_token"}`                    |
-| `AuthenticationException`         | 401  | `{"error":"bad_credentials"}`                          |
-| `MethodArgumentNotValidException` | 400  | `{"error":"validation_failed","fields":{...}}`         |
+| Excepción                         | HTTP | Respuesta                                      |
+| --------------------------------- | ---- | ---------------------------------------------- |
+| `EmailAlreadyExistsException`     | 409  | `{"error":"email_already_exists"}`             |
+| `InvalidRefreshTokenException`    | 401  | `{"error":"invalid_refresh_token"}`            |
+| `AuthenticationException`         | 401  | `{"error":"bad_credentials"}`                  |
+| `MethodArgumentNotValidException` | 400  | `{"error":"validation_failed","fields":{...}}` |
 
 ```java
 @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -1596,6 +1713,33 @@ Gateway :8080  ─── ruta /auth/**, /users/** ───▶ Identity Service 
 
 > Decisión de implementación: este proyecto usa **Spring Cloud Gateway en modo WebMVC** (`spring-cloud-starter-gateway-server-webmvc`), en lugar de la variante reactiva (WebFlux). Es la versión para stacks servlet, más sencilla de integrar con Spring Security clásico y suficiente para el enrutamiento que se necesita.
 
+#### Dependencias del gateway (`pom.xml`)
+
+El POM del gateway es más pequeño que el de identity-service porque el gateway **no persiste nada** ni tiene lógica de negocio:
+
+| Dependencia                                  | Para qué sirve                                            |
+| -------------------------------------------- | --------------------------------------------------------- |
+| `spring-cloud-starter-gateway-server-webmvc` | El propio gateway (rutas y proxy)                         |
+| `spring-boot-starter-security`               | Filtro JWT, `SecurityFilterChain`, entry point 401        |
+| `jjwt-api` / `jjwt-impl` / `jjwt-jackson`    | **Solo para verificar** la firma de los JWT (JJWT 0.12.6) |
+| `spring-boot-starter-actuator`               | `/actuator/health`                                        |
+| `spring-boot-starter-security-test`          | Tests                                                     |
+
+> Las versiones de las dependencias Spring Cloud se resuelven por el BOM `spring-cloud-dependencies:2025.1.2` importado en el parent POM (sección 0.2), así que no aparecen `<version>`.
+
+#### Clase principal
+
+```java
+@SpringBootApplication
+public class GatewayApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(GatewayApplication.class, args);
+    }
+}
+```
+
+Mismo patrón que identity-service: `@SpringBootApplication` + `main`. El paquete base es `com.booksocial.gateway`, donde viven el `SecurityConfig`, el `JwtService` y el filtro.
+
 ### 2.2 — `application.yaml` del gateway
 
 ```yaml
@@ -1604,18 +1748,18 @@ spring:
     name: gateway
 
   config:
-    import: "optional:file:.env[.properties]"   # mismo patrón de secretos que identity-service
+    import: "optional:file:.env[.properties]" # mismo patrón de secretos que identity-service
 
   threads:
     virtual:
-      enabled: true                              # hilos virtuales (Java 21)
+      enabled: true # hilos virtuales (Java 21)
 
   cloud:
     gateway:
       server:
         webmvc:
           routes:
-            - id: identity                        # nombre de la ruta
+            - id: identity # nombre de la ruta
               uri: ${IDENTITY_SERVICE_URI:http://localhost:8081}
               predicates:
                 - Path=/auth/**,/users/**
@@ -1625,8 +1769,8 @@ server:
 
 app:
   jwt:
-    secret: ${APP_JWT_SECRET}                    # MISMO secret que identity-service
-    issuer: booksocial-identity                  # MISMO issuer
+    secret: ${APP_JWT_SECRET} # MISMO secret que identity-service
+    issuer: booksocial-identity # MISMO issuer
 
 management:
   endpoints:
@@ -1673,7 +1817,7 @@ public class JwtService {
 
 `parse()` falla (lanza `JwtException`) si la firma no coincide, si el issuer es otro o si el token está expirado. Gracias al **secret compartido**, el gateway valida el token **sin llamar al identity-service en cada request**: la validación del access token es totalmente **stateless**.
 
-### 2.4 — `JwtAuthFilter` del gateway y el patrón *strip-then-assert*
+### 2.4 — `JwtAuthFilter` del gateway y el patrón _strip-then-assert_
 
 El filtro se ejecuta en cada petición y hace dos cosas: **autenticar** y **propagar la identidad**:
 
@@ -1718,7 +1862,7 @@ if (header != null && header.startsWith("Bearer ")) {
 5. Puebla el `SecurityContextHolder` (igual que en identity-service).
 6. Construye un `UserHeadersRequestWrapper` y continúa la cadena con la petición **envuelta**.
 
-> **Patrón *strip-then-assert*** (quitar-y-afirmar): el gateway **elimina** cualquier header `X-User-*` que el cliente envíe (un cliente podría falsificarlos) y los **reemplaza** por los valores derivados del JWT ya verificado. Así, el cliente **no puede suplantar** una identidad, porque cualquier `X-User-Id` que ponga será descartado.
+> **Patrón _strip-then-assert_** (quitar-y-afirmar): el gateway **elimina** cualquier header `X-User-*` que el cliente envíe (un cliente podría falsificarlos) y los **reemplaza** por los valores derivados del JWT ya verificado. Así, el cliente **no puede suplantar** una identidad, porque cualquier `X-User-Id` que ponga será descartado.
 
 ### 2.5 — `UserHeadersRequestWrapper`
 
@@ -1814,14 +1958,59 @@ shared/
 environments/      # configuraciones por entorno
 ```
 
+#### Punto de entrada
+
+Angular 21 usa **standalone components** (no se crean `NgModule`). El arranque está en `main.ts`:
+
+```ts
+import { bootstrapApplication } from "@angular/platform-browser";
+import { appConfig } from "./app/app.config";
+import { App } from "./app/app";
+
+bootstrapApplication(App, appConfig).catch((err) => console.error(err));
+```
+
+`index.html` solo contiene `<app-root></app-root>`, y el componente raíz `App` (`app.html`) se limita a un `<router-outlet />`:
+
+```html
+<router-outlet />
+```
+
+Todo lo demás son rutas y componentes cargados por el router.
+
+#### Alias de rutas (tsconfig)
+
+`tsconfig.json` define alias para evitar importaciones relativas largas (`../../../core/...`):
+
+```json
+"paths": {
+  "@core/*":     ["./src/app/core/*"],
+  "@features/*": ["./src/app/features/*"],
+  "@shared/*":   ["./src/app/shared/*"],
+  "@env/*":      ["./src/environments/*"]
+}
+```
+
+Así, en cualquier componente: `import { AuthService } from '@core/services/auth.service'`.
+
+Además, el compilador está en modo `strict` (incluido `strictTemplates`), por lo que **las plantillas HTML también se tipan**: un error en `user.age`, un pipe mal escrito o un control inexistente se detectan en build, no en producción.
+
 #### `proxy.conf.json`: evitar CORS en desarrollo
 
 Durante `ng serve`, el frontend está en `:4200` y el backend en `:8080`. Para no tener problemas de CORS, el proxy de desarrollo reenvía las llamadas al backend:
 
 ```json
 {
-  "/auth":  { "target": "http://localhost:8080", "changeOrigin": true, "secure": false },
-  "/users": { "target": "http://localhost:8080", "changeOrigin": true, "secure": false }
+  "/auth": {
+    "target": "http://localhost:8080",
+    "changeOrigin": true,
+    "secure": false
+  },
+  "/users": {
+    "target": "http://localhost:8080",
+    "changeOrigin": true,
+    "secure": false
+  }
 }
 ```
 
@@ -1832,19 +2021,88 @@ El código Angular llama a `/auth/login` (ruta relativa) y el proxy lo redirige 
 ```ts
 export const environment = {
   production: false,
-  googleAuthUrl: 'http://localhost:8081/oauth2/authorization/google',
+  googleAuthUrl: "http://localhost:8081/oauth2/authorization/google",
 };
 ```
 
 El login de Google **no pasa por el gateway**: apunta directamente a `:8081`. Es el comportamiento esperado documentado en el Bloque 1.6 (el gateway devuelve `401` en esa ruta).
 
-### 3.2 — `AuthService`: estado de sesión en el cliente
+> El fichero se define dos veces (`environments.ts` y `environments.development.ts`). En Angular, `ng serve` usa el de desarrollo, y al compilar para producción se sustituye por el de producción (`fileReplacements` en `angular.json`). De esta forma, el valor puede cambiar por entorno sin tocar el código.
 
-El estado de la sesión se mantiene en memoria con `BehaviorSubject` (para que los componentes se suscriban a cambios):
+#### Enrutado y lazy loading
+
+Las rutas raíz se definen en `app.routes.ts` combinando las de cada feature:
 
 ```ts
-private readonly accessTokenStore = new BehaviorSubject<string | null>(null);
-private readonly authenticated = new BehaviorSubject<boolean>(false);
+export const routes: Routes = [
+  { path: "", pathMatch: "full", redirectTo: "home" },
+  ...authRoutes, // /login, /register, /oauth2/callback
+  ...homeRoutes, // /home
+  { path: "**", redirectTo: "home" }, // ruta comodín
+];
+```
+
+Cada feature exporta sus propias rutas y usa **carga diferida** (`loadComponent`): el código del componente solo se descarga cuando el usuario navega a esa ruta. Por ejemplo `features/auth/routes.ts`:
+
+```ts
+{
+  path: 'login',
+  canActivate: [guestGuard],                       // si ya está logueado → /home
+  loadComponent: () => import('./login/login').then((m) => m.Login),
+},
+```
+
+`loadComponent` con `import()` genera un **chunk separado por feature**: el bundle inicial es pequeño y las páginas de auth/home se descargan solo al visitarlas. Las guardas (`canActivate`) se evalúan antes de cargar el componente.
+
+### 3.2 — `AuthService`: estado de sesión en el cliente
+
+#### Modelos de datos (interfaces TypeScript)
+
+Los modelos replican los DTOs del backend para que TypeScript tipifique las respuestas:
+
+```ts
+// auth.models.ts
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  birthDate: string;
+}
+
+export interface TokenResponse {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number; // segundos (900 = 15 min)
+  tokenType: string; // "Bearer"
+}
+
+// user.models.ts
+export interface UserResponse {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  age: number | null;
+  roles: string[];
+}
+```
+
+`age` se tipa como `number | null` porque los usuarios de Google no tienen `birth_date` (el backend devuelve `-1`). Además existe `api-error.models.ts` con la forma de los errores del `GlobalExceptionHandler` (`{ error, message?, fields? }`).
+
+El estado de la sesión se mantiene en memoria con **signals** de Angular. Una señal es un **contenedor** que encapsula un valor y **notifica** a los consumidores interesados ​​cuando dicho valor cambia:
+
+```ts
+private readonly accessTokenStore = signal<string | null>(null);
+private readonly authenticatedStore = signal<boolean>(false);
+
+readonly accessToken = this.accessTokenStore.asReadonly();        // solo lectura pública
+readonly isAuthenticated = this.authenticatedStore.asReadonly();
 ```
 
 Métodos:
@@ -1857,56 +2115,241 @@ Métodos:
 
 > El access token vive en **memoria** (nunca en `localStorage`), lo que reduce el riesgo de robo por XSS. La sesión "larga" se restaura con la cookie httpOnly del refresh.
 
+#### `UserService`
+
+El segundo servicio del core es trivial pero ilustra el patrón: **cada dominio de la API tiene su servicio** que envuelve las llamadas HTTP tipadas.
+
+```ts
+import { inject, Injectable } from "@angular/core";
+
+@Injectable({
+  providedIn: "root",
+})
+export class UserService {
+  private readonly http = inject(HttpClient);
+
+  me(): Observable<UserResponse> {
+    return this.http.get<UserResponse>("/users/me");
+  }
+}
+```
+
+- `providedIn: 'root'`: crea un **singleton** inyectable en toda la app (no hace falta registrarlo en ningún módulo).
+- **Inyección sin constructor**: `inject(HttpClient)` asigna la dependencia a un campo usando la función `inject()`, en vez de `constructor(private readonly http: HttpClient)`. Es el patrón de Angular standalone: al no declarar constructor, el componente o servicio es más simple y las dependencias son visibles como campos. Se usa igualmente en componentes, guardas, interceptores y el `app.config.ts`.
+
+  ```ts
+  // El patrón se repite en todos los componentes del frontend
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  ```
+
+  > Los dos estilos son válidos; `inject()` solo puede usarse en el contexto de inyección (creación de un componente/servicio, o en funciones como guardas e interceptores). La ventaja principal: no hace falta el constructor y el código es declarativo.
+
+- La ruta es relativa (`/users/me`): en desarrollo el proxy la reenvía a `:8080`; en producción se serviría bajo el mismo dominio que el gateway.
+
 ### 3.3 — Interceptor JWT y guardas de ruta
 
 #### `AuthInterceptor` (`HttpInterceptorFn`)
 
-Se registra con `provideHttpClient(withInterceptors([authInterceptor]))`. Hace tres cosas:
+Se registra con `provideHttpClient(withInterceptors([authInterceptor]))` en `app.config.ts`. Hace tres cosas:
 
-1. **No toca los endpoints de auth**: `/auth/login`, `/auth/register`, `/auth/refresh`, `/auth/logout` no llevan token.
-2. **Adjunta el `Bearer` token** a cualquier otra petición.
+1. **No toca los endpoints de auth**: `/auth/login`, `/auth/register`, `/auth/refresh`, `/auth/logout` no llevan access token, por lo que no se interceptan.
+2. **Clona y adjunta el `Bearer` token** a cualquier otra petición.
 3. **Manejo del 401 (refresh automático)**: si una petición protegida devuelve `401` y la sesión existe, llama a `auth.refresh()` y **reintenta** la petición original con el token nuevo:
 
 ```ts
 return auth.refresh().pipe(
-  catchError(() => { auth.clearSession(); return throwError(() => error); }),
-  switchMap(() => next(req.clone({ setHeaders: { Authorization: `Bearer ${auth.accessToken}` } }))),
+  catchError(() => {
+    auth.clearSession();
+    return throwError(() => error);
+  }),
+  switchMap(() => {
+    const freshToken = auth.accessToken(); // lectura del signal (llamada de función)
+    return next(
+      freshToken
+        ? req.clone({ setHeaders: { Authorization: `Bearer ${freshToken}` } })
+        : req,
+    );
+  }),
 );
 ```
+
+Antes de reintentar, el interceptor también lee el signal: `const token = auth.accessToken();` y lo adjunta como `Authorization: Bearer ...`.
 
 Si el refresh también falla, limpia la sesión y propaga el error (el usuario tendrá que volver a loguearse).
 
 #### Guardas
 
-- **`authGuard`**: si `!isAuthenticated` redirige a `/login` → protege rutas privadas (p.ej. `home`).
-- **`guestGuard`**: si `isAuthenticated` redirige a `/home` → evita que un usuario logueado vea login/registro.
+- **`authGuard`**: si `!auth.isAuthenticated()` redirige a `/login` → protege rutas privadas (p.ej. `home`).
+- **`guestGuard`**: si `auth.isAuthenticated()` redirige a `/home` → evita que un usuario logueado vea login/registro.
+
+```ts
+// auth.guard.ts — las guardas leen el signal como función
+export const authGuard = (): boolean => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+
+  if (!auth.isAuthenticated()) {
+    router.navigate(["/login"]);
+    return false;
+  }
+  return true;
+};
+```
 
 #### `app.config.ts`: restauración de sesión al arrancar
 
 ```ts
-provideAppInitializer(() => inject(AuthService).restoreSession())
+provideAppInitializer(() => inject(AuthService).restoreSession());
 ```
 
 Antes de renderizar la app, Angular intenta renovar la sesión con el refresh token de la cookie. Así, al hacer F5 la sesión sobrevive.
 
 ### 3.4 — Páginas y flujo OAuth2
 
-- **`login`**: formulario reactivo (`ReactiveFormsModule`) con validación de email/contraseña; mapea `error.status === 401` a "Invalid email or password."; botón "Continuar con Google" que hace `window.location.href = googleAuthUrl`.
-- **`register`**: igual con los campos adicionales (`firstName`, `lastName`, `birthDate`).
-- **`oauth2-callback`**: lee el **fragmento** de la URL (`#access_token=...` o `#error=access_denied`), limpia la URL con `history.replaceState`, aplica el token o muestra el error:
+- **`login`**: formulario reactivo construido con `FormBuilder` y bindeado a la plantilla con `[formGroup]` / `formControlName`. La validación es **reactiva**: los `Validators` se declaran en el modelo, no en el HTML.
 
-```ts
-const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-const token = params.get('access_token');
-if (token) { this.auth.applyOAuthToken(token); this.router.navigate(['/home']); }
-```
+  ```ts
+  readonly form = this.fb.nonNullable.group({
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', Validators.required],
+  });
 
-- **`home`**: llama a `userService.me()` (`GET /users/me` vía gateway) para mostrar el perfil y ofrece logout.
+  submit(): void {
+    if (this.form.invalid) return;              // el botón además se deshabilita en el HTML
+    this.loading = true;
+    this.auth.login(this.form.getRawValue()).subscribe({
+      next: () => this.router.navigate(['/home']),
+      error: (error: HttpErrorResponse) => {
+        this.loading = false;
+        this.errorMessage = error.status === 401
+          ? 'Invalid email or password.'
+          : 'Unexpected error. Please try again.';
+      },
+    });
+  }
+
+  loginWithGoogle(): void {
+    window.location.href = environment.googleAuthUrl;   // inicia el flujo OAuth2 en el navegador
+  }
+  ```
+
+  `nonNullable.group(...)` crea controles que nunca devuelven `null` (mejor tipado). En la plantilla (`login.html`), el botón de envío muestra "Logging in..." mientras carga y se deshabilita con `[disabled]="form.invalid"`; el error se muestra con `@if (errorMessage)`.
+
+- **`register`**: igual que login, pero con un **validador personalizado** para la fecha de nacimiento (no puede ser hoy ni futura):
+
+  ```ts
+  const pastDate: ValidatorFn = (control: AbstractControl): ValidationErrors | null => {
+    const value = control.value;
+    if (!value) return null;
+    const date = new Date(value);
+    const todayStart = new Date().setHours(0, 0, 0, 0);
+    return date.getTime() >= todayStart ? { notPast: true } : null;
+  };
+
+  readonly form = this.fb.nonNullable.group({
+    firstName: ['', Validators.required],
+    lastName: ['', Validators.required],
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', [Validators.required, Validators.minLength(8), Validators.maxLength(72)]],
+    birthDate: ['', [Validators.required, pastDate]],
+  });
+  ```
+
+  Los límites del password (`minLength(8)`, `maxLength(72)`) replican el `@Size(min = 8, max = 72)` del `RegisterRequest` (Bloque 1.3): la validación ocurre en **ambos lados** (defensa en profundidad). Además mapea más códigos del `GlobalExceptionHandler`:
+
+  ```ts
+  error.status === 409
+    ? "There is already an account with that email."
+    : error.status === 400
+      ? "Please check the form data."
+      : "Unexpected error. Please try again.";
+  ```
+
+- **`oauth2-callback`**: es la ruta a la que redirige el backend tras el login de Google (`app.oauth2.frontend-redirect-uri`, Bloque 1.6). El token llega en el **fragmento** de la URL, nunca en la ruta. El componente lo lee, lo aplica y limpia la URL:
+
+  ```ts
+  ngOnInit(): void {
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    history.replaceState(null, '', '/oauth2/callback');   // quita el token de la barra de direcciones
+
+    const token = params.get('access_token');
+    const error = params.get('error');
+
+    if (token) {
+      this.auth.applyOAuthToken(token);
+      this.router.navigate(['/home']);
+      return;
+    }
+
+    this.errorMessage = error === 'access_denied'
+      ? 'You have canceled the Google login.'
+      : 'Failed to login with Google.';
+    this.router.navigate(['/login'], { queryParams: { googleError: this.errorMessage } });
+  }
+  ```
+
+  `history.replaceState` borra el fragmento `#access_token=...` de la URL (evita que quien vea la pantalla copie el token) y el login lee el error con `route.snapshot.queryParamMap.get('googleError')`.
+
+- **`home`**: llama a `userService.me()` (`GET /users/me` vía gateway) para mostrar el perfil y ofrece logout. El componente muestra `loading` mientras carga, `error` si falla, y utiliza los pipes `InitialsPipe` (iniciales para el avatar) y `CapitalizePipe` (capitaliza nombres):
+
+  ```ts
+  ngOnInit(): void {
+    this.userService.me().subscribe({
+      next: (user) => { this.user = user; this.loading = false; },
+      error: () => { this.loading = false; this.error = 'Failed to load your profile.'; },
+    });
+  }
+
+  logout(): void {
+    this.auth.logout().subscribe({ next: () => this.router.navigate(['/login']) });
+  }
+  ```
 
 ```
 Sin sesión:  /login → (Google) → :8081 → :4200/oauth2/callback#access_token=... → /home
 Con sesión:  /home → interceptor añade Bearer → gateway valida → me() responde
 ```
+
+#### Plantillas con el control flow de Angular 21
+
+Las plantillas usan las **nuevas estructuras de control** de Angular (`@if`, `@else if`, `@for`) en lugar de los antiguos `*ngIf`/`*ngFor`. En `home.html`:
+
+```html
+@if (loading) {
+<p>Loading profile…</p>
+} @else if (error) {
+<p class="error">{{ error }}</p>
+} @else if (user) {
+<section class="profile">
+  <div class="avatar">
+    {{ user.firstName + ' ' + user.lastName | initials }}
+  </div>
+  <h2>{{ user.firstName }} {{ user.lastName }}</h2>
+  <dl>
+    <dt>Email</dt>
+    <dd>{{ user.email }}</dd>
+    <dt>Age</dt>
+    <dd>{{ user.age ?? '—' }}</dd>
+    <dt>Roles</dt>
+    <dd>
+      @for (role of user.roles; track role) {
+      <span class="role">{{ role | capitalize }}</span>
+      }
+    </dd>
+  </dl>
+</section>
+}
+```
+
+Detalles:
+
+- **`@if` / `@else if`**: se renderiza solo el bloque cuya condición se cumple (loading → error → usuario).
+- **`@for ... track role`**: el `track` proporciona a Angular la clave de identidad de cada elemento de la lista (clave para el rendimiento al re-renderizar).
+- **Pipes**: `initials` muestra las iniciales del nombre (`InitialsPipe`) y `capitalize` pone la primera letra del rol en mayúscula (`CapitalizePipe`).
+- **`user.age ?? '—'`**: _nullish coalescing_ en plantilla; muestra el guion si la edad es `null` (usuarios de Google sin `birth_date`).
+
+El mismo patrón `@if` se usa en `login.html` para mostrar `errorMessage`, y el botón se deshabilita con `[disabled]="form.invalid"` para evitar envíos de formularios inválidos.
 
 ## Bloque 4 — Contenerización y CI ampliado
 
@@ -1938,6 +2381,14 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 
 > El gateway es idéntico, cambiando el módulo (`-pl gateway`) y el JAR copiado (`gateway-0.1.0-SNAPSHOT.jar`).
 
+Detalle de los flags de Maven:
+
+- `-pl <módulo>` (project list): compila **solo** el módulo indicado, no todo el monorepo. Es importante porque el contexto Docker es la raíz, y sin `-pl` se compilarían todos los servicios.
+- `-am` (also make): compila también los **proyectos de los que depende** ese módulo (en este caso, el parent `booksocial-parent`). Sin `-am`, Maven no encontraría el POM padre.
+- `-DskipTests`: omite los tests en el build de la imagen (ya se ejecutan en CI); acelera el build del contenedor.
+
+El nombre del JAR no es casual: Maven lo genera como `<artifactId>-<version>.jar`. Como el parent POM fija `version` a `0.1.0-SNAPSHOT` para todos los módulos, los JARs son `identity-service-0.1.0-SNAPSHOT.jar` y `gateway-0.1.0-SNAPSHOT.jar`, y las rutas en los `COPY --from=build` se corresponden con cada `target/` de módulo.
+
 ### 4.2 — `.dockerignore` raíz
 
 ```gitignore
@@ -1963,43 +2414,43 @@ Protege dos cosas: **tamaño** del contexto de build (no se copian `target/`, `n
 A los tres servicios de infraestructura se añaden las aplicaciones:
 
 ```yaml
-  identity-service:
-    build:
-      context: ..
-      dockerfile: identity-service/Dockerfile
-    container_name: booksocial-identity
-    ports:
-      - "8081:8081"
-    env_file:
-      - ../identity-service/.env          # secretos desde el host, fuera de la imagen
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/booksocial
-    depends_on:
-      postgres:
-        condition: service_healthy        # espera a que Postgres esté realmente listo
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
+identity-service:
+  build:
+    context: ..
+    dockerfile: identity-service/Dockerfile
+  container_name: booksocial-identity
+  ports:
+    - "8081:8081"
+  env_file:
+    - ../identity-service/.env # secretos desde el host, fuera de la imagen
+  environment:
+    SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/booksocial
+  depends_on:
+    postgres:
+      condition: service_healthy # espera a que Postgres esté realmente listo
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 30s
 
-  gateway:
-    build:
-      context: ..
-      dockerfile: gateway/Dockerfile
-    container_name: booksocial-gateway
-    ports:
-      - "8080:8080"
-    env_file:
-      - ../gateway/.env
-    environment:
-      IDENTITY_SERVICE_URI: http://identity-service:8081
-    depends_on:
-      identity-service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+gateway:
+  build:
+    context: ..
+    dockerfile: gateway/Dockerfile
+  container_name: booksocial-gateway
+  ports:
+    - "8080:8080"
+  env_file:
+    - ../gateway/.env
+  environment:
+    IDENTITY_SERVICE_URI: http://identity-service:8081
+  depends_on:
+    identity-service:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
 ```
 
 Tres patrones importantes:
@@ -2019,6 +2470,7 @@ docker compose -f infrastructure/docker-compose.yml up -d --build
 El workflow `ci.yml` pasa de un solo job a dos:
 
 **Job `build` (backend)** — el original, ampliado con:
+
 - un **servicio PostgreSQL** (contenedor de soporte de GitHub Actions) que cubre la dependencia de identity-service en los tests;
 - los **secrets** (`APP_JWT_SECRET`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`) inyectados como variables de entorno.
 
@@ -2044,20 +2496,20 @@ jobs:
 **Job `frontend`** — compila el Angular con Node 24:
 
 ```yaml
-  frontend:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci          # instalación reproducible desde el lockfile
-      - run: npm run build   # ng build
+frontend:
+  runs-on: ubuntu-latest
+  defaults:
+    run:
+      working-directory: frontend
+  steps:
+    - uses: actions/checkout@v5
+    - uses: actions/setup-node@v5
+      with:
+        node-version: "24"
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+    - run: npm ci # instalación reproducible desde el lockfile
+    - run: npm run build # ng build
 ```
 
 > Los dos jobs se ejecutan **en paralelo**; para que el pipeline esté verde deben compilar backend y frontend a la vez.
