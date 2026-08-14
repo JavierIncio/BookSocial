@@ -49,6 +49,28 @@ services:
       timeout: 5s
       retries: 10
 
+  gateway:
+    build:
+      context: ..
+      dockerfile: gateway/Dockerfile
+    container_name: booksocial-gateway
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../gateway/.env
+    environment:
+      IDENTITY_SERVICE_URI: http://identity-service:8081
+      USER_SERVICE_URI: http://user-service:8082
+    depends_on:
+      identity-service:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
   identity-service:
     build:
       context: ..
@@ -70,22 +92,25 @@ services:
       retries: 12
       start_period: 30s
 
-  gateway:
+  user-service:
     build:
       context: ..
-      dockerfile: gateway/Dockerfile
-    container_name: booksocial-gateway
+      dockerfile: user-service/Dockerfile
+    container_name: booksocial-user
     ports:
-      - "8080:8080"
+      - "8082:8082"
     env_file:
-      - ../gateway/.env
+      - ../user-service/.env
     environment:
-      IDENTITY_SERVICE_URI: http://identity-service:8081
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/booksocial
+      SPRING_MONGODB_URI: mongodb://booksocial:booksocial@mongodb:27017/booksocial?authSource=admin
     depends_on:
-      identity-service:
+      postgres:
+        condition: service_healthy
+      mongodb:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 12
