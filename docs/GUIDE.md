@@ -2567,3 +2567,145 @@ Y en navegador: `ng serve` en `:4200` → register → home → F5 (sesión rest
 - **`ddl-auto: update` solo en desarrollo**; para producción se usarían migraciones (Flyway/Liquibase).
 - **Parent POM como única fuente de versión** (Spring Boot 4.1.0 + BOM Spring Cloud 2025.1.2).
 - **Contenedores con healthchecks y `depends_on: service_healthy`** para arranques ordenados y verificables.
+
+---
+
+## Bloque 6 — Fase 2: user-service (perfil con CQRS dual-write)
+
+**Objetivo**: construir `user-service` (puerto `8082`), propietario del perfil de usuario y las amistades. Arquitectura **CQRS**: PostgreSQL como _command side_ (escrituras) y MongoDB como _query side_ (lecturas). En esta fase la sincronización es **dual-write** (ambas escrituras en la misma operación) y se migrará a eventos con RabbitMQ en la sub-fase 2.4.
+
+### 6.1 — Esqueleto del user-service
+
+#### Creación del proyecto
+
+Se genera con Spring Initializr (Java 21, Spring Boot 4.1.0) con los starters `webmvc`, `data-jpa`, `data-mongodb`, `security`, `validation` y `actuator` (más sus variantes `-test`). Se descomprime en `user-service/` y se elimina el `.gitkeep`.
+
+El `pom.xml` se reemplaza para heredar del parent del monorepo y añadir jjwt:
+
+```xml
+<parent>
+  <groupId>com.booksocial</groupId>
+  <artifactId>booksocial-parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+</parent>
+```
+
+Se añade `<module>user-service</module>` a los `<modules>` del `pom.xml` raíz. El build del módulo usa el wrapper:
+
+```powershell
+.\mvnw.cmd -B -pl user-service -am package -DskipTests
+```
+
+#### Configuración (`application.yaml`)
+
+- Puerto `8082`.
+- `spring.config.import: optional:file:.env[.properties]` para cargar secretos desde `.env` (mismo mecanismo que el resto de servicios).
+- Datasource PostgreSQL `booksocial`/`booksocial`, overridable con `SPRING_DATASOURCE_URL`.
+- `spring.mongodb.uri` con default local y override por `SPRING_MONGODB_URI`.
+- `app.jwt.secret` (mismo `APP_JWT_SECRET` que identity-service) e `issuer: booksocial-identity`.
+
+> **Clave de Spring Boot 4.1**: el prefijo de configuración de MongoDB **cambió** de `spring.data.mongodb.*` a **`spring.mongodb.*`** (variable de entorno correspondiente `SPRING_MONGODB_URI`). Usar el antiguo no se aplica y el servicio queda conectando a `localhost:27017`.
+
+#### Seguridad (valida JWT, no emite)
+
+A diferencia del identity-service, `user-service` **no emite tokens**: solo valida los emitidos por identity-service usando el mismo secreto y el mismo `issuer`.
+
+- `JwtService`: método `parse()` (verifica firma, issuer y expiración) sin capacidad de generar tokens.
+- `JwtAuthFilter`: valida el `Authorization: Bearer` y solo autentica tokens `type=access`.
+- `RestAuthenticationEntryPoint`: respuesta JSON `401` uniforme.
+- `SecurityConfig`: `STATELESS`, `permitAll` para `/actuator/health` (healthcheck sin auth) y el resto autenticado.
+
+#### Identidad del usuario: `X-User-Id`
+
+El gateway aplica el patrón **strip-then-assert**: elimina cualquier `X-User-*` entrante y los reconstruye a partir del JWT validado. Los servicios downstream (user-service) confían en estos headers:
+
+- `X-User-Id` (Long, id del usuario en identity-service)
+- `X-User-Email`
+
+Por eso los endpoints usan `@RequestHeader("X-User-Id")` en lugar de leer claims: la autenticación ya la hizo el gateway y estos headers son de confianza (la ruta directa a `:8082` solo se usa en desarrollo).
+
+#### Ruta en el gateway y contenerización
+
+El gateway enruta `/profiles/**` y `/follows/**` → `${USER_SERVICE_URI:http://localhost:8082}`. En `docker-compose.yml` el gateway recibe `USER_SERVICE_URI: http://user-service:8082` (dentro de la red Docker el hostname es el nombre del servicio, no `localhost`).
+
+El `Dockerfile` del user-service espeja el del identity-service (build `maven:3.9-eclipse-temurin-21` + runtime `eclipse-temurin:21-jre` con curl), empaquetando con `-pl user-service -am package`.
+
+El servicio `user-service` en compose:
+
+- `env_file: ../user-service/.env` (APP_JWT_SECRET) + overrides `SPRING_DATASOURCE_URL` y `SPRING_MONGODB_URI` apuntando a `postgres`/`mongodb` por hostname.
+- `depends_on` de `postgres` y `mongodb` con `service_healthy`.
+- Healthcheck `curl -f http://localhost:8082/actuator/health`.
+
+> **Mongo root y `authSource`**: el usuario `booksocial` de Mongo se crea como **root** (en la base `admin`). Al conectar con URI `mongodb://booksocial:booksocial@host:27017/booksocial`, el driver autentica contra `booksocial` y falla con `Authentication failed`. Solución: **`?authSource=admin`** al final de la URI.
+
+### 6.2 — Perfil con CQRS dual-write
+
+#### El modelo en dos lados
+
+**Command side — `domain/Profile` (Postgres)**: entidad JPA con `userId` único, `email`, `displayName`, `bio`, `location`, `avatarUrl` y timestamps. Es la fuente de verdad de las escrituras.
+
+**Query side — `readmodel/ProfileReadModel` (Mongo)**: documento con `_id` = `userId`, los mismos campos de presentación y los contadores derivados (`followersCount`, `followingCount`, `postsCount`). Se construye para lecturas baratas (un solo fetch, sin joins).
+
+> **Dual-write**: en esta fase el `ProfileService` escribe **en la misma operación** en Postgres (JPA) y en Mongo (upsert del read model). No hay transacción distribuida ni eventos todavía: se acepta una **consistencia eventual débil** (si una de las dos escrituras falla, puede haber desfase temporal). Esto se sustituirá por eventos RabbitMQ en 2.4 (sin Outbox, limitación documentada).
+
+#### `ProfileService`
+
+- `getOrCreate(userId, email)`: si no existe el perfil en Postgres, lo crea; luego hace `upsertReadModel` (actualiza los campos de presentación del documento Mongo y lo guarda).
+- `update(userId, email, request)`: crea el perfil si faltaba (misma semántica on-demand), aplica los campos del DTO (solo los no nulos) y vuelve a sincronizar el read model.
+- `getByUserId(userId)`: lee **exclusivamente de Mongo** — demuestra la separación de rutas de lectura del CQRS.
+
+El `@Transactional` cubre la operación Postgres; el write de Mongo se hace dentro del mismo flujo (dual-write).
+
+#### `ProfileController`
+
+- `GET /profiles/me` → `getOrCreate` con `X-User-Id`/`X-User-Email` (crea el perfil en el primer acceso).
+- `PUT /profiles/me` → `update` con validación (`@Valid` sobre `UpdateProfileRequest` con `@Size`).
+- `GET /profiles/{userId}` → lectura desde Mongo.
+
+El `GlobalExceptionHandler` traduce `ProfileNotFoundException` a `404` JSON y los fallos de validación a `400` JSON.
+
+#### Verificación E2E (Docker)
+
+Con un token real vía gateway (`POST /auth/login` → `accessToken`):
+
+```
+GET  /profiles/me   -> crea el perfil on-demand (userId, email, contadores a 0)
+PUT  /profiles/me   -> actualiza displayName/bio/location/avatarUrl
+GET  /profiles/10   -> devuelve el perfil leído de Mongo
+GET  /profiles/999  -> 404 {"error":"not_found","message":"Profile not found for userId 999"}
+```
+
+Se comprueba el dual-write consultando las dos bases directamente:
+
+```sql
+SELECT user_id, email, display_name FROM profiles;
+```
+
+```javascript
+db.profiles.find({}, {userId: 1, displayName: 1, _id: 0}).toArray()
+```
+
+### 6.3 — Errores encontrados en la Fase 2 (con solución directa)
+
+1. **user-service conecta a `localhost:27017` aunque `SPRING_DATA_MONGODB_URI` está definida**
+   - Causa: en Spring Boot 4.1 el prefijo de Mongo es `spring.mongodb.*`, no `spring.data.mongodb.*`; la variable correcta es `SPRING_MONGODB_URI`.
+   - Solución: renombrar la propiedad en `application.yaml` y la variable en `docker-compose.yml`.
+
+2. **`MongoCommandException ... AuthenticationFailed` (error 18)**
+   - Causa: el usuario `booksocial` es root y se autentica contra `admin`; sin `?authSource=admin` el driver autentica contra la DB del URI (`booksocial`).
+   - Solución: añadir `?authSource=admin` a la URI de Mongo.
+
+3. **`Unable to rename ...jar.original` al reconstruir con Maven en Windows**
+   - Causa: el proceso `java` que ejecuta el JAR (o el contenedor local de la app) mantiene el fichero bloqueado.
+   - Solución: detener el proceso `java` (o `docker compose down` del servicio) antes de `mvn clean/package`.
+
+4. **Nota (no es un bug): 401 en `/profiles/me` al probar con un script propio**
+   - Causa: el JSON de login devuelve `accessToken` (camelCase); usar `access_token` produce `Bearer ` vacío → el gateway responde `401`.
+   - Solución: usar `$login.accessToken`.
+
+### Decisiones de diseño de la Fase 2 (resumen)
+
+- **user-service propietario del perfil**: Postgres para comandos, Mongo para lecturas (CQRS con dual-write en esta sub-fase).
+- **Validación JWT delegada al gateway + headers de confianza**: el servicio downstream confía en `X-User-Id`/`X-User-Email` (patrón strip-then-assert).
+- **Creación on-demand del perfil**: `GET/PUT /profiles/me` materializan el perfil en el primer acceso; no hace falta endpoint de alta.
+- **Sin eventos todavía**: la sincronización de amistades migrará a RabbitMQ en 2.4 (sin Outbox; limitación documentada).
