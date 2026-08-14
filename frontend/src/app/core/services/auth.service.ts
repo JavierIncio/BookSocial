@@ -1,22 +1,17 @@
 import { HttpClient } from '@angular/common/http';
-import { Injectable } from '@angular/core';
-import { LoginRequest, TokenResponse } from '@core/models/auth.models';
-import { BehaviorSubject, firstValueFrom, Observable, tap } from 'rxjs';
+import { inject, Injectable, signal } from '@angular/core';
+import { LoginRequest, RegisterRequest, TokenResponse } from '@core/models/auth.models';
+import { firstValueFrom, Observable, tap } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly accessTokenStore = new BehaviorSubject<string | null>(null);
-  private readonly authenticated = new BehaviorSubject<boolean>(false);
+  private readonly http = inject(HttpClient);
 
-  constructor(private readonly http: HttpClient) {}
+  private readonly accessTokenStore = signal<string | null>(null);
+  private readonly authenticatedStore = signal<boolean>(false);
 
-  get accessToken() {
-    return this.accessTokenStore.getValue();
-  }
-
-  get isAuthenticated() {
-    return this.authenticated.getValue();
-  }
+  readonly accessToken = this.accessTokenStore.asReadonly();
+  readonly isAuthenticated = this.authenticatedStore.asReadonly();
 
   login(credentials: LoginRequest): Observable<TokenResponse> {
     return this.http
@@ -24,7 +19,7 @@ export class AuthService {
       .pipe(tap((tokens) => this.applyToken(tokens)));
   }
 
-  register(payload: LoginRequest): Observable<TokenResponse> {
+  register(payload: RegisterRequest): Observable<TokenResponse> {
     return this.http
       .post<TokenResponse>('/auth/register', payload)
       .pipe(tap((tokens) => this.applyToken(tokens)));
@@ -60,12 +55,12 @@ export class AuthService {
   }
 
   private applyToken(tokens: TokenResponse): void {
-    this.accessTokenStore.next(tokens.accessToken);
-    this.authenticated.next(true);
+    this.accessTokenStore.set(tokens.accessToken);
+    this.authenticatedStore.set(true);
   }
 
   clearSession(): void {
-    this.accessTokenStore.next(null);
-    this.authenticated.next(false);
+    this.accessTokenStore.set(null);
+    this.authenticatedStore.set(false);
   }
 }

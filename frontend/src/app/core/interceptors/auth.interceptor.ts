@@ -12,12 +12,12 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     return next(req);
   }
 
-  const token = auth.accessToken;
+  const token = auth.accessToken();
   const authorized = token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req;
 
   return next(authorized).pipe(
     catchError((error: HttpErrorResponse) => {
-      if (error.status !== 401 || !auth.isAuthenticated) {
+      if (error.status !== 401 || !auth.isAuthenticated()) {
         return throwError(() => error);
       }
 
@@ -27,7 +27,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
           return throwError(() => error);
         }),
         switchMap(() => {
-          const freshToken = auth.accessToken;
+          const freshToken = auth.accessToken();
           return next(
             freshToken ? req.clone({ setHeaders: { Authorization: `Bearer ${freshToken}` } }) : req,
           );
