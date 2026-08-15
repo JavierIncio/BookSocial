@@ -6,12 +6,14 @@ import com.booksocial.book.readmodel.BookReadModelRepository;
 import com.booksocial.book.repository.BookRepository;
 import com.booksocial.book.web.dto.CreateBookRequest;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Component
+@ConditionalOnProperty(name = "app.seed.books", havingValue = "true", matchIfMissing = true)
 public class BookDataSeeder implements CommandLineRunner {
 
     private final BookRepository bookRepository;
