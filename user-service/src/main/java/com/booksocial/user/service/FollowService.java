@@ -1,6 +1,7 @@
 package com.booksocial.user.service;
 
 import com.booksocial.user.domain.*;
+import com.booksocial.user.events.FollowEventPublisher;
 import com.booksocial.user.readmodel.FollowReadModel;
 import com.booksocial.user.readmodel.FollowReadModelRepository;
 import com.booksocial.user.readmodel.ProfileReadModelRepository;
@@ -19,14 +20,15 @@ public class FollowService {
 
     private final FollowRepository followRepository;
     private final FollowReadModelRepository followReadModelRepository;
-    private final ProfileReadModelRepository profileReadModelRepository;
+    private final FollowEventPublisher eventPublisher;
+
 
     public FollowService(FollowRepository followRepository,
                          FollowReadModelRepository followReadModelRepository,
-                         ProfileReadModelRepository profileReadModelRepository) {
+                         FollowEventPublisher eventPublisher) {
         this.followRepository = followRepository;
         this.followReadModelRepository = followReadModelRepository;
-        this.profileReadModelRepository = profileReadModelRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     public FollowResponse follow(Long followerId, Long targetUserId) {
@@ -37,8 +39,7 @@ public class FollowService {
             throw new AlreadyFollowingException(followerId, targetUserId);
         }
         Follow follow = followRepository.save(new Follow(followerId, targetUserId));
-        followReadModelRepository.save(new FollowReadModel(followerId, targetUserId));
-        adjustCounters(followerId, targetUserId, 1);
+        eventPublisher.publishFollowed(followerId, targetUserId);
         return toResponse(follow.getFollowerId(), follow.getFolloweeId(), follow.getCreatedAt());
     }
 
@@ -46,9 +47,7 @@ public class FollowService {
         Follow follow = followRepository.findByFollowerIdAndFolloweeId(followerId, targetUserId)
                 .orElseThrow(() -> new NotFollowingException(followerId, targetUserId));
         followRepository.delete(follow);
-        followReadModelRepository.findByFollowerIdAndFolloweeId(followerId, targetUserId)
-                .ifPresent(followReadModelRepository::delete);
-        adjustCounters(followerId, targetUserId, -1);
+        eventPublisher.publishUnfollowed(followerId, targetUserId);
     }
 
     public List<FollowResponse> followers(Long userId) {
@@ -61,17 +60,6 @@ public class FollowService {
         return followReadModelRepository.findByFollowerId(userId).stream()
                 .map(f -> toResponse(f.getFollowerId(), f.getFolloweeId(), f.getCreatedAt()))
                 .toList();
-    }
-
-    private void adjustCounters(Long followerId, Long followeeId, int delta) {
-        profileReadModelRepository.findByUserId(followerId).ifPresent(p -> {
-            p.setFollowingCount(Math.max(0, p.getFollowingCount() + delta));
-            profileReadModelRepository.save(p);
-        });
-        profileReadModelRepository.findByUserId(followeeId).ifPresent(p -> {
-            p.setFollowersCount(Math.max(0, p.getFollowersCount() + delta));
-            profileReadModelRepository.save(p);
-        });
     }
 
     private FollowResponse toResponse(Long followerId, Long followeeId, Instant createdAt) {

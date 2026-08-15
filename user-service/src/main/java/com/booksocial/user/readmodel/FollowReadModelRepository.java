@@ -10,4 +10,6 @@ public interface FollowReadModelRepository extends MongoRepository<FollowReadMod
     Optional<FollowReadModel> findByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
     List<FollowReadModel> findByFollowerId(Long followerId);
     List<FollowReadModel> findByFolloweeId(Long followeeId);
+    long countByFollowerId(Long followerId);
+    long countByFolloweeId(Long followeeId);
 }
