@@ -29,11 +29,13 @@ Continuar el monorepo **BookSocial** en la **Fase 2: `user-service` (perfil + am
 
 - **Fase 1 cerrada**: identidad (roles ADMIN/MODERATOR/USER/MINOR_USER, JWT access/refresh rotativo en cookie httpOnly), gateway WebMVC con filtro JWT + headers `X-User-*`, frontend Angular 21, contenerización y CI `build`+`frontend`. Refactor frontend a signals + `inject()` commiteado (`37af97c`).
 - **Fase 2.1 — Esqueleto user-service**: proyecto Spring Initializr en `user-service/` (webmvc, data-jpa, data-mongodb, security, validation, actuator), `pom.xml` con parent `booksocial-parent` + jjwt, `<module>` añadido al raíz, `application.yaml` (puerto 8082, env import, `spring.mongodb.uri` overridable, `app.jwt.issuer: booksocial-identity`), `.env` con `APP_JWT_SECRET`, seguridad parse-only (JwtService/JwtAuthFilter/RestAuthenticationEntryPoint/SecurityConfig), ruta en gateway, Dockerfile multi-stage, servicio `user-service` en compose (`depends_on` postgres+mongodb `service_healthy`, healthcheck curl, env `SPRING_DATASOURCE_URL` + `SPRING_MONGODB_URI` con `?authSource=admin`). 6/6 contenedores healthy.
-- **Fase 2.2 — Perfil CQRS dual-write (verificado)**: `domain/Profile` (JPA, `userId` único), `readmodel/ProfileReadModel` (Mongo, `_id`=userId, contadores followers/following/posts), repositorios JPA+Mongo, `service/ProfileService` (getOrCreate/update con upsert del read model; getByUserId lee solo de Mongo), `web/ProfileController` (`GET/PUT /profiles/me` con `@RequestHeader X-User-Id/X-User-Email`, `GET /profiles/{userId}`), DTOs record + validación, `ProfileNotFoundException` + `GlobalExceptionHandler` (404/400 JSON). E2E vía gateway OK: creación on-demand (userId 10), PUT con dual-write (dato en Postgres y Mongo), lectura desde Mongo, 404 JSON. `verify` local OK (test de contexto pasa).
+- **Fase 2.2 — Perfil CQRS dual-write (cerrada, commit `b1adbdc`)**: `domain/Profile` (JPA, `userId` único), `readmodel/ProfileReadModel` (Mongo, `_id`=userId, contadores followers/following/posts), repositorios JPA+Mongo, `service/ProfileService` (getOrCreate/update con upsert del read model; getByUserId lee solo de Mongo), `web/ProfileController` (`GET/PUT /profiles/me` con `@RequestHeader X-User-Id/X-User-Email`, `GET /profiles/{userId}`), DTOs record + validación, `ProfileNotFoundException` + `GlobalExceptionHandler` (404/400 JSON). E2E vía gateway OK: creación on-demand (userId 10), PUT con dual-write (dato en Postgres y Mongo), lectura desde Mongo, 404 JSON.
+- **Fase 2.3 — Amistades (verificada, pendiente de cerrar)**: `domain/Follow` (JPA, unique `(followerId, followeeId)`, self-follow → 400), `readmodel/FollowReadModel` (Mongo, `_id`=`<followerId>:<followeeId>`), repositorios JPA+Mongo, `service/FollowService` (follow/unfollow dual-write + ajuste de contadores en `ProfileReadModel` con `Math.max(0,...)`; followers/following leen solo de Mongo), `web/FollowController` (`POST/DELETE /follows/{targetUserId}` → 201/204, `GET /follows/{userId}/followers|following`), excepciones `SelfFollowException` (400), `AlreadyFollowingException` (409), `NotFollowingException` (404) + handlers en `GlobalExceptionHandler`. E2E vía gateway OK con dos usuarios (10 y 19): 201/409/400, listas, contadores +1/-1, unfollow 204/404, limpieza en Postgres y Mongo. `verify` local OK.
+- **Cierre 2.2 commiteado y pusheado**: `b1adbdc` (feat user-service 2.1+2.2) + `c283e9e` (docs GUIDE Bloque 6 + SESSION_STATE). CI verde.
 
 ### Active
 
-- **Cierre de la Fase 2.2**: documentar y commitear el avance (GUIDE.md Bloque 6 + SESSION_STATE.md) y pushear para verificar CI. Después arrancar 2.3.
+- **Cierre de la Fase 2.3**: documentar (GUIDE.md 6.4) y commitear/pushear para verificar CI. Después arrancar 2.4.
 
 ### Blocked
 
@@ -41,10 +43,9 @@ Continuar el monorepo **BookSocial** en la **Fase 2: `user-service` (perfil + am
 
 ## Next Move
 
-1. Commitear el cierre de 2.2 (docs + `user-service`) y comprobar CI en verde (Actions en navegador; `gh` no instalado).
-2. **Fase 2.3 — Amistades (follows)**: `Follow` (Postgres, follower/followee `userId`, único par + self-follow rechazado) y read model en Mongo con contadores; endpoints `/follows/{targetUserId}` (POST follow / DELETE unfollow), `GET /follows/{userId}/followers` y `GET /follows/{userId}/following`; ajustar contadores del `ProfileReadModel`; verificar E2E vía gateway.
-3. **Fase 2.4 — Eventos RabbitMQ**: publicar `FollowedEvent`/`UnfollowedEvent` y mover la sincronización de amistades a eventos (sin Outbox; limitación documentada). El perfil permanece en dual-write.
-4. Mantener convenciones: secretos en `.env` por módulo, healthcheck Actuator, Dockerfile + servicio compose, `verify` local antes de commit, y cerrar cada fase actualizando ROADMAP + GUIDE + commit/push.
+1. Commitear el cierre de 2.3 (docs + código follows) y comprobar CI en verde (Actions en navegador; `gh` no instalado).
+2. **Fase 2.4 — Eventos RabbitMQ**: publicar `FollowedEvent`/`UnfollowedEvent` y mover la sincronización de amistades a eventos (sin Outbox; limitación documentada). El perfil permanece en dual-write. Añadir el starter de AMQP al user-service, definir exchange/queue/binding, y al cierre actualizar ROADMAP.md con la Fase 2 completa.
+3. Mantener convenciones: secretos en `.env` por módulo, healthcheck Actuator, Dockerfile + servicio compose, `verify` local antes de commit, y cerrar cada fase actualizando ROADMAP + GUIDE + commit/push.
 
 ## Relevant Files
 

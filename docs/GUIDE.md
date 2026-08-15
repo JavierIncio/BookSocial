@@ -2703,6 +2703,51 @@ db.profiles.find({}, {userId: 1, displayName: 1, _id: 0}).toArray()
    - Causa: el JSON de login devuelve `accessToken` (camelCase); usar `access_token` produce `Bearer ` vacío → el gateway responde `401`.
    - Solución: usar `$login.accessToken`.
 
+### 6.4 — Amistades (follows)
+
+#### Modelo dual
+
+Igual que el perfil, el follow vive en los dos lados:
+
+**Command side — `domain/Follow` (Postgres)**: entidad JPA con `followerId` y `followeeId`, unique constraint sobre la pareja `(followerId, followeeId)` y `createdAt`. Semántica: `followerId` sigue a `followeeId` (`follower → followee`).
+
+**Query side — `readmodel/FollowReadModel` (Mongo)**: documento con `_id` = `"<followerId>:<followeeId>"` (misma invariante de unicidad que Postgres, así Mongo tampoco admite duplicados), los dos ids y `createdAt`. Las listas de seguidores/siguiendo se leen de esta colección.
+
+#### `FollowService`
+
+- `follow(followerId, targetUserId)`: rechaza el **self-follow** (`SelfFollowException` → 400) y el **duplicado** (`AlreadyFollowingException` → 409); en éxito hace dual-write (Postgres + Mongo) y ajusta los contadores.
+- `unfollow(followerId, targetUserId)`: si no existe la relación lanza `NotFollowingException` → 404; si existe, borra en los dos lados y decrementa los contadores.
+- `followers(userId)` / `following(userId)`: leen **solo de Mongo** (ruta de lectura del CQRS).
+
+Los **contadores** viven en el `ProfileReadModel`: al seguir se incrementa `followingCount` del follower y `followersCount` del followee; al dejar de seguir se decrementan (con `Math.max(0, ...)` para no dejar contadores negativos).
+
+> Limitación aceptada en esta sub-fase: si el perfil del followee aún no se ha materializado en Mongo, su contador no se actualiza (se materializará en su primer `GET /profiles/me`). La sincronización por eventos de 2.4 eliminará estas dependencias directas.
+
+#### `FollowController` (`/follows`)
+
+- `POST /follows/{targetUserId}` → 201 (crea la relación; `followerId` desde `X-User-Id`).
+- `DELETE /follows/{targetUserId}` → 204 (borra la relación).
+- `GET /follows/{userId}/followers` → lista de `FollowResponse` (`followerId`, `followeeId`, `createdAt`).
+- `GET /follows/{userId}/following` → lista de `FollowResponse`.
+
+El gateway ya enruta `/follows/**` → user-service, por lo que no hay que tocar su configuración para esta sub-fase.
+
+#### Verificación E2E (Docker)
+
+Con dos cuentas reales (`A` = e2e.final@test.com, `B` = cuenta registrada para el test):
+
+```
+POST   /follows/{B}         -> 201 {"followerId":10,"followeeId":19,...}
+POST   /follows/{B} (rep.)  -> 409
+POST   /follows/{A}         -> 400 (self-follow)
+GET    /follows/{A}/following -> [ {followeeId: B} ]
+GET    /follows/{B}/followers -> [ {followerId: A} ]
+GET    /profiles/{A}        -> followingCount=1 ; GET /profiles/{B} -> followersCount=1
+DELETE /follows/{B}         -> 204 ; repetición -> 404
+```
+
+Se comprueba el dual-write limpiando la relación en ambas bases (`SELECT count(*) FROM follows;` y `db.follows.countDocuments()` → 0 tras el unfollow).
+
 ### Decisiones de diseño de la Fase 2 (resumen)
 
 - **user-service propietario del perfil**: Postgres para comandos, Mongo para lecturas (CQRS con dual-write en esta sub-fase).
