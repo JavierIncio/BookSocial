@@ -61,6 +61,7 @@ services:
     environment:
       IDENTITY_SERVICE_URI: http://identity-service:8081
       USER_SERVICE_URI: http://user-service:8082
+      BOOK_SERVICE_URI: http://book-service:8083
     depends_on:
       identity-service:
         condition: service_healthy
@@ -114,6 +115,30 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  book-service:
+    build:
+      context: ..
+      dockerfile: book-service/Dockerfile
+    container_name: booksocial-book
+    ports:
+      - "8083:8083"
+    env_file:
+      - ../book-service/.env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/booksocial
+      SPRING_MONGODB_URI: mongodb://booksocial:booksocial@mongodb:27017/booksocial?authSource=admin
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 12
