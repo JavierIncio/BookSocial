@@ -2795,3 +2795,48 @@ Y en los logs del servicio: `Processed FollowedEvent: 10 -> 19` / `Processed Unf
 - **Validación JWT delegada al gateway + headers de confianza**: el servicio downstream confía en `X-User-Id`/`X-User-Email` (patrón strip-then-assert).
 - **Creación on-demand del perfil**: `GET/PUT /profiles/me` materializan el perfil en el primer acceso; no hace falta endpoint de alta.
 - **Amistades sincronizadas por eventos**: `follow`/`unfollow` escriben en Postgres y publican `FollowedEvent`/`UnfollowedEvent`; un consumidor actualiza Mongo y los contadores de forma idempotente (recalculados con `countBy*`). Sin Outbox (limitación documentada: hueco commit-tras-publish). El perfil permanece en dual-write.
+
+---
+
+## Bloque 7 — book-service (catálogo de libros con CQRS)
+
+La Fase 3 replica el patrón de la Fase 2 en un nuevo microservicio: **Postgres para comandos, Mongo para lecturas/búsquedas**, pero sin eventos todavía (no hay consumidores del catálogo; se añadirán cuando exista uno, p.ej. reseñas o notificaciones).
+
+### 7.1 — Esqueleto del book-service
+
+Mismo procedimiento que 6.1, con estas variantes:
+
+- Generado con Spring Initializr (Java 21, Spring Boot 4.1.0) con los starters `webmvc`, `data-jpa`, `data-mongodb`, `security`, `validation` y `actuator` (más `-test`). Parent `booksocial-parent`, módulo `book-service` en el POM raíz.
+- Puerto **`8083`**. `application.yaml` idéntico al de user-service cambiando el nombre del servicio y el puerto.
+- Seguridad parse-only copiada de user-service (`JwtService`, `JwtAuthFilter`, `RestAuthenticationEntryPoint`, `SecurityConfig`).
+- Gateway: ruta `Path=/books/**` → `${BOOK_SERVICE_URI:http://localhost:8083}` y variable `BOOK_SERVICE_URI: http://book-service:8083` en el compose del gateway.
+- Dockerfile y servicio de compose espejo de user-service (healthcheck curl a `/actuator/health` en `8083`, `depends_on` postgres y mongodb `service_healthy`).
+
+> **Errores típicos de réplica**: olvidar la dependencia `org.postgresql:postgresql` (runtime) en el POM del nuevo módulo — sin ella el arranque falla con `ClassNotFoundException: org.postgresql.Driver`. También es fácil dejar el JAR en ejecución bloqueando `mvn clean/package` en Windows (detener el proceso java antes).
+
+### 7.2 — Catálogo CQRS con búsqueda
+
+- **Command side**: `domain/Book` (JPA, `isbn` con `uniqueConstraints`, `createdAt` fijado en el constructor) + `repository/BookRepository` (`findByIsbn`, `existsByIsbn`).
+- **Query side**: `readmodel/BookReadModel` (Mongo, `@Document(collection = "books")`, `_id` = isbn) + `readmodel/BookReadModelRepository` con la búsqueda derivada de Spring Data:
+
+  ```java
+  List<BookReadModel> findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(String title, String author);
+  ```
+
+  Genera un `$regex` en Mongo con `i` (case-insensitive) sobre título **o** autor.
+- **`BookService`**: `create` (dual-write: guarda `Book` en Postgres y hace upsert del read model), `findByIsbn` y `search` **leen solo de Mongo** (misma separación de rutas CQRS que el perfil).
+- **`BookController`**:
+  - `POST /books` → **solo ADMIN**: lee el header `X-User-Roles` que pone el gateway (roles del JWT unidos con comas) y lanza 403 si no contiene `ADMIN`. Devuelve **201**.
+  - `GET /books/{isbn}` → 200 (lectura Mongo); 404 si no existe.
+  - `GET /books/search?q=` → 200 con la lista de coincidencias.
+- DTOs record con bean validation (`CreateBookRequest`: `@NotBlank @Size(max=20)` en isbn, `@NotBlank` en título y autor), `GlobalExceptionHandler` con 400/403/404/409 JSON.
+- **`BookDataSeeder`** (CommandLineRunner): si `bookRepository.count() == 0`, inserta 8 libros de ejemplo escribiendo **ambos lados** (Postgres + Mongo). Se usa para dar datos a la búsqueda en local sin levantar la UI.
+
+> **Roles vía header de confianza**: el gateway reconstruye `X-User-Roles` a partir del claim `roles` del JWT validado (mismo patrón strip-then-assert que `X-User-Id`). El control de permisos downstream es `roles != null && Arrays.stream(roles.split(",")).map(String::trim).anyMatch("ADMIN"::equals)`.
+
+### Decisiones de diseño de la Fase 3 (resumen)
+
+- **Catálogo en CQRS puro sin eventos**: el alta hace dual-write; las lecturas y la búsqueda van solo a Mongo. No hay publicador/consumidor porque **no existe todavía un consumidor del catálogo**; cuando aparezca (reseñas, notificaciones), el alta publicará `BookCreatedEvent` y el seeder dejará de escribir Mongo directamente.
+- **Alta protegida por rol**: la creación de libros exige `ADMIN` (header `X-User-Roles` del gateway). Los usuarios normales reciben 403.
+- **Búsqueda derivada en Mongo**: una única consulta derivada sobre título/autor es suficiente para esta fase; si hiciera falta ranking o tolerancia a errores, se migraría a un índice `text` de Mongo.
+- **Réplica del esqueleto**: el coste de crear un microservicio nuevo bajó respecto a la Fase 2: copiar la seguridad parse-only y el patrón de compose ya está estandarizado (único cambio: puerto, nombre y drivers).

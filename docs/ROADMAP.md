@@ -483,3 +483,38 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - [x] Actualizar este documento al cerrar la fase.
 
 ---
+
+## Fase 3 — book-service: catálogo de libros con CQRS ✅ Completada
+
+**Objetivo**: construir `book-service` (puerto `8083`), propietario del catálogo de libros, replicando el patrón CQRS del user-service (PostgreSQL command side + MongoDB query side) con búsqueda y alta restringida por rol ADMIN.
+
+**Progreso**: Fase 3 completada — esqueleto del servicio (3.1) y catálogo con búsqueda (3.2).
+
+### Fase 3.1 — Esqueleto del book-service ✅ Completada
+
+**Objetivo**: crear el microservicio contenerizado y enrutado por el gateway.
+
+- Proyecto Spring Initializr (Java 21, Spring Boot 4.1.0) en `book-service/` con starters `webmvc`, `data-jpa`, `data-mongodb`, `security`, `validation`, `actuator`; parent `booksocial-parent` + jjwt 0.12.6; `<module>` en el POM raíz.
+- Puerto `8083`, `application.yaml` espejo de user-service; seguridad parse-only copiada (`JwtService`, `JwtAuthFilter`, `RestAuthenticationEntryPoint`, `SecurityConfig`).
+- Gateway: ruta `/books/**` → `${BOOK_SERVICE_URI:http://localhost:8083}`; compose con `BOOK_SERVICE_URI: http://book-service:8083`.
+- Dockerfile multi-stage y servicio compose espejo de user-service (healthcheck Actuator, `depends_on` postgres+mongodb `service_healthy`).
+- **Error resuelto**: falta del driver `org.postgresql:postgresql` (runtime) en el POM → `ClassNotFoundException: org.postgresql.Driver` al arrancar.
+
+### Fase 3.2 — Catálogo CQRS con búsqueda ✅ Completada
+
+**Objetivo**: alta de libros (solo ADMIN), consulta por ISBN y búsqueda por título/autor desde el read model.
+
+- `domain/Book` (JPA, `isbn` único) como command side; `readmodel/BookReadModel` (Mongo, `_id`=isbn) como query side.
+- `BookService`: `create` dual-write; `findByIsbn`/`search` leen **solo de Mongo**.
+- `BookController`: `POST /books` (201, exige rol `ADMIN` en el header `X-User-Roles` del gateway, 403 en caso contrario), `GET /books/{isbn}` (200/404), `GET /books/search?q=` (búsqueda `ContainingIgnoreCase` sobre título/autor).
+- DTOs record con validación, excepciones `BookNotFoundException`/`BookAlreadyExistsException`/`ForbiddenException` y `GlobalExceptionHandler` (400/403/404/409).
+- `BookDataSeeder` (CommandLineRunner): si la tabla está vacía, inserta 8 libros de ejemplo escribiendo ambos lados (Postgres + Mongo).
+- E2E vía gateway: 403 (USER), 201 (ADMIN), 409 (duplicado), 400 (validación), 200/404 por ISBN (Mongo), búsqueda case-insensitive, 9 libros en ambas BD. `verify` local OK.
+
+### Cierre de la Fase 3
+
+- [x] Fase 3.1 — Esqueleto del book-service contenerizado y enrutado por el gateway.
+- [x] Fase 3.2 — Catálogo CQRS con búsqueda y alta restringida por rol ADMIN.
+- [x] Actualizar este documento al cerrar la fase.
+
+---
