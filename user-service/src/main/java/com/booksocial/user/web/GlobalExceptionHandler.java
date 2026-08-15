@@ -1,6 +1,6 @@
 package com.booksocial.user.web;
 
-import com.booksocial.user.domain.ProfileNotFoundException;
+import com.booksocial.user.domain.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -24,5 +24,23 @@ public class GlobalExceptionHandler {
                 .map(f -> f.getField() + ": " + f.getDefaultMessage())
                 .findFirst().orElse("Invalid request");
         return ResponseEntity.badRequest().body(Map.of("error", "validation", "message", message));
+    }
+
+    @ExceptionHandler(SelfFollowException.class)
+    public ResponseEntity<Map<String, Object>> selfFollow(SelfFollowException ex) {
+        return ResponseEntity.badRequest()
+                .body(Map.of("error", "bad_request", "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(AlreadyFollowingException.class)
+    public ResponseEntity<Map<String, Object>> alreadyFollowing(AlreadyFollowingException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", "conflict", "message", ex.getMessage()));
+    }
+
+    @ExceptionHandler(NotFollowingException.class)
+    public ResponseEntity<Map<String, Object>> notFollowing(NotFollowingException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "not_found", "message", ex.getMessage()));
     }
 }
