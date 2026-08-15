@@ -409,3 +409,77 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - [x] Actualizar este documento al cerrar la fase.
 
 ---
+
+## Fase 2 — user-service: perfil y amistades con CQRS ✅ Completada
+
+**Objetivo**: construir `user-service` (puerto `8082`), propietario del perfil de usuario y de las amistades, con arquitectura CQRS (PostgreSQL command side + MongoDB query side) y sincronización de amistades por eventos RabbitMQ.
+
+**Progreso**: Fase 2 completada — esqueleto del servicio (2.1), perfil con dual-write (2.2), amistades con dual-write (2.3) y migración de la sincronización de amistades a eventos (2.4).
+
+### Fase 2.1 — Esqueleto del user-service ✅ Completada
+
+**Objetivo**: crear el microservicio contenerizado y conectado al gateway.
+
+- Proyecto Spring Initializr (Java 21, Spring Boot 4.1.0) con starters `webmvc`, `data-jpa`, `data-mongodb`, `security`, `validation`, `actuator` en `user-service/`; `pom.xml` con parent `booksocial-parent` + jjwt 0.12.6; `<module>` añadido al parent POM raíz.
+- `application.yml`: puerto `8082`, `.env` import, datasource Postgres `booksocial`/`booksocial`, `spring.mongodb.uri` overridable, `app.jwt.secret`/`issuer: booksocial-identity`, actuator.
+- Seguridad parse-only: `JwtService` (valida sin emitir), `JwtAuthFilter` (solo `type=access`), `RestAuthenticationEntryPoint` (401 JSON), `SecurityConfig` (STATELESS, `/actuator/health` permitAll).
+- Gateway: ruta `/profiles/**,/follows/**` → `${USER_SERVICE_URI:http://localhost:8082}`; en compose `USER_SERVICE_URI: http://user-service:8082`.
+- `Dockerfile` multi-stage (espejo de identity-service) y servicio `user-service` en compose (`depends_on` postgres+mongodb `service_healthy`, healthcheck curl, env overrides de datasource y Mongo).
+
+#### Errores encontrados en la Fase 2.1 (con solución directa)
+
+**1. user-service conecta a `localhost:27017` aunque `SPRING_DATA_MONGODB_URI` está definida**
+
+- Causa: en Spring Boot 4.1 el prefijo de Mongo es **`spring.mongodb.*`** (env `SPRING_MONGODB_URI`); `spring.data.mongodb.*` ya no se aplica.
+- Solución aplicada: renombrar la propiedad en `application.yml` y la variable en compose.
+
+**2. `MongoCommandException ... AuthenticationFailed` (error 18)**
+
+- Causa: el usuario `booksocial` es root y se autentica contra la DB `admin`; sin `?authSource=admin` el driver autentica contra la DB del URI.
+- Solución aplicada: añadir `?authSource=admin` a la URI de Mongo.
+
+**3. `Unable to rename ...jar.original` al reconstruir con Maven en Windows**
+
+- Causa: el proceso `java` que ejecuta el JAR mantiene el fichero bloqueado.
+- Solución aplicada: detener el proceso java antes de `mvn clean/package`.
+
+### Fase 2.2 — Perfil con CQRS dual-write ✅ Completada
+
+**Objetivo**: perfil de usuario con escrituras en Postgres y lecturas desde Mongo.
+
+- `domain/Profile` (JPA, `userId` único) como command side; `readmodel/ProfileReadModel` (Mongo, `_id`=userId, contadores followers/following/posts) como query side.
+- `ProfileService.getOrCreate`/`update`: dual-write (misma operación escribe Postgres y hace upsert del read model); `getByUserId` lee **solo de Mongo** (separación de rutas del CQRS).
+- `ProfileController`: `GET/PUT /profiles/me` (identidad desde headers `X-User-Id`/`X-User-Email` puestos por el gateway), `GET /profiles/{userId}`.
+- DTOs record con bean validation, `ProfileNotFoundException` y `GlobalExceptionHandler` (404/400 JSON).
+- E2E vía gateway: creación on-demand, PUT con dual-write (dato en Postgres y Mongo), lectura desde Mongo, 404 JSON.
+
+### Fase 2.3 — Amistades con CQRS dual-write ✅ Completada
+
+**Objetivo**: relación de amistad (follow) con sus listas y contadores.
+
+- `domain/Follow` (JPA, unique `(followerId, followeeId)`, self-follow → 400) y `readmodel/FollowReadModel` (Mongo, `_id`=`<followerId>:<followeeId>`).
+- `FollowController`: `POST/DELETE /follows/{targetUserId}` (201/204), `GET /follows/{userId}/followers` y `GET /follows/{userId}/following`.
+- Excepciones: `SelfFollowException` (400), `AlreadyFollowingException` (409), `NotFollowingException` (404).
+- Ajuste de contadores del `ProfileReadModel` con `Math.max(0, ...)`.
+- E2E vía gateway con dos usuarios: 201/409/400, listas, contadores +1/-1, unfollow 204/404, limpieza en ambas BD.
+
+### Fase 2.4 — Sincronización de amistades con RabbitMQ ✅ Completada
+
+**Objetivo**: desacoplar la escritura del read model de amistades usando eventos.
+
+- Dependencia `spring-boot-starter-amqp`; prefijo de configuración `spring.rabbitmq.*` (sin cambios en Boot 4.1); `guest`/`guest` válido en red Docker (`loopback_users.guest = false`).
+- `RabbitConfig`: exchange topic `booksocial.events`, colas `user-service.follows.followed` y `user-service.follows.unfollowed` con sus bindings, y `MessageConverter` `JacksonJsonMessageConverter` (reemplazo del deprecado `Jackson2JsonMessageConverter` en Spring AMQP 4) con trusted packages `com.booksocial.user.events`.
+- `FollowEventPublisher` publica `FollowedEvent`/`UnfollowedEvent` dentro de la transacción (fallo de publish → rollback de Postgres); sin Outbox (limitación documentada: hueco commit-tras-publish).
+- `FollowEventConsumer` (un `@RabbitListener` por cola): upsert/delete del `FollowReadModel` y contadores **recalculados** con `countByFollowerId`/`countByFolloweeId` (idempotente ante redelivery).
+- `FollowService` pasa a escribir solo Postgres + publicar; las listas siguen leyendo Mongo (consistencia eventual).
+- Verificación: colas drenadas (0 mensajes), bindings correctos, logs `Processed FollowedEvent/UnfollowedEvent`, Mongo y contadores actualizados.
+
+### Cierre de la Fase 2
+
+- [x] Fase 2.1 — Esqueleto del user-service contenerizado y enrutado por el gateway.
+- [x] Fase 2.2 — Perfil con CQRS dual-write (comandos Postgres, lecturas Mongo).
+- [x] Fase 2.3 — Amistades con CQRS dual-write (follow/unfollow, listas y contadores).
+- [x] Fase 2.4 — Sincronización de amistades por eventos RabbitMQ (sin Outbox; limitación documentada).
+- [x] Actualizar este documento al cerrar la fase.
+
+---

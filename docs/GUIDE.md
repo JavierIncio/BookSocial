@@ -2721,7 +2721,7 @@ Igual que el perfil, el follow vive en los dos lados:
 
 Los **contadores** viven en el `ProfileReadModel`: al seguir se incrementa `followingCount` del follower y `followersCount` del followee; al dejar de seguir se decrementan (con `Math.max(0, ...)` para no dejar contadores negativos).
 
-> Limitación aceptada en esta sub-fase: si el perfil del followee aún no se ha materializado en Mongo, su contador no se actualiza (se materializará en su primer `GET /profiles/me`). La sincronización por eventos de 2.4 eliminará estas dependencias directas.
+> Limitación aceptada en esta sub-fase: si el perfil del followee aún no se ha materializado en Mongo, su contador no se actualiza (se materializará en su primer `GET /profiles/me`). En 2.4 esta escritura directa se sustituye por eventos asíncronos (ver 6.5).
 
 #### `FollowController` (`/follows`)
 
@@ -2748,9 +2748,50 @@ DELETE /follows/{B}         -> 204 ; repetición -> 404
 
 Se comprueba el dual-write limpiando la relación en ambas bases (`SELECT count(*) FROM follows;` y `db.follows.countDocuments()` → 0 tras el unfollow).
 
+### 6.5 — Eventos RabbitMQ (sincronización asíncrona de amistades)
+
+En esta sub-fase la relación de amistad deja de escribirse en Mongo de forma síncrona: el comando escribe en Postgres y **publica un evento**; un **consumidor interno** actualiza Mongo y los contadores (eventual consistency).
+
+#### Broker y configuración
+
+- Dependencia `spring-boot-starter-amqp`. En Spring Boot 4.1 RabbitMQ **conserva** el prefijo `spring.rabbitmq.*` (env `SPRING_RABBITMQ_HOST`, etc.).
+- Credenciales por defecto `guest`/`guest`: la imagen oficial de RabbitMQ trae `loopback_users.guest = false`, así que `guest` puede conectar desde cualquier contenedor de la red.
+- `config/RabbitConfig`: exchange **topic** `booksocial.events`, **dos colas** (`user-service.follows.followed` y `user-service.follows.unfollowed`) con sus bindings, y el `MessageConverter` JSON.
+
+> **Una cola por evento**: si dos `@RabbitListener` escuchan la misma cola, RabbitMQ reparte los mensajes entre ellos al azar (no rutea por tipo). Con una cola por evento, cada listener recibe un tipo concreto y la deserialización es segura.
+
+> **Converter en Spring AMQP 4.x**: `Jackson2JsonMessageConverter` está deprecado (marcado para borrar); el reemplazo es **`JacksonJsonMessageConverter`**, con el mismo constructor de trusted packages: `new JacksonJsonMessageConverter("com.booksocial.user.events")`.
+
+#### Productor y consumidor
+
+- **Eventos**: records `FollowedEvent`/`UnfollowedEvent` con `followerId`, `followeeId` y `occurredAt`.
+- **`FollowEventPublisher`**: `RabbitTemplate.convertAndSend(exchange, routingKey, evento)`. Se publica **dentro de la transacción**: si `convertAndSend` falla, la excepción propaga y Postgres revierte → no hay evento fantasma. El único hueco es commit-tras-publish (la limitación del "sin Outbox").
+- **`FollowEventConsumer`**: un `@RabbitListener` por cola. Al recibir `FollowedEvent` hace upsert del `FollowReadModel` (idempotente, guarda solo si no existe) y recalcula contadores; al recibir `UnfollowedEvent` borra el documento y recalcula.
+- Los contadores se **recalculan** con `countByFollowerId`/`countByFolloweeId` en lugar de incrementar: así un redelivery del broker (at-least-once) no desvía los contadores.
+- `FollowService.follow`/`unfollow` ahora solo escriben en Postgres y publican el evento; `followers`/`following` siguen leyendo Mongo (consistencia eventual).
+
+#### Verificación E2E (Docker)
+
+```
+POST   /follows/{B}   -> 201
+(espera ~1-2s por el consumidor)
+Mongo: db.follows -> { _id: '10:19' }
+contadores: A.following=1, B.followers=1
+DELETE /follows/{B}  -> 204  ->  Mongo: 0 documentos, contadores a 0
+```
+
+En el broker se comprueba que las colas existen y quedan drenadas (0 mensajes) y los bindings del exchange:
+
+```
+rabbitmqctl list_bindings   # booksocial.events -> user-service.follows.followed (follow.followed)
+                            # booksocial.events -> user-service.follows.unfollowed (follow.unfollowed)
+```
+
+Y en los logs del servicio: `Processed FollowedEvent: 10 -> 19` / `Processed UnfollowedEvent: 10 -> 19`.
+
 ### Decisiones de diseño de la Fase 2 (resumen)
 
 - **user-service propietario del perfil**: Postgres para comandos, Mongo para lecturas (CQRS con dual-write en esta sub-fase).
 - **Validación JWT delegada al gateway + headers de confianza**: el servicio downstream confía en `X-User-Id`/`X-User-Email` (patrón strip-then-assert).
 - **Creación on-demand del perfil**: `GET/PUT /profiles/me` materializan el perfil en el primer acceso; no hace falta endpoint de alta.
-- **Sin eventos todavía**: la sincronización de amistades migrará a RabbitMQ en 2.4 (sin Outbox; limitación documentada).
+- **Amistades sincronizadas por eventos**: `follow`/`unfollow` escriben en Postgres y publican `FollowedEvent`/`UnfollowedEvent`; un consumidor actualiza Mongo y los contadores de forma idempotente (recalculados con `countBy*`). Sin Outbox (limitación documentada: hueco commit-tras-publish). El perfil permanece en dual-write.

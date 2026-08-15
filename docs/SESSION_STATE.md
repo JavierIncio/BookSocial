@@ -4,7 +4,7 @@ Documento de handoff para retomar el trabajo en cualquier momento. Se actualiza 
 
 ## Objective
 
-Continuar el monorepo **BookSocial** en la **Fase 2: `user-service` (perfil + amistades)** con arquitectura CQRS: PostgreSQL como command side y MongoDB como query side. La Fase 1 está cerrada (identity-service + gateway + frontend contenerizados, CI verde). La sub-fase 2.1 (esqueleto del servicio) y 2.2 (perfil con dual-write) están completas y verificadas; falta 2.3 (amistades) y 2.4 (eventos RabbitMQ).
+Continuar el monorepo **BookSocial**. La **Fase 2 (user-service: perfil + amistades con CQRS)** está completa y verificada: esqueleto (2.1), perfil con dual-write (2.2), amistades (2.3) y sincronización de amistades por eventos RabbitMQ (2.4). La Fase 1 está cerrada (identity-service + gateway + frontend contenerizados, CI verde). Falta planificar la Fase 3.
 
 ## Important Details
 
@@ -30,12 +30,14 @@ Continuar el monorepo **BookSocial** en la **Fase 2: `user-service` (perfil + am
 - **Fase 1 cerrada**: identidad (roles ADMIN/MODERATOR/USER/MINOR_USER, JWT access/refresh rotativo en cookie httpOnly), gateway WebMVC con filtro JWT + headers `X-User-*`, frontend Angular 21, contenerización y CI `build`+`frontend`. Refactor frontend a signals + `inject()` commiteado (`37af97c`).
 - **Fase 2.1 — Esqueleto user-service**: proyecto Spring Initializr en `user-service/` (webmvc, data-jpa, data-mongodb, security, validation, actuator), `pom.xml` con parent `booksocial-parent` + jjwt, `<module>` añadido al raíz, `application.yaml` (puerto 8082, env import, `spring.mongodb.uri` overridable, `app.jwt.issuer: booksocial-identity`), `.env` con `APP_JWT_SECRET`, seguridad parse-only (JwtService/JwtAuthFilter/RestAuthenticationEntryPoint/SecurityConfig), ruta en gateway, Dockerfile multi-stage, servicio `user-service` en compose (`depends_on` postgres+mongodb `service_healthy`, healthcheck curl, env `SPRING_DATASOURCE_URL` + `SPRING_MONGODB_URI` con `?authSource=admin`). 6/6 contenedores healthy.
 - **Fase 2.2 — Perfil CQRS dual-write (cerrada, commit `b1adbdc`)**: `domain/Profile` (JPA, `userId` único), `readmodel/ProfileReadModel` (Mongo, `_id`=userId, contadores followers/following/posts), repositorios JPA+Mongo, `service/ProfileService` (getOrCreate/update con upsert del read model; getByUserId lee solo de Mongo), `web/ProfileController` (`GET/PUT /profiles/me` con `@RequestHeader X-User-Id/X-User-Email`, `GET /profiles/{userId}`), DTOs record + validación, `ProfileNotFoundException` + `GlobalExceptionHandler` (404/400 JSON). E2E vía gateway OK: creación on-demand (userId 10), PUT con dual-write (dato en Postgres y Mongo), lectura desde Mongo, 404 JSON.
-- **Fase 2.3 — Amistades (verificada, pendiente de cerrar)**: `domain/Follow` (JPA, unique `(followerId, followeeId)`, self-follow → 400), `readmodel/FollowReadModel` (Mongo, `_id`=`<followerId>:<followeeId>`), repositorios JPA+Mongo, `service/FollowService` (follow/unfollow dual-write + ajuste de contadores en `ProfileReadModel` con `Math.max(0,...)`; followers/following leen solo de Mongo), `web/FollowController` (`POST/DELETE /follows/{targetUserId}` → 201/204, `GET /follows/{userId}/followers|following`), excepciones `SelfFollowException` (400), `AlreadyFollowingException` (409), `NotFollowingException` (404) + handlers en `GlobalExceptionHandler`. E2E vía gateway OK con dos usuarios (10 y 19): 201/409/400, listas, contadores +1/-1, unfollow 204/404, limpieza en Postgres y Mongo. `verify` local OK.
+- **Fase 2.3 — Amistades (cerrada, commit `403539b`)**: `domain/Follow` (JPA, unique `(followerId, followeeId)`, self-follow → 400), `readmodel/FollowReadModel` (Mongo, `_id`=`<followerId>:<followeeId>`), repositorios JPA+Mongo, `service/FollowService` (follow/unfollow dual-write + ajuste de contadores en `ProfileReadModel` con `Math.max(0,...)`; followers/following leen solo de Mongo), `web/FollowController` (`POST/DELETE /follows/{targetUserId}` → 201/204, `GET /follows/{userId}/followers|following`), excepciones `SelfFollowException` (400), `AlreadyFollowingException` (409), `NotFollowingException` (404) + handlers en `GlobalExceptionHandler`. E2E vía gateway OK con dos usuarios (10 y 19): 201/409/400, listas, contadores +1/-1, unfollow 204/404, limpieza en Postgres y Mongo. `verify` local OK.
 - **Cierre 2.2 commiteado y pusheado**: `b1adbdc` (feat user-service 2.1+2.2) + `c283e9e` (docs GUIDE Bloque 6 + SESSION_STATE). CI verde.
+- **Cierre 2.3 commiteado y pusheado**: `403539b` (feat amistades 2.3) + `56e5ea3` (docs GUIDE 6.4 + SESSION_STATE). CI verde.
+- **Fase 2.4 — Eventos RabbitMQ (verificada, pendiente de cerrar)**: starter `spring-boot-starter-amqp` (prefijo `spring.rabbitmq.*` intacto en Boot 4.1; `guest`/`guest` válido en red Docker), `config/RabbitConfig` (exchange topic `booksocial.events`, colas `user-service.follows.followed|unfollowed` con bindings, `MessageConverter` **`JacksonJsonMessageConverter`** — reemplazo del deprecado `Jackson2JsonMessageConverter` en Spring AMQP 4 — con trusted packages `com.booksocial.user.events`), records `events/FollowedEvent|UnfollowedEvent`, `events/FollowEventPublisher` (publica dentro de la transacción; sin Outbox), `events/FollowEventConsumer` (un `@RabbitListener` por cola; upsert/delete del `FollowReadModel` y contadores recalculados con `countBy*` para idempotencia). `FollowService` ahora solo escribe Postgres + publica; listas leen Mongo (eventual consistency). E2E OK: follow → evento → Mongo `10:19` + contadores; unfollow → limpieza; colas drenadas, bindings correctos, logs del consumidor. `verify` local OK.
 
 ### Active
 
-- **Cierre de la Fase 2.3**: documentar (GUIDE.md 6.4) y commitear/pushear para verificar CI. Después arrancar 2.4.
+- **Cierre de la Fase 2 completa**: documentar (GUIDE 6.5, ROADMAP Fase 2, SESSION_STATE) y commitear/pushear para verificar CI. Después planificar la Fase 3.
 
 ### Blocked
 
@@ -43,9 +45,8 @@ Continuar el monorepo **BookSocial** en la **Fase 2: `user-service` (perfil + am
 
 ## Next Move
 
-1. Commitear el cierre de 2.3 (docs + código follows) y comprobar CI en verde (Actions en navegador; `gh` no instalado).
-2. **Fase 2.4 — Eventos RabbitMQ**: publicar `FollowedEvent`/`UnfollowedEvent` y mover la sincronización de amistades a eventos (sin Outbox; limitación documentada). El perfil permanece en dual-write. Añadir el starter de AMQP al user-service, definir exchange/queue/binding, y al cierre actualizar ROADMAP.md con la Fase 2 completa.
-3. Mantener convenciones: secretos en `.env` por módulo, healthcheck Actuator, Dockerfile + servicio compose, `verify` local antes de commit, y cerrar cada fase actualizando ROADMAP + GUIDE + commit/push.
+1. Commitear el cierre de la Fase 2 (código eventos + docs) y comprobar CI en verde (Actions en navegador; `gh` no instalado).
+2. Planificar la **Fase 3** con el usuario (candidatos: `book-service` con catálogo siguiendo el patrón CQRS del user-service, o integrar perfil/amistades en el frontend Angular). Mantener convenciones: `.env` por módulo, healthcheck Actuator, Dockerfile + servicio compose, `verify` local antes de commit, y cerrar cada fase actualizando ROADMAP + GUIDE + commit/push.
 
 ## Relevant Files
 
