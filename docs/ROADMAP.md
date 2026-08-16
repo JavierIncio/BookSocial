@@ -518,3 +518,39 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - [x] Actualizar este documento al cerrar la fase.
 
 ---
+
+## Fase 4 — review-service: reseñas CQRS + primer evento cruzado ✅ Completada
+
+**Objetivo**: construir `review-service` (puerto `8084`) con reseñas de libros (CQRS: Postgres command + Mongo query + stats agregadas) y el primer **evento cruzado** entre servicios: book-service publica `BookCreatedEvent` → review-service consume y mantiene un catálogo local desnormalizado.
+
+**Progreso**: Fase 4 completada — esqueleto (4.1), evento cruzado (4.2) y reseñas CQRS (4.3).
+
+### Fase 4.1 — Esqueleto del review-service ✅ Completada
+
+- Proyecto Spring Initializr en `review-service/` con starters `webmvc`, `data-jpa`, `data-mongodb`, `security`, `validation`, `actuator`, `amqp`; parent `booksocial-parent` + jjwt; driver `postgresql`.
+- Puerto `8084`, seguridad parse-only copiada, gateway `Path=/reviews/**` → `${REVIEW_SERVICE_URI:http://localhost:8084}`.
+- Compose con `depends_on` postgres+mongodb+rabbitmq, `SPRING_RABBITMQ_HOST`.
+
+### Fase 4.2 — Evento cruzado BookCreatedEvent ✅ Completada
+
+- **book-service**: añadido `spring-boot-starter-amqp`, `RabbitConfig` (exchange + converter), `BookCreatedEvent` + `BookEventPublisher`. `BookService.create` y `BookDataSeeder` publican eventos.
+- **review-service**: `RabbitConfig` (exchange + cola `review-service.books.created` + binding), `BookCreatedEvent` (copia local para deserialización), `BookCreatedEventConsumer` → upsert `BookRefReadModel` (isbn, title, author) en Mongo.
+- Verificación: reset de libros + re-seeding → 8 `book_refs` en review-service; POST /books → evento → 9º `book_ref`.
+
+### Fase 4.3 — Reseñas CQRS con stats agregadas ✅ Completada
+
+- `domain/Review` (JPA, unique `(book_isbn, user_id)`, rating 1-5) + `ReviewRepository`.
+- `readmodel/ReviewReadModel` (Mongo, `_id` = `"<isbn>:<userId>"`) + `ReviewStatsReadModel` (Mongo, ratingCount, averageRating).
+- `ReviewService`: `create` (verifica catálogo local → 422 si no existe, dual-write + syncStats), `update`, `listByBook` (Mongo), `summary` (Mongo).
+- `ReviewController`: `POST /reviews/{isbn}` (201/409/422), `PUT /reviews/{isbn}` (200), `GET /reviews/books/{isbn}`, `GET /reviews/books/{isbn}/summary`.
+- DTOs record con validación, excepciones 404/409/422/400, `GlobalExceptionHandler`.
+- E2E: POST 201, duplicate 409, rating inválido 400, PUT 200 con sync, libro inexistente 422, review de libro nuevo vía evento 201. `verify` local OK.
+
+### Cierre de la Fase 4
+
+- [x] Fase 4.1 — Esqueleto del review-service contenerizado.
+- [x] Fase 4.2 — Evento cruzado BookCreatedEvent (book-service → review-service).
+- [x] Fase 4.3 — Reseñas CQRS con catálogo local y stats agregadas.
+- [x] Actualizar este documento al cerrar la fase.
+
+---

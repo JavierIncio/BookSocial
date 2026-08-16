@@ -2840,3 +2840,51 @@ Mismo procedimiento que 6.1, con estas variantes:
 - **Alta protegida por rol**: la creación de libros exige `ADMIN` (header `X-User-Roles` del gateway). Los usuarios normales reciben 403.
 - **Búsqueda derivada en Mongo**: una única consulta derivada sobre título/autor es suficiente para esta fase; si hiciera falta ranking o tolerancia a errores, se migraría a un índice `text` de Mongo.
 - **Réplica del esqueleto**: el coste de crear un microservicio nuevo bajó respecto a la Fase 2: copiar la seguridad parse-only y el patrón de compose ya está estandarizado (único cambio: puerto, nombre y drivers).
+
+---
+
+## Bloque 8 — review-service (reseñas + primer evento cruzado)
+
+La Fase 4 introduce dos novedades respecto a las anteriores: (1) un **evento cruzado** entre servicios (`book-service` publica → `review-service` consume) y (2) el primer modelo de lectura con **datos desnormalizados por eventos** en vez de dual-write directo.
+
+### 8.1 — Esqueleto del review-service
+
+Mismo procedimiento que 7.1, con estas variantes:
+
+- Puerto **`8084`**. Dependencias: los mismos 6 starters + `spring-boot-starter-amqp` + `spring-rabbit-test` (test) + driver `postgresql`.
+- Gateway: ruta `Path=/reviews/**` → `${REVIEW_SERVICE_URI:http://localhost:8084}`.
+- Compose: `review-service` con `depends_on` postgres + mongodb + **rabbitmq** (los tres `service_healthy`), `SPRING_RABBITMQ_HOST: rabbitmq`.
+
+### 8.2 — Evento cruzado `BookCreatedEvent`
+
+Este es el patrón clave: el catálogo publica un evento y otro servicio lo consume para mantener su propio catálogo local desnormalizado.
+
+**Publicador (book-service)**:
+
+- `config/RabbitConfig`: declara el **exchange** topic `booksocial.events` y el `JacksonJsonMessageConverter` (trusted package `com.booksocial.book.events`). No declara colas (cada consumidor es dueño de la suya).
+- `events/BookCreatedEvent` (record: `bookIsbn`, `title`, `author`, `occurredAt`) y `events/BookEventPublisher` (`RabbitTemplate.convertAndSend` al exchange con routing key `book.created`).
+- `BookService.create`: tras el dual-write, publica el evento (misma transacción; si falla → rollback).
+- `BookDataSeeder`: publica un evento por cada libro sembrado.
+
+**Consumidor (review-service)**:
+
+- `config/RabbitConfig`: declara el exchange (idempotente) **más** su cola `review-service.books.created` y el binding a `book.created`. La cola es `durable=true`.
+- `events/BookCreatedEvent` (copia del record, paquete `com.booksocial.review.events` — necesita existir para la deserialización del converter).
+- `events/BookCreatedEventConsumer` (`@RabbitListener(queues = ...)`): upsert de `BookRefReadModel` (isbn, title, author) en la colección `book_refs` de Mongo.
+
+**¿Por qué no declarar la cola del consumer en el publicador?** Si book-service declarara `review-service.books.created`, estaría acoplado al nombre de la cola del otro servicio. Cada consumidor declara su propia cola y binding.
+
+### 8.3 — Reseñas CQRS con stats
+
+- **Command side**: `domain/Review` (JPA, `book_isbn` + `user_id` únicos, rating 1-5, comment, timestamps) + `repository/ReviewRepository`.
+- **Query side**: `readmodel/ReviewReadModel` (Mongo, `_id` = `"<isbn>:<userId>"`) + `readmodel/ReviewStatsReadModel` (Mongo, `_id` = isbn, `ratingCount`, `averageRating`) — este último es un **modelo agregado** que se recalcula en cada operación de escritura.
+- **Control de catálogo local**: el `create` verifica `bookRefRepo.existsById(isbn)` → 422 (`BookNotInCatalogException`) si el libro no existe en el catálogo local. Garantiza que solo se pueden reseñar libros cuyo evento se ha consumido.
+- **Endpoints**: `POST /reviews/{isbn}` (201/409/422), `PUT /reviews/{isbn}` (200), `GET /reviews/books/{isbn}` (lista desde Mongo), `GET /reviews/books/{isbn}/summary` (rating medio + count).
+- **`syncStats`**: recalcula media y conteo con `mapToInt(...).average()` sobre las reseñas de Mongo. Idempotente ante re-escrituras.
+
+### Decisiones de diseño de la Fase 4 (resumen)
+
+- **Primer evento cruzado**: book-service publica `BookCreatedEvent`; review-service consume y mantiene un catálogo local (`book_refs`). Esto desacopla reseñas de catálogo: review-service nunca llama a book-service por REST.
+- **Reseñas en dual-write**: por ahora el comando escribe Postgres + Mongo (como el perfil en 2.2). Los eventos de reseña (para notificaciones, feed de actividad, etc.) se añadirán en una fase futura.
+- **Modelo agregado de stats**: `review_stats` se recalcula en cada operación en vez de incrementar/decrementar, lo que lo hace idempotente y simple de razonar.
+- **Ordering del seeder**: en un entorno limpio, el seeder publica eventos que review-service consumirá si su cola ya está declarada. Si review-service arranca después, las colas durables en RabbitMQ mantienen los mensajes hasta que se conecte.
