@@ -18,6 +18,12 @@ spring:
   mongodb:
     uri: ${SPRING_MONGODB_URI:mongodb://booksocial:booksocial@localhost:27017/booksocial?authSource=admin}
 
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+
 server:
   port: 8084
 

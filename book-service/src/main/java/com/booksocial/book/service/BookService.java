@@ -3,6 +3,7 @@ package com.booksocial.book.service;
 import com.booksocial.book.domain.Book;
 import com.booksocial.book.domain.BookAlreadyExistsException;
 import com.booksocial.book.domain.BookNotFoundException;
+import com.booksocial.book.events.BookEventPublisher;
 import com.booksocial.book.readmodel.BookReadModel;
 import com.booksocial.book.readmodel.BookReadModelRepository;
 import com.booksocial.book.repository.BookRepository;
@@ -18,10 +19,12 @@ import java.util.List;
 public class BookService {
     private final BookRepository bookRepository;
     private final BookReadModelRepository readModelRepository;
+    private final BookEventPublisher bookEventPublisher;
 
-    public BookService(BookRepository bookRepository, BookReadModelRepository readModelRepository) {
+    public BookService(BookRepository bookRepository, BookReadModelRepository readModelRepository, BookEventPublisher bookEventPublisher) {
         this.bookRepository = bookRepository;
         this.readModelRepository = readModelRepository;
+        this.bookEventPublisher = bookEventPublisher;
     }
 
     public BookResponse create(CreateBookRequest request) {
@@ -39,7 +42,9 @@ public class BookService {
                 request.category())
         );
 
-        return toResponse(upsertReadModel(book));
+        BookResponse response = toResponse(upsertReadModel(book));
+        bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), book.getAuthor());
+        return response;
     }
 
     public BookResponse findByIsbn(String isbn) {

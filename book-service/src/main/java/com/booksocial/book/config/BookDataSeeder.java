@@ -1,6 +1,7 @@
 package com.booksocial.book.config;
 
 import com.booksocial.book.domain.Book;
+import com.booksocial.book.events.BookEventPublisher;
 import com.booksocial.book.readmodel.BookReadModel;
 import com.booksocial.book.readmodel.BookReadModelRepository;
 import com.booksocial.book.repository.BookRepository;
@@ -18,6 +19,7 @@ public class BookDataSeeder implements CommandLineRunner {
 
     private final BookRepository bookRepository;
     private final BookReadModelRepository readModelRepository;
+    private final BookEventPublisher bookEventPublisher;
 
     private static final List<CreateBookRequest> books = List.of(
             new CreateBookRequest(
@@ -94,9 +96,10 @@ public class BookDataSeeder implements CommandLineRunner {
             )
     );
 
-    public BookDataSeeder(BookRepository bookRepository, BookReadModelRepository readModelRepository) {
+    public BookDataSeeder(BookRepository bookRepository, BookReadModelRepository readModelRepository, BookEventPublisher bookEventPublisher) {
         this.bookRepository = bookRepository;
         this.readModelRepository = readModelRepository;
+        this.bookEventPublisher = bookEventPublisher;
     }
 
     @Override
@@ -106,23 +109,14 @@ public class BookDataSeeder implements CommandLineRunner {
 
         for (CreateBookRequest book : books) {
             bookRepository.save(new Book(
-                    book.isbn(),
-                    book.title(),
-                    book.author(),
-                    book.description(),
-                    book.coverUrl(),
-                    book.publishedYear(),
-                    book.category()
+                    book.isbn(), book.title(), book.author(), book.description(),
+                    book.coverUrl(), book.publishedYear(), book.category()
             ));
             readModelRepository.save(new BookReadModel(
-                    book.isbn(),
-                    book.title(),
-                    book.author(),
-                    book.description(),
-                    book.coverUrl(),
-                    book.publishedYear(),
-                    book.category()
+                    book.isbn(), book.title(), book.author(), book.description(),
+                    book.coverUrl(), book.publishedYear(), book.category()
             ));
+            bookEventPublisher.publishBookCreated(book.isbn(), book.title(), book.author());
         }
 
     }
