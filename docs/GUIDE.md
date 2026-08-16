@@ -1,4 +1,78 @@
+# BookSocial — Guía de Desarrollo
+
+Guía completa para construir **BookSocial**, una red social de libros con arquitectura de microservicios. El proyecto usa Java 21, Spring Boot 4.1.0, Spring Cloud Gateway, Angular 21, PostgreSQL, MongoDB, RabbitMQ y Docker.
+
+---
+
+## Cómo usar esta guía
+
+La guía está organizada en **bloques cronológicos**: cada bloque se construye sobre el anterior, como un curso progresivo. Si empiezas desde cero, sigue el orden recomendado.
+
+**Para aprender haciendo**: cada bloque incluye código real del proyecto, explicaciones de *por qué* se toma cada decisión, y pasos de verificación. Ejecuta el código mientras lees.
+
+**Para consultar después**: la tabla de contenidos te permite saltar directamente al bloque que necesites. Los apéndices al final consolidan patrones repetidos (seguridad, Docker).
+
+**Nivel de detalle**: se mantiene el código esencial (entidades, servicios, controladores, configuración) con explicaciones conceptuales. Los patrones de seguridad repetidos en varios servicios se consolidan en el Apéndice A para evitar redundancia.
+
+---
+
+## Tabla de contenidos
+
+| Bloque | Tema | Fase |
+|--------|------|------|
+| [0. Cimientos](#bloque-0--cimientos-monorepo--infraestructura--ci) | Monorepo, Docker, CI | — |
+| [1. Identity Service](#bloque-1--identity-service) | Auth, JWT, OAuth2, roles | Fase 1 |
+| [2. API Gateway](#bloque-2--api-gateway) | Enrutamiento, JWT, headers | Fase 1 |
+| [3. Frontend Angular](#bloque-3--frontend-angular) | SPA, signals, OAuth2 flow | Fase 1 |
+| [4. Contenerización y CI](#bloque-4--contenerización-y-ci-ampliado) | Dockerfiles, compose, CI | Fase 1 |
+| [5. Errores y decisiones](#bloque-5--cierre-errores-resueltos-y-decisiones-de-diseño) | Retrospectiva Fase 1 | Fase 1 |
+| [6. user-service](#bloque-6--fase-2-user-service-perfil-con-cqrs-dual-write) | CQRS, follows, RabbitMQ | Fase 2 |
+| [7. book-service](#bloque-7--book-service-catálogo-de-libros-con-cqrs) | Catálogo, búsqueda, roles | Fase 3 |
+| [8. review-service](#bloque-8--review-service-reseñas--primer-evento-cruzado) | Eventos cruzados, stats | Fase 4 |
+| [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable) | JwtService, filtros, config | Referencia |
+| [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño) | Resumen arquitectónico | Referencia |
+
+---
+
+## Arquitectura del sistema
+
+```
+                    ┌──────────────┐
+                    │   Angular    │
+                    │   (SPA)      │
+                    └──────┬───────┘
+                           │
+                    ┌──────▼───────┐
+                    │   Gateway    │
+                    │   :8080      │
+                    └──────┬───────┘
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+   ┌──────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
+   │  identity   │ │    user     │ │    book     │
+   │  :8081      │ │  :8082      │ │  :8083      │
+   └─────────────┘ └─────────────┘ └─────────────┘
+                           │
+                    ┌──────▼───────┐
+                    │   review     │
+                    │   :8084      │
+                    └──────────────┘
+```
+
+**Infraestructura**: PostgreSQL (datos relacionales), MongoDB (lecturas CQRS), RabbitMQ (eventos asíncronos).
+
+**Patrón CQRS**: escrituras en PostgreSQL (command side), lecturas en MongoDB (query side). Sincronización vía dual-write o eventos RabbitMQ.
+
+**Autenticación**: JWT stateless. El gateway valida tokens y reenvía headers de confianza (`X-User-Id`, `X-User-Email`, `X-User-Roles`).
+
+---
+
 ## Bloque 0 — Cimientos (monorepo + infraestructura + CI)
+
+Este bloque establece las bases del proyecto: estructura de monorepo, herramientas de build, infraestructura Docker y pipeline de CI. Es el punto de partida para cualquier desarrollador que se una al proyecto.
+
+**Objetivo**: tener el entorno de desarrollo listo y el repositorio configurado para que cualquier cambio se verifique automáticamente.
 
 ### 0.1 — Instalación de JDK 21 + Maven + wrapper mvnw
 
@@ -457,21 +531,15 @@ Mientras que en Linux:
 
 ## Bloque 1 — Identity Service
 
-El **Identity Service** es el microservicio responsable de todo lo relacionado con la identidad y autenticación de los usuarios de la aplicación. Su responsabilidad principal es:
+El **Identity Service** es el microservicio responsable de todo lo relacionado con la identidad y autenticación de los usuarios de la aplicación. Es el bloque más extenso porque establece los patrones que los demás servicios reutilizarán.
 
-- Registrar usuarios.
-- Autenticar usuarios mediante email y contraseña.
-- Generar y validar JWT.
-- Gestionar _access tokens_ y _refresh tokens_.
-- Gestionar roles.
-- Permitir autenticación mediante **_Google OAuth2_**.
-- Exponer los datos del usuario autenticado.
-- Gestionar logout y revocación de refresh tokens.
-- Proporcionar un punto centralizado para las reglas de seguridad.
+**Por qué un servicio dedicado**: separar la autenticación del resto de la lógica de negocio permite escalar independientemente, aplicar políticas de seguridad específicas, y que otros servicios confíen en él sin reimplementar JWT.
 
-En la arquitectura del proyecto, este servicio escucha en el puerto `8081`, mientras que el Gateway utiliza el `8080`.
+**Lo que construiremos**: registro y login (email + contraseña), autenticación con Google OAuth2, sistema de roles (ADMIN, USER, MINOR_USER), tokens JWT con refresh rotation, y endpoints para consultar datos del usuario.
 
-#### Generación del servicio y dependencias (`pom.xml`)
+**Puertos**: Identity Service `8081`, Gateway `8080`. Flujo típico: `Angular → Gateway :8080 → Identity Service :8081`.
+
+### 1.0 — Creación del servicio y dependencias
 
 El servicio se generó con **Spring Initializr** (start.spring.io) con Java 21 y Spring Boot 4.1.0, y su POM hereda del parent `booksocial-parent`. Por eso **no repite versiones**: las hereda del parent POM y del BOM de Spring Cloud (sección 0.2). Dependencias del `identity-service/pom.xml` y para qué sirve cada una:
 
@@ -489,7 +557,7 @@ El servicio se generó con **Spring Initializr** (start.spring.io) con Java 21 y
 
 > Nota: los starters de test llevan sufijo `-test` (p.ej. `spring-boot-starter-security-test`, `spring-boot-starter-data-jpa-test`). Además, `jjwt-impl` y `jjwt-jackson` están en scope `runtime` porque solo se necesitan en ejecución, no al compilar el código.
 
-#### Clase principal
+**Clase principal**:
 
 ```java
 @SpringBootApplication
@@ -1692,6 +1760,12 @@ GET /users/me  con  Authorization: Bearer <access>
 
 ## Bloque 2 — API Gateway
 
+El **API Gateway** es el punto único de entrada del sistema. Después de construir el Identity Service, el siguiente paso es crear una capa que proteja todos los servicios detrás de una única dirección. El gateway resuelve el problema de que Angular no debe hablar directamente con los microservicios internos.
+
+**Qué aporta**: enrutamiento por ruta, validación JWT centralizada, inyección de headers de confianza (`X-User-Id`, `X-User-Email`, `X-User-Roles`), y aislamiento de la infraestructura interna. Sin gateway, cada servicio tendría que validar JWT por su cuenta.
+
+**Patrón clave**: _strip-then-assert_ — el gateway elimina cualquier header `X-User-*` que el cliente envíe y los reconstruye a partir del JWT validado. Los servicios downstream confían en estos headers.
+
 ### 2.1 — Qué es un API Gateway y por qué aquí
 
 Un **API Gateway** es el **punto único de entrada** del sistema. El cliente (Angular) solo conoce una dirección (`:8080`) y nunca habla directamente con los microservicios internos. El gateway se encarga de:
@@ -1933,6 +2007,12 @@ Gateway → Angular (200 UserResponse)
 ```
 
 ## Bloque 3 — Frontend Angular
+
+Con el backend (Identity Service + Gateway) funcionando, el siguiente paso es construir la interfaz de usuario. Angular 21 con standalone components, signals y lazy loading nos permite crear una SPA moderna con autenticación OAuth2.
+
+**Qué construiremos**: login/registro con formularios reactivos, login con Google, página principal con perfil de usuario, interceptor JWT automático con refresh, y guardas de ruta.
+
+**Por qué Angular signals**: reemplazan a `BehaviorSubject` para el estado de sesión (`isAuthenticated`, `accessToken`). Un signal se lee como función (`auth.isAuthenticated()`) tanto en TypeScript como en plantillas, sin necesidad de suscripciones.
 
 ### 3.1 — Creación del proyecto y estructura
 
@@ -2353,6 +2433,10 @@ El mismo patrón `@if` se usa en `login.html` para mostrar `errorMessage`, y el 
 
 ## Bloque 4 — Contenerización y CI ampliado
 
+Hasta ahora los servicios se ejecutan directamente en el host. Este bloque los contenedoriza con Docker y amplía el pipeline de CI para verificar que todo funciona en entorno aislado. Es la transición de desarrollo local a部署 consistente.
+
+**Qué añadimos**: Dockerfiles multi-stage (build + runtime), `.dockerignore` para reducir el tamaño de imagen, `docker-compose.yml` con servicios de infraestructura + aplicaciones, healthchecks con dependencias, y CI con PostgreSQL + jobs paralelos.
+
 ### 4.1 — Dockerfiles multi-stage
 
 Cada servicio tiene su propio `Dockerfile` con **dos etapas**:
@@ -2532,6 +2616,8 @@ Y en navegador: `ng serve` en `:4200` → register → home → F5 (sesión rest
 
 ## Bloque 5 — Cierre: errores resueltos y decisiones de diseño
 
+Este bloque consolida las lecciones aprendidas durante la Fase 1 (Bloques 0-4). Documenta los errores más relevantes con su solución y resume las decisiones arquitectónicas clave que definen el proyecto.
+
 ### Errores encontrados (con solución directa)
 
 1. **`POST /auth/logout` devolvía `401`**
@@ -2596,8 +2682,91 @@ Se añade `<module>user-service</module>` a los `<modules>` del `pom.xml` raíz.
 .\mvnw.cmd -B -pl user-service -am package -DskipTests
 ```
 
+#### Estructura de paquetes
+
+```
+user-service/
+├── .env                              # APP_JWT_SECRET
+├── Dockerfile
+├── pom.xml
+└── src/main/java/com/booksocial/user/
+    ├── config/
+    │   ├── SecurityConfig.java       # STATELESS + JWT filter
+    │   └── RabbitConfig.java         # exchange, queues, bindings
+    ├── domain/
+    │   ├── Profile.java              # JPA entity (Postgres)
+    │   ├── Follow.java               # JPA entity (Postgres)
+    │   ├── ProfileNotFoundException.java
+    │   ├── SelfFollowException.java
+    │   ├── AlreadyFollowingException.java
+    │   └── NotFollowingException.java
+    ├── readmodel/
+    │   ├── ProfileReadModel.java     # Mongo document
+    │   ├── FollowReadModel.java      # Mongo document
+    │   ├── ProfileReadModelRepository.java
+    │   └── FollowReadModelRepository.java
+    ├── repository/
+    │   ├── ProfileRepository.java    # JPA
+    │   └── FollowRepository.java     # JPA
+    ├── security/
+    │   ├── JwtService.java           # parse-only (no emite)
+    │   ├── JwtAuthFilter.java        # OncePerRequestFilter
+    │   └── RestAuthenticationEntryPoint.java
+    ├── service/
+    │   ├── ProfileService.java
+    │   └── FollowService.java
+    ├── events/
+    │   ├── FollowedEvent.java        # record
+    │   ├── UnfollowedEvent.java      # record
+    │   ├── FollowEventPublisher.java # RabbitTemplate
+    │   └── FollowEventConsumer.java  # @RabbitListener
+    └── web/
+        ├── ProfileController.java
+        ├── FollowController.java
+        ├── GlobalExceptionHandler.java
+        └── dto/
+            ├── ProfileResponse.java
+            ├── FollowResponse.java
+            └── UpdateProfileRequest.java
+```
+
 #### Configuración (`application.yaml`)
 
+```yaml
+spring:
+  application:
+    name: user-service
+  config:
+    import: "optional:file:.env[.properties]"
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/booksocial}
+    username: booksocial
+    password: booksocial
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  mongodb:
+    uri: ${SPRING_MONGODB_URI:mongodb://booksocial:booksocial@localhost:27017/booksocial?authSource=admin}
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+server:
+  port: 8082
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET}
+    issuer: booksocial-identity
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+```
+
+Puntos clave:
 - Puerto `8082`.
 - `spring.config.import: optional:file:.env[.properties]` para cargar secretos desde `.env` (mismo mecanismo que el resto de servicios).
 - Datasource PostgreSQL `booksocial`/`booksocial`, overridable con `SPRING_DATASOURCE_URL`.
@@ -2608,12 +2777,11 @@ Se añade `<module>user-service</module>` a los `<modules>` del `pom.xml` raíz.
 
 #### Seguridad (valida JWT, no emite)
 
-A diferencia del identity-service, `user-service` **no emite tokens**: solo valida los emitidos por identity-service usando el mismo secreto y el mismo `issuer`.
+A diferencia del identity-service, `user-service` **no emite tokens**: solo valida los emitidos por identity-service usando el mismo secreto y el mismo `issuer`. Las 4 clases de seguridad (`JwtService`, `JwtAuthFilter`, `RestAuthenticationEntryPoint`, `SecurityConfig`) son idénticas en todos los servicios downstream.
 
-- `JwtService`: método `parse()` (verifica firma, issuer y expiración) sin capacidad de generar tokens.
-- `JwtAuthFilter`: valida el `Authorization: Bearer` y solo autentica tokens `type=access`.
-- `RestAuthenticationEntryPoint`: respuesta JSON `401` uniforme.
-- `SecurityConfig`: `STATELESS`, `permitAll` para `/actuator/health` (healthcheck sin auth) y el resto autenticado.
+> **Consulta el [Apéndice A](#apéndice-a--plantilla-de-seguridad-reutilizable) para el código completo de las clases de seguridad.** En esta sección solo se documentan las diferencias (si las hubiera).
+
+En user-service no hay diferencias: se copian las 4 clases tal cual.
 
 #### Identidad del usuario: `X-User-Id`
 
@@ -2644,25 +2812,157 @@ El servicio `user-service` en compose:
 
 **Command side — `domain/Profile` (Postgres)**: entidad JPA con `userId` único, `email`, `displayName`, `bio`, `location`, `avatarUrl` y timestamps. Es la fuente de verdad de las escrituras.
 
-**Query side — `readmodel/ProfileReadModel` (Mongo)**: documento con `_id` = `userId`, los mismos campos de presentación y los contadores derivados (`followersCount`, `followingCount`, `postsCount`). Se construye para lecturas baratas (un solo fetch, sin joins).
+```java
+@Entity
+@Table(name = "profiles", uniqueConstraints = @UniqueConstraint(columnNames = {"userId"}))
+public class Profile {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(unique = true, nullable = false)
+    private Long userId;
+
+    @Column(nullable = false)
+    private String email;
+
+    private String displayName;
+    private String bio;
+    private String location;
+    private String avatarUrl;
+
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt = Instant.now();
+
+    @Column(nullable = false)
+    private Instant updatedAt = Instant.now();
+
+    public void touch() { this.updatedAt = Instant.now(); }
+}
+```
+
+- `userId` es una **foreign key lógica** al usuario de identity-service (único, pero no declarado como FK de JPA porque vive en otra base de datos).
+- `touch()` actualiza `updatedAt` antes de cada escritura.
+
+**Query side — `readmodel/ProfileReadModel` (Mongo)**: documento con `_id` = `userId`, los mismos campos de presentación y los contadores desnormalizados (`followersCount`, `followingCount`, `postsCount`). Se construye para lecturas baratas (un solo fetch, sin joins):
+
+```java
+@Document(collection = "profiles")
+public class ProfileReadModel {
+    @Id
+    private String id;            // String.valueOf(userId)
+
+    private Long userId;
+    private String email;
+    private String displayName;
+    private String bio;
+    private String location;
+    private String avatarUrl;
+    private Instant createdAt;
+    private Instant updatedAt;
+    private long followersCount;
+    private long followingCount;
+    private int postsCount;
+}
+```
 
 > **Dual-write**: en esta fase el `ProfileService` escribe **en la misma operación** en Postgres (JPA) y en Mongo (upsert del read model). No hay transacción distribuida ni eventos todavía: se acepta una **consistencia eventual débil** (si una de las dos escrituras falla, puede haber desfase temporal). Esto se sustituirá por eventos RabbitMQ en 2.4 (sin Outbox, limitación documentada).
 
+#### Repositorios
+
+```java
+// PostgreSQL (command side)
+public interface ProfileRepository extends JpaRepository<Profile, Long> {
+    Optional<Profile> findByUserId(Long userId);
+}
+
+// MongoDB (query side)
+public interface ProfileReadModelRepository extends MongoRepository<ProfileReadModel, String> {
+    Optional<ProfileReadModel> findByUserId(Long userId);
+}
+```
+
+Ambos exponen `findByUserId`, pero la fuente de datos es distinta: JPA para comandos, Mongo para lecturas.
+
 #### `ProfileService`
+
+```java
+@Service @Transactional
+public class ProfileService {
+    private final ProfileRepository profileRepository;
+    private final ProfileReadModelRepository readModelRepository;
+
+    public ProfileResponse getOrCreate(Long userId, String email) {
+        Profile profile = profileRepository.findByUserId(userId)
+            .orElseGet(() -> profileRepository.save(new Profile(userId, email)));
+        return toResponse(upsertReadModel(profile));
+    }
+
+    public ProfileResponse update(Long userId, String email, UpdateProfileRequest request) {
+        Profile profile = profileRepository.findByUserId(userId)
+            .orElseGet(() -> profileRepository.save(new Profile(userId, email)));
+        if (request.displayName() != null) profile.setDisplayName(request.displayName());
+        if (request.bio() != null)          profile.setBio(request.bio());
+        if (request.location() != null)     profile.setLocation(request.location());
+        if (request.avatarUrl() != null)    profile.setAvatarUrl(request.avatarUrl());
+        profile.touch();
+        return toResponse(upsertReadModel(profileRepository.save(profile)));
+    }
+
+    public ProfileResponse getByUserId(Long userId) {
+        return toResponse(readModelRepository.findByUserId(userId)
+                .orElseThrow(() -> new ProfileNotFoundException(userId)));
+    }
+}
+```
 
 - `getOrCreate(userId, email)`: si no existe el perfil en Postgres, lo crea; luego hace `upsertReadModel` (actualiza los campos de presentación del documento Mongo y lo guarda).
 - `update(userId, email, request)`: crea el perfil si faltaba (misma semántica on-demand), aplica los campos del DTO (solo los no nulos) y vuelve a sincronizar el read model.
 - `getByUserId(userId)`: lee **exclusivamente de Mongo** — demuestra la separación de rutas de lectura del CQRS.
 
-El `@Transactional` cubre la operación Postgres; el write de Mongo se hace dentro del mismo flujo (dual-write).
-
 #### `ProfileController`
 
-- `GET /profiles/me` → `getOrCreate` con `X-User-Id`/`X-User-Email` (crea el perfil en el primer acceso).
-- `PUT /profiles/me` → `update` con validación (`@Valid` sobre `UpdateProfileRequest` con `@Size`).
-- `GET /profiles/{userId}` → lectura desde Mongo.
+```java
+@RestController @RequestMapping("/profiles")
+public class ProfileController {
+    private final ProfileService profileService;
+
+    @GetMapping("/me")
+    public ProfileResponse me(@RequestHeader("X-User-Id") Long userId,
+                              @RequestHeader("X-User-Email") String email) {
+        return profileService.getOrCreate(userId, email);
+    }
+
+    @PutMapping("/me")
+    public ProfileResponse updateMe(@RequestHeader("X-User-Id") Long userId,
+                                    @RequestHeader("X-User-Email") String email,
+                                    @Valid @RequestBody UpdateProfileRequest request) {
+        return profileService.update(userId, email, request);
+    }
+
+    @GetMapping("/{userId}")
+    public ProfileResponse byUserId(@PathVariable Long userId) {
+        return profileService.getByUserId(userId);
+    }
+}
+```
 
 El `GlobalExceptionHandler` traduce `ProfileNotFoundException` a `404` JSON y los fallos de validación a `400` JSON.
+
+#### DTOs
+
+```java
+public record UpdateProfileRequest(
+    @Size(max = 60)  String displayName,
+    @Size(max = 200) String bio,
+    @Size(max = 80)  String location,
+    @Size(max = 500) String avatarUrl) {}
+
+public record ProfileResponse(Long userId, String email, String displayName, String bio,
+    String location, String avatarUrl, long followersCount, long followingCount,
+    int postsCount, Instant createdAt, Instant updatedAt) {}
+```
+
+Los tres DTOs son **records** — la forma idiomática en Java 21. `UpdateProfileRequest` usa `@Size` para replicar en cliente las mismas restricciones que el backend (defensa en profundidad).
 
 #### Verificación E2E (Docker)
 
@@ -2711,26 +3011,154 @@ Igual que el perfil, el follow vive en los dos lados:
 
 **Command side — `domain/Follow` (Postgres)**: entidad JPA con `followerId` y `followeeId`, unique constraint sobre la pareja `(followerId, followeeId)` y `createdAt`. Semántica: `followerId` sigue a `followeeId` (`follower → followee`).
 
+```java
+@Entity
+@Table(name = "follows", uniqueConstraints = @UniqueConstraint(columnNames = {"followerId", "followeeId"}))
+public class Follow {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
+    private Long followerId;
+
+    @Column(nullable = false)
+    private Long followeeId;
+
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt = Instant.now();
+}
+```
+
 **Query side — `readmodel/FollowReadModel` (Mongo)**: documento con `_id` = `"<followerId>:<followeeId>"` (misma invariante de unicidad que Postgres, así Mongo tampoco admite duplicados), los dos ids y `createdAt`. Las listas de seguidores/siguiendo se leen de esta colección.
+
+```java
+@Document(collection = "follows")
+public class FollowReadModel {
+    @Id
+    private String id;         // followerId + ":" + followeeId
+    private Long followerId;
+    private Long followeeId;
+    private Instant createdAt;
+}
+```
+
+#### Repositorios
+
+```java
+// PostgreSQL
+public interface FollowRepository extends JpaRepository<Follow, Long> {
+    boolean existsByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
+    Optional<Follow> findByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
+    List<Follow> findByFollowerId(Long followerId);
+    List<Follow> findByFolloweeId(Long followeeId);
+}
+
+// MongoDB
+public interface FollowReadModelRepository extends MongoRepository<FollowReadModel, String> {
+    boolean existsByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
+    Optional<FollowReadModel> findByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
+    List<FollowReadModel> findByFollowerId(Long followerId);
+    List<FollowReadModel> findByFolloweeId(Long followeeId);
+    long countByFollowerId(Long followerId);      // para contadores
+    long countByFolloweeId(Long followeeId);
+}
+```
+
+Los repos Mongo exponen métodos `countBy*` que se usan para **recalcular** contadores (no incrementar), haciendo la operación idempotente.
 
 #### `FollowService`
 
-- `follow(followerId, targetUserId)`: rechaza el **self-follow** (`SelfFollowException` → 400) y el **duplicado** (`AlreadyFollowingException` → 409); en éxito hace dual-write (Postgres + Mongo) y ajusta los contadores.
-- `unfollow(followerId, targetUserId)`: si no existe la relación lanza `NotFollowingException` → 404; si existe, borra en los dos lados y decrementa los contadores.
+```java
+@Service @Transactional
+public class FollowService {
+    private final FollowRepository followRepository;
+    private final FollowReadModelRepository followReadModelRepository;
+    private final FollowEventPublisher eventPublisher;
+
+    public FollowResponse follow(Long followerId, Long targetUserId) {
+        if (followerId.equals(targetUserId)) throw new SelfFollowException();
+        if (followReadModelRepository.existsByFollowerIdAndFolloweeId(followerId, targetUserId))
+            throw new AlreadyFollowingException(followerId, targetUserId);
+
+        followRepository.save(new Follow(followerId, targetUserId));
+        eventPublisher.publishFollowed(followerId, targetUserId);  // async RabbitMQ
+        return toResponse(followerId, targetUserId);
+    }
+
+    public void unfollow(Long followerId, Long targetUserId) {
+        Follow follow = followRepository
+            .findByFollowerIdAndFolloweeId(followerId, targetUserId)
+            .orElseThrow(() -> new NotFollowingException(followerId, targetUserId));
+        followRepository.delete(follow);
+        eventPublisher.publishUnfollowed(followerId, targetUserId);  // async RabbitMQ
+    }
+
+    public List<FollowResponse> followers(Long userId) {
+        return followReadModelRepository.findByFolloweeId(userId).stream()
+                .map(this::toResponse).toList();  // solo Mongo (CQRS read)
+    }
+
+    public List<FollowResponse> following(Long userId) {
+        return followReadModelRepository.findByFollowerId(userId).stream()
+                .map(this::toResponse).toList();
+    }
+}
+```
+
+- `follow(followerId, targetUserId)`: rechaza el **self-follow** (`SelfFollowException` → 400) y el **duplicado** (`AlreadyFollowingException` → 409); en éxito escribe en Postgres y publica evento RabbitMQ.
+- `unfollow(followerId, targetUserId)`: si no existe la relación lanza `NotFollowingException` → 404; si existe, borra en Postgres y publica evento.
 - `followers(userId)` / `following(userId)`: leen **solo de Mongo** (ruta de lectura del CQRS).
 
-Los **contadores** viven en el `ProfileReadModel`: al seguir se incrementa `followingCount` del follower y `followersCount` del followee; al dejar de seguir se decrementan (con `Math.max(0, ...)` para no dejar contadores negativos).
-
-> Limitación aceptada en esta sub-fase: si el perfil del followee aún no se ha materializado en Mongo, su contador no se actualiza (se materializará en su primer `GET /profiles/me`). En 2.4 esta escritura directa se sustituye por eventos asíncronos (ver 6.5).
+Los **contadores** viven en el `ProfileReadModel` y se **recalculan** (no incrementan) en el consumidor: así un redelivery del broker no desvía los contadores.
 
 #### `FollowController` (`/follows`)
 
-- `POST /follows/{targetUserId}` → 201 (crea la relación; `followerId` desde `X-User-Id`).
-- `DELETE /follows/{targetUserId}` → 204 (borra la relación).
-- `GET /follows/{userId}/followers` → lista de `FollowResponse` (`followerId`, `followeeId`, `createdAt`).
-- `GET /follows/{userId}/following` → lista de `FollowResponse`.
+```java
+@RestController @RequestMapping("/follows")
+public class FollowController {
+    private final FollowService followService;
+
+    @PostMapping("/{targetUserId}") @ResponseStatus(HttpStatus.CREATED)
+    public FollowResponse follow(@RequestHeader("X-User-Id") Long followerId,
+                                 @PathVariable Long targetUserId) {
+        return followService.follow(followerId, targetUserId);
+    }
+
+    @DeleteMapping("/{targetUserId}") @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void unfollow(@RequestHeader("X-User-Id") Long followerId,
+                         @PathVariable Long targetUserId) {
+        followService.unfollow(followerId, targetUserId);
+    }
+
+    @GetMapping("/{userId}/followers")
+    public List<FollowResponse> followers(@PathVariable Long userId) {
+        return followService.followers(userId);
+    }
+
+    @GetMapping("/{userId}/following")
+    public List<FollowResponse> following(@PathVariable Long userId) {
+        return followService.following(userId);
+    }
+}
+```
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/follows/{targetUserId}` | Seguir a un usuario (201) |
+| `DELETE` | `/follows/{targetUserId}` | Dejar de seguir (204) |
+| `GET` | `/follows/{userId}/followers` | Lista quién sigue a este usuario |
+| `GET` | `/follows/{userId}/following` | Lista a quién sigue este usuario |
 
 El gateway ya enruta `/follows/**` → user-service, por lo que no hay que tocar su configuración para esta sub-fase.
+
+#### Excepciones
+
+| Excepción | HTTP | Mensaje |
+|---|---|---|
+| `SelfFollowException` | 400 | `"Cannot follow yourself"` |
+| `AlreadyFollowingException` | 409 | `"User X already follows Y"` |
+| `NotFollowingException` | 404 | `"User X does not follow Y"` |
+| `ProfileNotFoundException` | 404 | `"Profile not found for userId X"` |
 
 #### Verificación E2E (Docker)
 
@@ -2756,19 +3184,116 @@ En esta sub-fase la relación de amistad deja de escribirse en Mongo de forma s�
 
 - Dependencia `spring-boot-starter-amqp`. En Spring Boot 4.1 RabbitMQ **conserva** el prefijo `spring.rabbitmq.*` (env `SPRING_RABBITMQ_HOST`, etc.).
 - Credenciales por defecto `guest`/`guest`: la imagen oficial de RabbitMQ trae `loopback_users.guest = false`, así que `guest` puede conectar desde cualquier contenedor de la red.
-- `config/RabbitConfig`: exchange **topic** `booksocial.events`, **dos colas** (`user-service.follows.followed` y `user-service.follows.unfollowed`) con sus bindings, y el `MessageConverter` JSON.
+
+```java
+@Configuration
+public class RabbitConfig {
+    public static final String EXCHANGE        = "booksocial.events";
+    public static final String FOLLOWED_QUEUE   = "user-service.follows.followed";
+    public static final String UNFOLLOWED_QUEUE = "user-service.follows.unfollowed";
+    public static final String FOLLOWED_KEY     = "follow.followed";
+    public static final String UNFOLLOWED_KEY   = "follow.unfollowed";
+
+    @Bean TopicExchange eventsExchange() { ... }
+    @Bean Queue followedQueue()           { ... }   // durable
+    @Bean Queue unfollowedQueue()         { ... }   // durable
+    @Bean Binding followedBinding()       { ... }
+    @Bean Binding unfollowedBinding()     { ... }
+    @Bean MessageConverter messageConverter() {
+        return new JacksonJsonMessageConverter("com.booksocial.user.events");
+    }
+}
+```
+
+Topología:
+```
+[booksocial.events] (Topic Exchange)
+    ├── routing key "follow.followed"   → [user-service.follows.followed]
+    └── routing key "follow.unfollowed" → [user-service.follows.unfollowed]
+```
 
 > **Una cola por evento**: si dos `@RabbitListener` escuchan la misma cola, RabbitMQ reparte los mensajes entre ellos al azar (no rutea por tipo). Con una cola por evento, cada listener recibe un tipo concreto y la deserialización es segura.
 
 > **Converter en Spring AMQP 4.x**: `Jackson2JsonMessageConverter` está deprecado (marcado para borrar); el reemplazo es **`JacksonJsonMessageConverter`**, con el mismo constructor de trusted packages: `new JacksonJsonMessageConverter("com.booksocial.user.events")`.
 
-#### Productor y consumidor
+#### Eventos
 
-- **Eventos**: records `FollowedEvent`/`UnfollowedEvent` con `followerId`, `followeeId` y `occurredAt`.
-- **`FollowEventPublisher`**: `RabbitTemplate.convertAndSend(exchange, routingKey, evento)`. Se publica **dentro de la transacción**: si `convertAndSend` falla, la excepción propaga y Postgres revierte → no hay evento fantasma. El único hueco es commit-tras-publish (la limitación del "sin Outbox").
-- **`FollowEventConsumer`**: un `@RabbitListener` por cola. Al recibir `FollowedEvent` hace upsert del `FollowReadModel` (idempotente, guarda solo si no existe) y recalcula contadores; al recibir `UnfollowedEvent` borra el documento y recalcula.
-- Los contadores se **recalculan** con `countByFollowerId`/`countByFolloweeId` en lugar de incrementar: así un redelivery del broker (at-least-once) no desvía los contadores.
-- `FollowService.follow`/`unfollow` ahora solo escriben en Postgres y publican el evento; `followers`/`following` siguen leyendo Mongo (consistencia eventual).
+```java
+public record FollowedEvent(Long followerId, Long followeeId, Instant occurredAt) {
+    public FollowedEvent(Long followerId, Long followeeId) {
+        this(followerId, followeeId, Instant.now());
+    }
+}
+
+public record UnfollowedEvent(Long followerId, Long followeeId, Instant occurredAt) {
+    public UnfollowedEvent(Long followerId, Long followeeId) {
+        this(followerId, followeeId, Instant.now());
+    }
+}
+```
+
+Ambos son **records** con constructor de conveniencia que auto-timpea `occurredAt`.
+
+#### Productor
+
+```java
+@Component
+public class FollowEventPublisher {
+    private final RabbitTemplate rabbitTemplate;
+
+    public void publishFollowed(Long followerId, Long followeeId) {
+        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.FOLLOWED_KEY,
+                new FollowedEvent(followerId, followeeId));
+    }
+
+    public void publishUnfollowed(Long followerId, Long followeeId) {
+        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.UNFOLLOWED_KEY,
+                new UnfollowedEvent(followerId, followeeId));
+    }
+}
+```
+
+Se publica **dentro de la misma transacción**: si `convertAndSend` falla, la excepción propaga y Postgres revierte → no hay evento fantasma. El único hueco es commit-tras-publish (la limitación del "sin Outbox").
+
+#### Consumidor
+
+```java
+@Component
+public class FollowEventConsumer {
+    private final FollowReadModelRepository followReadModelRepository;
+    private final ProfileReadModelRepository profileReadModelRepository;
+
+    @RabbitListener(queues = RabbitConfig.FOLLOWED_QUEUE)
+    public void onFollowed(FollowedEvent event) {
+        followReadModelRepository.save(new FollowReadModel(event.followerId(), event.followeeId()));
+        syncCounters(event.followerId(), event.followeeId());
+        log.info("Processed FollowedEvent: {} -> {}", event.followerId(), event.followeeId());
+    }
+
+    @RabbitListener(queues = RabbitConfig.UNFOLLOWED_QUEUE)
+    public void onUnfollowed(UnfollowedEvent event) {
+        followReadModelRepository.findByFollowerIdAndFolloweeId(event.followerId(), event.followeeId())
+            .ifPresent(followReadModelRepository::delete);
+        syncCounters(event.followerId(), event.followeeId());
+        log.info("Processed UnfollowedEvent: {} -> {}", event.followerId(), event.followeeId());
+    }
+
+    private void syncCounters(Long followerId, Long followeeId) {
+        profileReadModelRepository.findByUserId(followerId).ifPresent(p -> {
+            p.setFollowingCount(followReadModelRepository.countByFollowerId(followerId));
+            profileReadModelRepository.save(p);
+        });
+        profileReadModelRepository.findByUserId(followeeId).ifPresent(p -> {
+            p.setFollowersCount(followReadModelRepository.countByFolloweeId(followeeId));
+            profileReadModelRepository.save(p);
+        });
+    }
+}
+```
+
+Los contadores se **recalculan** con `countByFollowerId`/`countByFolloweeId` en lugar de incrementar: así un redelivery del broker (at-least-once) no desvía los contadores. Es la diferencia clave con el dual-write síncrono anterior.
+
+> `FollowService.follow`/`unfollow` ahora solo escriben en Postgres y publican el evento; `followers`/`following` siguen leyendo Mongo (consistencia eventual).
 
 #### Verificación E2E (Docker)
 
@@ -2804,35 +3329,274 @@ La Fase 3 replica el patrón de la Fase 2 en un nuevo microservicio: **Postgres 
 
 ### 7.1 — Esqueleto del book-service
 
+#### Creación y estructura
+
 Mismo procedimiento que 6.1, con estas variantes:
 
 - Generado con Spring Initializr (Java 21, Spring Boot 4.1.0) con los starters `webmvc`, `data-jpa`, `data-mongodb`, `security`, `validation` y `actuator` (más `-test`). Parent `booksocial-parent`, módulo `book-service` en el POM raíz.
-- Puerto **`8083`**. `application.yaml` idéntico al de user-service cambiando el nombre del servicio y el puerto.
-- Seguridad parse-only copiada de user-service (`JwtService`, `JwtAuthFilter`, `RestAuthenticationEntryPoint`, `SecurityConfig`).
-- Gateway: ruta `Path=/books/**` → `${BOOK_SERVICE_URI:http://localhost:8083}` y variable `BOOK_SERVICE_URI: http://book-service:8083` en el compose del gateway.
-- Dockerfile y servicio de compose espejo de user-service (healthcheck curl a `/actuator/health` en `8083`, `depends_on` postgres y mongodb `service_healthy`).
+- Puerto **`8083`**.
+- Dependencia `spring-boot-starter-amqp` (para publicar eventos a RabbitMQ).
+
+```
+book-service/
+├── .env                              # APP_JWT_SECRET
+├── Dockerfile
+├── pom.xml
+└── src/main/java/com/booksocial/book/
+    ├── config/
+    │   ├── SecurityConfig.java       # parse-only JWT (copiado de user-service)
+    │   ├── RabbitConfig.java         # exchange + MessageConverter (sin colas)
+    │   └── BookDataSeeder.java       # CommandLineRunner — 8 libros de ejemplo
+    ├── domain/
+    │   ├── Book.java                 # JPA entity (Postgres)
+    │   ├── BookNotFoundException.java
+    │   ├── BookAlreadyExistsException.java
+    │   └── ForbiddenException.java
+    ├── readmodel/
+    │   ├── BookReadModel.java        # Mongo document (_id = isbn)
+    │   └── BookReadModelRepository.java
+    ├── repository/
+    │   └── BookRepository.java       # JPA
+    ├── security/
+    │   ├── JwtService.java
+    │   ├── JwtAuthFilter.java
+    │   └── RestAuthenticationEntryPoint.java
+    ├── service/
+    │   └── BookService.java
+    ├── events/
+    │   ├── BookCreatedEvent.java     # record
+    │   └── BookEventPublisher.java   # RabbitTemplate
+    └── web/
+        ├── BookController.java
+        ├── GlobalExceptionHandler.java
+        └── dto/
+            ├── CreateBookRequest.java
+            └── BookResponse.java
+```
 
 > **Errores típicos de réplica**: olvidar la dependencia `org.postgresql:postgresql` (runtime) en el POM del nuevo módulo — sin ella el arranque falla con `ClassNotFoundException: org.postgresql.Driver`. También es fácil dejar el JAR en ejecución bloqueando `mvn clean/package` en Windows (detener el proceso java antes).
 
+#### Configuración
+
+`application.yaml` idéntico al de user-service cambiando el nombre del servicio y el puerto:
+
+```yaml
+server:
+  port: 8083
+spring:
+  application:
+    name: book-service
+  # ... mismo patrón: .env import, datasource, mongodb, rabbitmq, jwt
+```
+
+Gateway: ruta `Path=/books/**` → `${BOOK_SERVICE_URI:http://localhost:8083}` y variable `BOOK_SERVICE_URI: http://book-service:8083` en el compose del gateway.
+
+Dockerfile y servicio de compose espejo de user-service (healthcheck curl a `/actuator/health` en `8083`, `depends_on` postgres y mongodb `service_healthy`).
+
+#### Seguridad
+
+La seguridad es **parse-only** copiada de user-service (`JwtService`, `JwtAuthFilter`, `RestAuthenticationEntryPoint`, `SecurityConfig`). El control de acceso a `POST /books` se hace en el **controlador** leyendo el header `X-User-Roles` del gateway, no en SecurityConfig.
+
 ### 7.2 — Catálogo CQRS con búsqueda
 
-- **Command side**: `domain/Book` (JPA, `isbn` con `uniqueConstraints`, `createdAt` fijado en el constructor) + `repository/BookRepository` (`findByIsbn`, `existsByIsbn`).
-- **Query side**: `readmodel/BookReadModel` (Mongo, `@Document(collection = "books")`, `_id` = isbn) + `readmodel/BookReadModelRepository` con la búsqueda derivada de Spring Data:
+#### Command side — `domain/Book` (Postgres)
 
-  ```java
-  List<BookReadModel> findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(String title, String author);
-  ```
+```java
+@Entity
+@Table(name = "books", uniqueConstraints = @UniqueConstraint(columnNames = "isbn"))
+public class Book {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-  Genera un `$regex` en Mongo con `i` (case-insensitive) sobre título **o** autor.
-- **`BookService`**: `create` (dual-write: guarda `Book` en Postgres y hace upsert del read model), `findByIsbn` y `search` **leen solo de Mongo** (misma separación de rutas CQRS que el perfil).
-- **`BookController`**:
-  - `POST /books` → **solo ADMIN**: lee el header `X-User-Roles` que pone el gateway (roles del JWT unidos con comas) y lanza 403 si no contiene `ADMIN`. Devuelve **201**.
-  - `GET /books/{isbn}` → 200 (lectura Mongo); 404 si no existe.
-  - `GET /books/search?q=` → 200 con la lista de coincidencias.
-- DTOs record con bean validation (`CreateBookRequest`: `@NotBlank @Size(max=20)` en isbn, `@NotBlank` en título y autor), `GlobalExceptionHandler` con 400/403/404/409 JSON.
-- **`BookDataSeeder`** (CommandLineRunner): si `bookRepository.count() == 0`, inserta 8 libros de ejemplo escribiendo **ambos lados** (Postgres + Mongo). Se usa para dar datos a la búsqueda en local sin levantar la UI.
+    @Column(nullable = false, length = 20)
+    private String isbn;
+
+    @Column(nullable = false)
+    private String title;
+
+    @Column(nullable = false)
+    private String author;
+
+    @Column(columnDefinition = "text")
+    private String description;
+
+    private String coverUrl;
+    private Integer publishedYear;
+    private String category;
+
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt;
+
+    public Book(String isbn, String title, String author, String description,
+                String coverUrl, Integer publishedYear, String category) {
+        this.isbn = isbn;
+        this.title = title;
+        this.author = author;
+        this.description = description;
+        this.coverUrl = coverUrl;
+        this.publishedYear = publishedYear;
+        this.category = category;
+        this.createdAt = Instant.now();
+    }
+}
+```
+
+`isbn` tiene `uniqueConstraints` en la tabla; `createdAt` se fija en el constructor y no se actualiza (`updatable = false`).
+
+#### Query side — `readmodel/BookReadModel` (Mongo)
+
+```java
+@Document(collection = "books")
+public class BookReadModel {
+    @Id
+    private String isbn;     // ISBN como _id de Mongo
+    private String title;
+    private String author;
+    private String description;
+    private String coverUrl;
+    private Integer publishedYear;
+    private String category;
+    private Instant createdAt;
+}
+```
+
+`isbn` como `_id` de Mongo: las búsquedas por ISBN son `O(1)` (lookup directo por `_id`). La colección se llama `books` en Mongo.
+
+#### Repositorios
+
+```java
+// PostgreSQL
+public interface BookRepository extends JpaRepository<Book, Long> {
+    Optional<Book> findByIsbn(String isbn);
+    boolean existsByIsbn(String isbn);
+}
+
+// MongoDB
+public interface BookReadModelRepository extends MongoRepository<BookReadModel, String> {
+    List<BookReadModel> findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(
+        String title, String author);
+}
+```
+
+La consulta derivada de Spring Data genera un `$regex` en Mongo con `i` (case-insensitive) sobre título **o** autor.
+
+#### `BookService`
+
+```java
+@Service @Transactional
+public class BookService {
+    private final BookRepository bookRepository;
+    private final BookReadModelRepository readModelRepository;
+    private final BookEventPublisher bookEventPublisher;
+
+    public BookResponse create(CreateBookRequest request) {
+        if (bookRepository.existsByIsbn(request.isbn()))
+            throw new BookAlreadyExistsException(request.isbn());
+
+        Book book = bookRepository.save(new Book(
+            request.isbn(), request.title(), request.author(),
+            request.description(), request.coverUrl(),
+            request.publishedYear(), request.category()));
+
+        upsertReadModel(book);
+        bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), book.getAuthor());
+        return toResponse(book);
+    }
+
+    public BookResponse findByIsbn(String isbn) {
+        return toResponse(readModelRepository.findById(isbn)
+                .orElseThrow(() -> new BookNotFoundException(isbn)));
+    }
+
+    public List<BookResponse> search(String q) {
+        return readModelRepository
+            .findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(q, q)
+            .stream().map(this::toResponse).toList();
+    }
+}
+```
+
+- `create()`: verifica unicidad por ISBN en Postgres, guarda, hace upsert del read model y publica evento `BookCreatedEvent`.
+- `findByIsbn()` y `search()` leen **solo de Mongo** (misma separación CQRS que el perfil).
+
+#### `BookController`
+
+```java
+@RestController @RequestMapping("/books")
+public class BookController {
+    private final BookService bookService;
+
+    @PostMapping
+    public ResponseEntity<BookResponse> createBook(
+            @RequestHeader(value = "X-User-Roles", required = false) String roles,
+            @Valid @RequestBody CreateBookRequest request) {
+        if (!isAdmin(roles)) throw new ForbiddenException("ADMIN required");
+        return ResponseEntity.status(HttpStatus.CREATED).body(bookService.create(request));
+    }
+
+    @GetMapping("/{isbn}")
+    public ResponseEntity<BookResponse> getBook(@PathVariable String isbn) {
+        return ResponseEntity.ok(bookService.findByIsbn(isbn));
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<List<BookResponse>> searchBooks(@RequestParam String q) {
+        return ResponseEntity.ok(bookService.search(q));
+    }
+
+    private boolean isAdmin(String roles) {
+        return roles != null && Arrays.stream(roles.split(","))
+                .map(String::trim).anyMatch("ADMIN"::equals);
+    }
+}
+```
+
+| Método | Ruta | Auth | Descripción |
+|---|---|---|---|
+| `POST` | `/books` | `X-User-Roles` debe contener `ADMIN` | Crear libro (201) |
+| `GET` | `/books/{isbn}` | Autenticado | Buscar por ISBN (200) |
+| `GET` | `/books/search?q=` | Autenticado | Buscar por título o autor (200) |
 
 > **Roles vía header de confianza**: el gateway reconstruye `X-User-Roles` a partir del claim `roles` del JWT validado (mismo patrón strip-then-assert que `X-User-Id`). El control de permisos downstream es `roles != null && Arrays.stream(roles.split(",")).map(String::trim).anyMatch("ADMIN"::equals)`.
+
+#### DTOs
+
+```java
+public record CreateBookRequest(
+    @NotBlank @Size(max = 20) String isbn,
+    @NotBlank String title,
+    @NotBlank String author,
+    String description,
+    String coverUrl,
+    Integer publishedYear,
+    String category) {}
+
+public record BookResponse(String isbn, String title, String author, String description,
+    String coverUrl, Integer publishedYear, String category, Instant createdAt) {}
+```
+
+#### `BookDataSeeder` (CommandLineRunner)
+
+```java
+@Component
+public class BookDataSeeder implements CommandLineRunner {
+    private final BookRepository bookRepository;
+    private final BookReadModelRepository readModelRepository;
+    private final BookEventPublisher bookEventPublisher;
+
+    @Override
+    public void run(String... args) {
+        if (bookRepository.count() == 0) {
+            // inserta 8 libros de ejemplo
+            // por cada uno: save en Postgres + upsert en Mongo + publica BookCreatedEvent
+        }
+    }
+}
+```
+
+Si `bookRepository.count() == 0`, inserta 8 libros de ejemplo escribiendo **ambos lados** (Postgres + Mongo) y publicando eventos. Se usa para dar datos a la búsqueda en local sin levantar la UI.
+
+> **Ordering del seeder**: en un entorno limpio, el seeder publica eventos que review-service consumirá si su cola ya está declarada. Si review-service arranca después, las colas durables en RabbitMQ mantienen los mensajes hasta que se conecte.
 
 ### Decisiones de diseño de la Fase 3 (resumen)
 
@@ -2849,38 +3613,335 @@ La Fase 4 introduce dos novedades respecto a las anteriores: (1) un **evento cru
 
 ### 8.1 — Esqueleto del review-service
 
+#### Creación y estructura
+
 Mismo procedimiento que 7.1, con estas variantes:
 
 - Puerto **`8084`**. Dependencias: los mismos 6 starters + `spring-boot-starter-amqp` + `spring-rabbit-test` (test) + driver `postgresql`.
 - Gateway: ruta `Path=/reviews/**` → `${REVIEW_SERVICE_URI:http://localhost:8084}`.
 - Compose: `review-service` con `depends_on` postgres + mongodb + **rabbitmq** (los tres `service_healthy`), `SPRING_RABBITMQ_HOST: rabbitmq`.
 
+```
+review-service/
+├── .env                              # APP_JWT_SECRET
+├── Dockerfile
+├── pom.xml
+└── src/main/java/com/booksocial/review/
+    ├── config/
+    │   ├── SecurityConfig.java       # parse-only JWT
+    │   └── RabbitConfig.java         # exchange + cola + binding del consumer
+    ├── domain/
+    │   ├── Review.java               # JPA entity (Postgres)
+    │   ├── ReviewNotFoundException.java
+    │   ├── ReviewAlreadyExistsException.java
+    │   └── BookNotInCatalogException.java
+    ├── readmodel/
+    │   ├── ReviewReadModel.java      # Mongo document (_id = "isbn:userId")
+    │   ├── ReviewReadModelRepository.java
+    │   ├── ReviewStatsReadModel.java # Mongo document (_id = isbn)
+    │   ├── ReviewStatsReadModelRepository.java
+    │   ├── BookRefReadModel.java     # Mongo document (_id = isbn)
+    │   └── BookRefReadModelRepository.java
+    ├── repository/
+    │   └── ReviewRepository.java     # JPA
+    ├── security/
+    │   ├── JwtService.java
+    │   ├── JwtAuthFilter.java
+    │   └── RestAuthenticationEntryPoint.java
+    ├── service/
+    │   └── ReviewService.java
+    ├── events/
+    │   ├── BookCreatedEvent.java     # record (copia del publicador)
+    │   └── BookCreatedEventConsumer.java  # @RabbitListener
+    └── web/
+        ├── ReviewController.java
+        ├── GlobalExceptionHandler.java
+        └── dto/
+            ├── CreateReviewRequest.java
+            ├── UpdateReviewRequest.java
+            ├── ReviewResponse.java
+            └── ReviewSummaryResponse.java
+```
+
+> **Diferencia clave con book-service**: aquí el servicio **declara su propia cola y binding** en `RabbitConfig` (porque es el consumidor). book-service solo declara el exchange (porque es el productor). Cada consumidor es dueño de su cola.
+
 ### 8.2 — Evento cruzado `BookCreatedEvent`
 
 Este es el patrón clave: el catálogo publica un evento y otro servicio lo consume para mantener su propio catálogo local desnormalizado.
 
-**Publicador (book-service)**:
+#### Configuración RabbitMQ en review-service
 
-- `config/RabbitConfig`: declara el **exchange** topic `booksocial.events` y el `JacksonJsonMessageConverter` (trusted package `com.booksocial.book.events`). No declara colas (cada consumidor es dueño de la suya).
-- `events/BookCreatedEvent` (record: `bookIsbn`, `title`, `author`, `occurredAt`) y `events/BookEventPublisher` (`RabbitTemplate.convertAndSend` al exchange con routing key `book.created`).
-- `BookService.create`: tras el dual-write, publica el evento (misma transacción; si falla → rollback).
-- `BookDataSeeder`: publica un evento por cada libro sembrado.
+```java
+@Configuration
+public class RabbitConfig {
+    public static final String EXCHANGE     = "booksocial.events";
+    public static final String REVIEW_QUEUE = "review-service.books.created";
+    public static final String REVIEW_KEY   = "book.created";
 
-**Consumidor (review-service)**:
+    @Bean TopicExchange eventsExchange() { ... }          // durable
+    @Bean Queue reviewQueue()            { ... }          // durable
+    @Bean Binding reviewBinding()        { ... }          // queue → exchange, routing key "book.created"
+    @Bean MessageConverter messageConverter() {
+        return new JacksonJsonMessageConverter("com.booksocial.review.events");
+    }
+}
+```
 
-- `config/RabbitConfig`: declara el exchange (idempotente) **más** su cola `review-service.books.created` y el binding a `book.created`. La cola es `durable=true`.
-- `events/BookCreatedEvent` (copia del record, paquete `com.booksocial.review.events` — necesita existir para la deserialización del converter).
-- `events/BookCreatedEventConsumer` (`@RabbitListener(queues = ...)`): upsert de `BookRefReadModel` (isbn, title, author) en la colección `book_refs` de Mongo.
+Topología:
+```
+[booksocial.events] (Topic Exchange)
+    └── routing key "book.created" → [review-service.books.created]
+```
 
-**¿Por qué no declarar la cola del consumer en el publicador?** Si book-service declarara `review-service.books.created`, estaría acoplado al nombre de la cola del otro servicio. Cada consumidor declara su propia cola y binding.
+#### Evento y consumidor
+
+```java
+// Copia del record (mismo paquete que el publicador, pero en review-service)
+public record BookCreatedEvent(String bookIsbn, String title, String author, Instant occurredAt) {}
+```
+
+```java
+@Component
+public class BookCreatedEventConsumer {
+    private final BookRefReadModelRepository bookRefRepository;
+
+    @RabbitListener(queues = RabbitConfig.REVIEW_QUEUE)
+    public void onBookCreated(BookCreatedEvent event) {
+        bookRefRepository.save(new BookRefReadModel(event.bookIsbn(), event.title(), event.author()));
+        log.info("Processed BookCreatedEvent: {} - {}", event.bookIsbn(), event.title());
+    }
+}
+```
+
+Al recibir `BookCreatedEvent`, hace upsert de `BookRefReadModel` en la colección `book_refs` de Mongo. Este documento se usa para verificar que un libro existe antes de permitir una reseña.
+
+> **¿Por qué no declarar la cola del consumer en el publicador?** Si book-service declarara `review-service.books.created`, estaría acoplado al nombre de la cola del otro servicio. Cada consumidor declara su propia cola y binding: así, si mañana se añade otro consumidor (p.ej. `notification-service`), no hay que modificar book-service.
+
+> **Record duplicado**: el `BookCreatedEvent` existe tanto en `com.booksocial.book.events` (publicador) como en `com.booksocial.review.events` (consumidor). Es necesaria la duplicación porque `JacksonJsonMessageConverter` deserializa contra los tipos del paquete confiable del converter (`trustedPackages`). Cada servicio escanea su propio paquete.
+
+#### Read model: `BookRefReadModel`
+
+```java
+@Document(collection = "book_refs")
+public class BookRefReadModel {
+    @Id
+    private String isbn;
+    private String title;
+    private String author;
+}
+```
+
+Colección `book_refs` en Mongo. Solo los campos necesarios para validar reseñas (sin `description`, `coverUrl`, etc.).
 
 ### 8.3 — Reseñas CQRS con stats
 
-- **Command side**: `domain/Review` (JPA, `book_isbn` + `user_id` únicos, rating 1-5, comment, timestamps) + `repository/ReviewRepository`.
-- **Query side**: `readmodel/ReviewReadModel` (Mongo, `_id` = `"<isbn>:<userId>"`) + `readmodel/ReviewStatsReadModel` (Mongo, `_id` = isbn, `ratingCount`, `averageRating`) — este último es un **modelo agregado** que se recalcula en cada operación de escritura.
-- **Control de catálogo local**: el `create` verifica `bookRefRepo.existsById(isbn)` → 422 (`BookNotInCatalogException`) si el libro no existe en el catálogo local. Garantiza que solo se pueden reseñar libros cuyo evento se ha consumido.
-- **Endpoints**: `POST /reviews/{isbn}` (201/409/422), `PUT /reviews/{isbn}` (200), `GET /reviews/books/{isbn}` (lista desde Mongo), `GET /reviews/books/{isbn}/summary` (rating medio + count).
+#### Command side — `domain/Review` (Postgres)
+
+```java
+@Entity
+@Table(name = "reviews", uniqueConstraints = @UniqueConstraint(columnNames = "book_isbn, user_id"))
+public class Review {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "book_isbn", nullable = false, length = 20)
+    private String bookIsbn;
+
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
+
+    @Column(nullable = false)
+    private int rating;        // 1-5
+
+    @Column(columnDefinition = "text")
+    private String comment;
+
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt;
+
+    private Instant updatedAt;
+}
+```
+
+Unique constraint sobre `(book_isbn, user_id)`: un usuario solo puede dejar una reseña por libro.
+
+#### Query side — Read models en Mongo
+
+**ReviewReadModel** (colección `reviews`):
+```java
+@Document(collection = "reviews")
+public class ReviewReadModel {
+    @Id
+    private String id;          // "isbn:userId" (natural composite key)
+    private String bookIsbn;
+    private Long userId;
+    private int rating;
+    private String comment;
+    private Instant createdAt;
+    private Instant updatedAt;
+}
+```
+
+**ReviewStatsReadModel** (colección `review_stats`):
+```java
+@Document(collection = "review_stats")
+public class ReviewStatsReadModel {
+    @Id
+    private String bookIsbn;
+    private long ratingCount;
+    private double averageRating;
+}
+```
+
+Este es un **modelo agregado**: se recalcula en cada operación de escritura (no se incrementa/decrementa), lo que lo hace idempotente y simple de razonar.
+
+#### Repositorios
+
+```java
+// PostgreSQL
+public interface ReviewRepository extends JpaRepository<Review, Long> {
+    Optional<Review> findByBookIsbnAndUserId(String bookIsbn, Long userId);
+}
+
+// MongoDB
+public interface ReviewReadModelRepository extends MongoRepository<ReviewReadModel, String> {
+    List<ReviewReadModel> findByBookIsbnOrderByCreatedAtDesc(String bookIsbn);
+    boolean existsByBookIsbnAndUserId(String bookIsbn, Long userId);
+}
+
+public interface ReviewStatsReadModelRepository extends MongoRepository<ReviewStatsReadModel, String> {
+    Optional<ReviewStatsReadModel> findByBookIsbn(String bookIsbn);
+}
+
+public interface BookRefReadModelRepository extends MongoRepository<BookRefReadModel, String> {
+    // CRUD estándar + existsById (para verificar catálogo local)
+}
+```
+
+#### `ReviewService`
+
+```java
+@Service @Transactional
+public class ReviewService {
+    private final BookRefReadModelRepository bookRefRepo;
+    private final ReviewRepository reviewRepo;
+    private final ReviewReadModelRepository readModelRepo;
+    private final ReviewStatsReadModelRepository statsRepo;
+
+    public ReviewResponse create(Long userId, String bookIsbn, CreateReviewRequest req) {
+        if (!bookRefRepo.existsById(bookIsbn))
+            throw new BookNotInCatalogException(bookIsbn);   // 422
+        if (readModelRepo.existsByBookIsbnAndUserId(bookIsbn, userId))
+            throw new ReviewAlreadyExistsException(bookIsbn, userId);  // 409
+
+        Review review = reviewRepo.save(new Review(bookIsbn, userId, req.rating(), req.comment()));
+        readModelRepo.save(new ReviewReadModel(review));
+        syncStats(bookIsbn);
+        return toResponse(review);
+    }
+
+    public ReviewResponse update(Long userId, String bookIsbn, UpdateReviewRequest req) {
+        Review review = reviewRepo.findByBookIsbnAndUserId(bookIsbn, userId)
+                .orElseThrow(() -> new ReviewNotFoundException(bookIsbn, userId));
+        if (req.rating() != null) review.setRating(req.rating());
+        if (req.comment() != null) review.setComment(req.comment());
+        review.setUpdatedAt(Instant.now());
+        readModelRepo.save(new ReviewReadModel(reviewRepo.save(review)));
+        syncStats(bookIsbn);
+        return toResponse(review);
+    }
+
+    public List<ReviewResponse> listByBook(String bookIsbn) {
+        return readModelRepo.findByBookIsbnOrderByCreatedAtDesc(bookIsbn)
+                .stream().map(this::toResponse).toList();
+    }
+
+    public ReviewSummaryResponse summary(String bookIsbn) {
+        ReviewStatsReadModel stats = statsRepo.findByBookIsbn(bookIsbn).orElse(null);
+        return new ReviewSummaryResponse(bookIsbn,
+            stats != null ? stats.getRatingCount() : 0,
+            stats != null ? stats.getAverageRating() : 0.0);
+    }
+
+    private void syncStats(String bookIsbn) {
+        List<ReviewReadModel> reviews = readModelRepo.findByBookIsbnOrderByCreatedAtDesc(bookIsbn);
+        double avg = reviews.stream().mapToInt(ReviewReadModel::getRating).average().orElse(0.0);
+        statsRepo.save(new ReviewStatsReadModel(bookIsbn, reviews.size(), avg));
+    }
+}
+```
+
+- **Control de catálogo local**: `create` verifica `bookRefRepo.existsById(isbn)` → 422 (`BookNotInCatalogException`) si el libro no existe en el catálogo local. Garantiza que solo se pueden reseñar libros cuyo evento se ha consumido.
 - **`syncStats`**: recalcula media y conteo con `mapToInt(...).average()` sobre las reseñas de Mongo. Idempotente ante re-escrituras.
+- `update`: solo actualiza campos no nulos (patch parcial).
+
+#### `ReviewController`
+
+```java
+@RestController @RequestMapping("/reviews")
+public class ReviewController {
+    private final ReviewService reviewService;
+
+    @PostMapping("/{bookIsbn}") @ResponseStatus(HttpStatus.CREATED)
+    public ResponseEntity<ReviewResponse> create(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable String bookIsbn,
+            @Valid @RequestBody CreateReviewRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(reviewService.create(userId, bookIsbn, request));
+    }
+
+    @PutMapping("/{bookIsbn}")
+    public ResponseEntity<ReviewResponse> update(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable String bookIsbn,
+            @Valid @RequestBody UpdateReviewRequest request) {
+        return ResponseEntity.ok(reviewService.update(userId, bookIsbn, request));
+    }
+
+    @GetMapping("/books/{bookIsbn}")
+    public ResponseEntity<List<ReviewResponse>> listByBook(@PathVariable String bookIsbn) {
+        return ResponseEntity.ok(reviewService.listByBook(bookIsbn));
+    }
+
+    @GetMapping("/books/{bookIsbn}/summary")
+    public ResponseEntity<ReviewSummaryResponse> summary(@PathVariable String bookIsbn) {
+        return ResponseEntity.ok(reviewService.summary(bookIsbn));
+    }
+}
+```
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| `POST` | `/reviews/{bookIsbn}` | Crear reseña (201 / 409 / 422) |
+| `PUT` | `/reviews/{bookIsbn}` | Actualizar reseña (200) |
+| `GET` | `/reviews/books/{bookIsbn}` | Lista de reseñas por libro (Mongo) |
+| `GET` | `/reviews/books/{bookIsbn}/summary` | Rating medio + count (Mongo) |
+
+#### DTOs
+
+```java
+public record CreateReviewRequest(
+    @Min(1) @Max(5) int rating,
+    String comment) {}
+
+public record UpdateReviewRequest(
+    @Min(1) @Max(5) Integer rating,     // nullable para patch
+    String comment) {}
+
+public record ReviewResponse(Long id, String bookIsbn, Long userId, int rating,
+    String comment, Instant createdAt, Instant updatedAt) {}
+
+public record ReviewSummaryResponse(String bookIsbn, long ratingCount, double averageRating) {}
+```
+
+#### Excepciones
+
+| Excepción | HTTP | Error |
+|---|---|---|
+| `ReviewNotFoundException` | 404 | `not_found` |
+| `ReviewAlreadyExistsException` | 409 | `conflict` |
+| `BookNotInCatalogException` | 422 | `unprocessable` |
 
 ### Decisiones de diseño de la Fase 4 (resumen)
 
@@ -2888,3 +3949,187 @@ Este es el patrón clave: el catálogo publica un evento y otro servicio lo cons
 - **Reseñas en dual-write**: por ahora el comando escribe Postgres + Mongo (como el perfil en 2.2). Los eventos de reseña (para notificaciones, feed de actividad, etc.) se añadirán en una fase futura.
 - **Modelo agregado de stats**: `review_stats` se recalcula en cada operación en vez de incrementar/decrementar, lo que lo hace idempotente y simple de razonar.
 - **Ordering del seeder**: en un entorno limpio, el seeder publica eventos que review-service consumirá si su cola ya está declarada. Si review-service arranca después, las colas durables en RabbitMQ mantienen los mensajes hasta que se conecte.
+
+---
+
+## Apéndice A — Plantilla de seguridad reutilizable
+
+Los servicios downstream (user-service, book-service, review-service) comparten la misma configuración de seguridad: **solo validan JWT, no los generan**. El identity-service es el único que emite tokens. Esta sección consolida el patrón para evitar repetirlo en cada bloque.
+
+### JwtService (parse-only)
+
+```java
+@Service
+public class JwtService {
+    public static final String TYPE_ACCESS = "access";
+    private final SecretKey key;     // HMAC desde Base64-encoded secret
+    private final String issuer;
+
+    public JwtService(@Value("${app.jwt.secret}") String secret,
+                      @Value("${app.jwt.issuer}") String issuer) {
+        this.key = Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret));
+        this.issuer = issuer;
+    }
+
+    public Claims parse(String token) {
+        return Jwts.parser().verifyWith(key).requireIssuer(issuer)
+                .build().parseSignedClaims(token).getPayload();
+    }
+}
+```
+
+**Diferencia con identity-service**: este JwtService solo tiene `parse()`. El de identity-service además genera tokens (`generateAccessToken`, `generateRefreshToken`). Comparten el mismo secreto y issuer.
+
+### JwtAuthFilter
+
+```java
+@Component
+public class JwtAuthFilter extends OncePerRequestFilter {
+    private final JwtService jwtService;
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+                                    FilterChain chain) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            String token = header.substring(7);
+            try {
+                Claims claims = jwtService.parse(token);
+                if (JwtService.TYPE_ACCESS.equals(claims.get("type", String.class))) {
+                    List<SimpleGrantedAuthority> authorities = ((List<?>) claims.get("roles"))
+                        .stream()
+                        .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+                        .toList();
+                    var auth = new UsernamePasswordAuthenticationToken(
+                        claims.getSubject(), null, authorities);
+                    SecurityContextHolder.getContext().setAuthentication(auth);
+                }
+            } catch (JwtException | IllegalArgumentException e) {
+                SecurityContextHolder.clearContext();
+            }
+        }
+        chain.doFilter(request, response);
+    }
+}
+```
+
+### RestAuthenticationEntryPoint
+
+```java
+@Component
+public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
+    @Override
+    public void commence(HttpServletRequest request, HttpServletResponse response,
+                         AuthenticationException authException) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json");
+        response.getWriter().write("{\"error\":\"unauthorized\",\"message\":\"Authentication required\"}");
+    }
+}
+```
+
+### SecurityConfig
+
+```java
+@Configuration
+@EnableMethodSecurity
+public class SecurityConfig {
+    @Bean
+    SecurityFilterChain filterChain(HttpSecurity http,
+                                    JwtAuthFilter jwtAuthFilter,
+                                    RestAuthenticationEntryPoint entryPoint) throws Exception {
+        http
+            .csrf(AbstractHttpConfigurer::disable)
+            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .exceptionHandling(eh -> eh.authenticationEntryPoint(entryPoint))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/actuator/health").permitAll()
+                .anyRequest().authenticated())
+            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+        return http.build();
+    }
+}
+```
+
+### application.yaml (sección de seguridad)
+
+```yaml
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET}
+    issuer: booksocial-identity
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+```
+
+### Dependencias en pom.xml
+
+Cada servicio downstream necesita:
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security</artifactId>
+</dependency>
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-api</artifactId>
+    <version>0.12.6</version>
+</dependency>
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-impl</artifactId>
+    <version>0.12.6</version>
+    <scope>runtime</scope>
+</dependency>
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-jackson</artifactId>
+    <version>0.12.6</version>
+    <scope>runtime</scope>
+</dependency>
+```
+
+### Cómo copiar la plantilla
+
+Al crear un nuevo servicio downstream:
+
+1. Copiar las 4 clases de seguridad (`JwtService`, `JwtAuthFilter`, `RestAuthenticationEntryPoint`, `SecurityConfig`) desde cualquier servicio existente.
+2. Añadir las dependencias de JWT en el `pom.xml`.
+3. Añadir `app.jwt.secret` e `app.jwt.issuer` en `application.yaml` y `.env`.
+4. Si el servicio tiene endpoints públicos (como `/actuator/health`), añadirlos a `permitAll` en `SecurityConfig`.
+
+> **No copiar JwtService de identity-service**: ese tiene capacidad de generar tokens. Los servicios downstream solo necesitan `parse()`.
+
+---
+
+## Apéndice B — Decisiones de diseño
+
+Resumen de las decisiones arquitectónicas clave del proyecto:
+
+### Seguridad
+
+- **Secretos por módulo**: `.env` en cada servicio, excluidos de git y de las imágenes; en CI se inyectan como secrets.
+- **JWT stateless + secret compartido**: el gateway valida los tokens sin consultar al identity-service.
+- **Access corto (15 min) + refresh largo (7 días) rotativo**: el refresh viaja en cookie `httpOnly` + `SameSite=Lax`; el hash SHA-256 se guarda en BD (nunca el token en claro).
+- **Patrón strip-then-assert**: el gateway elimina los `X-User-*` del cliente y los reemplaza por los derivados del JWT → los servicios downstream confían en ellos.
+
+### Persistencia
+
+- **CQRS dual-write**: PostgreSQL para comandos (escrituras), MongoDB para lecturas. Sincronización inicial directa, migrada a eventos RabbitMQ en fases posteriores.
+- **`ddl-auto: update` solo en desarrollo**; para producción se usarían migraciones (Flyway/Liquibase).
+
+### Infraestructura
+
+- **Parent POM como única fuente de versión** (Spring Boot 4.1.0 + BOM Spring Cloud 2025.1.2).
+- **Contenedores con healthchecks y `depends_on: service_healthy`** para arranques ordenados y verificables.
+- **Dockerfiles multi-stage** para imágenes mínimas (build en `maven:3.9-eclipse-temurin-21`, runtime en `eclipse-temurin:21-jre`).
+
+### Mensajería
+
+- **Una cola por evento**: RabbitMQ reparte entre listeners de la misma cola; con una cola por tipo, cada listener recibe un tipo concreto.
+- **Contadores recalculados, no incrementados**: hace las operaciones idempotentes ante re-entregas del broker.
+- **Sin Outbox**: limitación documentada — hueco entre commit en Postgres y publicación en RabbitMQ.
