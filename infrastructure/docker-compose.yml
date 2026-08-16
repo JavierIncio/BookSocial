@@ -62,6 +62,7 @@ services:
       IDENTITY_SERVICE_URI: http://identity-service:8081
       USER_SERVICE_URI: http://user-service:8082
       BOOK_SERVICE_URI: http://book-service:8083
+      REVIEW_SERVICE_URI: http://review-service:8084
     depends_on:
       identity-service:
         condition: service_healthy
@@ -139,6 +140,33 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  review-service:
+    build:
+      context: ..
+      dockerfile: review-service/Dockerfile
+    container_name: booksocial-review
+    ports:
+      - "8084:8084"
+    env_file:
+      - ../review-service/.env
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/booksocial
+      SPRING_MONGODB_URI: mongodb://booksocial:booksocial@mongodb:27017/booksocial?authSource=admin
+      SPRING_RABBITMQ_HOST: rabbitmq
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 12

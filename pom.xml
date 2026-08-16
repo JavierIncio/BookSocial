@@ -43,5 +43,6 @@
         <module>identity-service</module>
         <module>user-service</module>
         <module>book-service</module>
+        <module>review-service</module>
     </modules>
 </project>

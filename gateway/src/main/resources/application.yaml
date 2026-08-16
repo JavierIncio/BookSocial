@@ -29,6 +29,11 @@ spring:
               predicates:
                 - Path=/books/**
 
+            - id: review-service
+              uri: ${REVIEW_SERVICE_URI:http://localhost:8084}
+              predicates:
+                - Path=/reviews/**
+
 server:
   port: 8080
 
