@@ -519,38 +519,35 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 
 ---
 
-## Fase 4 — review-service: reseñas CQRS + primer evento cruzado ✅ Completada
+## Fase 5 — shelf-service: estanterías CQRS + segundo evento cruzado
 
-**Objetivo**: construir `review-service` (puerto `8084`) con reseñas de libros (CQRS: Postgres command + Mongo query + stats agregadas) y el primer **evento cruzado** entre servicios: book-service publica `BookCreatedEvent` → review-service consume y mantiene un catálogo local desnormalizado.
+**Objetivo**: construir `shelf-service` (puerto `8085`) con estanterías de usuario (CQRS: Postgres command + Mongo query) y segundo **evento cruzado**: book-service publica `BookCreatedEvent` → shelf-service consume y mantiene un catálogo local desnormalizado (mismo patrón que review-service).
 
-**Progreso**: Fase 4 completada — esqueleto (4.1), evento cruzado (4.2) y reseñas CQRS (4.3).
+**Progreso**: Fase 5 en progreso.
 
-### Fase 4.1 — Esqueleto del review-service ✅ Completada
+### Fase 5.1 — Esqueleto del shelf-service
 
-- Proyecto Spring Initializr en `review-service/` con starters `webmvc`, `data-jpa`, `data-mongodb`, `security`, `validation`, `actuator`, `amqp`; parent `booksocial-parent` + jjwt; driver `postgresql`.
-- Puerto `8084`, seguridad parse-only copiada, gateway `Path=/reviews/**` → `${REVIEW_SERVICE_URI:http://localhost:8084}`.
+- Proyecto Spring Initializr en `shelf-service/` con starters `webmvc`, `data-jpa`, `data-mongodb`, `security`, `validation`, `actuator`, `amqp`; parent `booksocial-parent` + jjwt; driver `postgresql`.
+- Puerto `8085`, seguridad parse-only copiada, gateway `Path=/shelves/**` → `${SHELF_SERVICE_URI:http://localhost:8085}`.
 - Compose con `depends_on` postgres+mongodb+rabbitmq, `SPRING_RABBITMQ_HOST`.
 
-### Fase 4.2 — Evento cruzado BookCreatedEvent ✅ Completada
+### Fase 5.2 — Evento cruzado BookCreatedEvent
 
-- **book-service**: añadido `spring-boot-starter-amqp`, `RabbitConfig` (exchange + converter), `BookCreatedEvent` + `BookEventPublisher`. `BookService.create` y `BookDataSeeder` publican eventos.
-- **review-service**: `RabbitConfig` (exchange + cola `review-service.books.created` + binding), `BookCreatedEvent` (copia local para deserialización), `BookCreatedEventConsumer` → upsert `BookRefReadModel` (isbn, title, author) en Mongo.
-- Verificación: reset de libros + re-seeding → 8 `book_refs` en review-service; POST /books → evento → 9º `book_ref`.
+- **shelf-service**: `RabbitConfig` (exchange + cola `shelf-service.books.created` + binding a `book.created`), `BookCreatedEvent` (copia local), `BookCreatedEventConsumer` → upsert `BookRefReadModel` (isbn, title, author) en colección `book_refs` de Mongo.
 
-### Fase 4.3 — Reseñas CQRS con stats agregadas ✅ Completada
+### Fase 5.3 — CRUD de estanterías CQRS
 
-- `domain/Review` (JPA, unique `(book_isbn, user_id)`, rating 1-5) + `ReviewRepository`.
-- `readmodel/ReviewReadModel` (Mongo, `_id` = `"<isbn>:<userId>"`) + `ReviewStatsReadModel` (Mongo, ratingCount, averageRating).
-- `ReviewService`: `create` (verifica catálogo local → 422 si no existe, dual-write + syncStats), `update`, `listByBook` (Mongo), `summary` (Mongo).
-- `ReviewController`: `POST /reviews/{isbn}` (201/409/422), `PUT /reviews/{isbn}` (200), `GET /reviews/books/{isbn}`, `GET /reviews/books/{isbn}/summary`.
-- DTOs record con validación, excepciones 404/409/422/400, `GlobalExceptionHandler`.
-- E2E: POST 201, duplicate 409, rating inválido 400, PUT 200 con sync, libro inexistente 422, review de libro nuevo vía evento 201. `verify` local OK.
+- **Dominio**: `ShelfType` (enum: READ, READING, WANT_TO_READ), `UserShelf` (JPA, unique `(user_id, book_isbn)`), `domain/exceptions`.
+- **Read models**: `UserShelfReadModel` (Mongo, `_id`=`<userId>:<isbn>`), `UserShelfRepository` (Mongo).
+- **Command side**: `UserShelfRepository` (JPA), `ShelfService` (create/remove/listByUser/listByUserAndType), dual-write + catálogo local.
+- **Controller**: `POST /shelves/{isbn}`, `DELETE /shelves/{isbn}`, `GET /shelves/{userId}`, `GET /shelves/{userId}?shelfType=READ`.
+- DTOs record, `GlobalExceptionHandler`.
 
-### Cierre de la Fase 4
+### Cierre de la Fase 5
 
-- [x] Fase 4.1 — Esqueleto del review-service contenerizado.
-- [x] Fase 4.2 — Evento cruzado BookCreatedEvent (book-service → review-service).
-- [x] Fase 4.3 — Reseñas CQRS con catálogo local y stats agregadas.
-- [x] Actualizar este documento al cerrar la fase.
+- [ ] Fase 5.1 — Esqueleto del shelf-service contenerizado.
+- [ ] Fase 5.2 — Evento cruzado BookCreatedEvent (book-service → shelf-service).
+- [ ] Fase 5.3 — CRUD de estanterías CQRS.
+- [ ] Actualizar este documento al cerrar la fase.
 
 ---
