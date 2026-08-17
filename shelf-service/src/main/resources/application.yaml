@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: shelf-service
+
+  config:
+    import: "optional:file:.env[.properties]"
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/booksocial}
+    username: booksocial
+    password: booksocial
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+  mongodb:
+    uri: ${SPRING_MONGODB_URI:mongodb://booksocial:booksocial@localhost:27017/booksocial?authSource=admin}
+
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+
+server:
+  port: 8085
+
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET}
+    issuer: booksocial-identity
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

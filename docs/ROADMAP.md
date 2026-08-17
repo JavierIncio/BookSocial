@@ -519,35 +519,73 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 
 ---
 
-## Fase 5 — shelf-service: estanterías CQRS + segundo evento cruzado
+## Fase 4 — review-service: reseñas CQRS + primer evento cruzado ✅ Completada
 
-**Objetivo**: construir `shelf-service` (puerto `8085`) con estanterías de usuario (CQRS: Postgres command + Mongo query) y segundo **evento cruzado**: book-service publica `BookCreatedEvent` → shelf-service consume y mantiene un catálogo local desnormalizado (mismo patrón que review-service).
+**Objetivo**: construir `review-service` (puerto `8084`) con reseñas de libros (CQRS: Postgres command + Mongo query + stats agregadas) y el primer **evento cruzado** entre servicios: book-service publica `BookCreatedEvent` → review-service consume y mantiene un catálogo local desnormalizado.
 
-**Progreso**: Fase 5 en progreso.
+**Progreso**: Fase 4 completada — esqueleto (4.1), evento cruzado (4.2) y reseñas CQRS (4.3).
+
+### Fase 4.1 — Esqueleto del review-service ✅ Completada
+
+- Proyecto Spring Initializr en `review-service/` con starters `webmvc`, `data-jpa`, `data-mongodb`, `security`, `validation`, `actuator`, `amqp`; parent `booksocial-parent` + jjwt; driver `postgresql`.
+- Puerto `8084`, seguridad parse-only copiada, gateway `Path=/reviews/**` → `${REVIEW_SERVICE_URI:http://localhost:8084}`.
+- Compose con `depends_on` postgres+mongodb+rabbitmq, `SPRING_RABBITMQ_HOST`.
+
+### Fase 4.2 — Evento cruzado BookCreatedEvent ✅ Completada
+
+- **book-service**: añadido `spring-boot-starter-amqp`, `RabbitConfig` (exchange + converter), `BookCreatedEvent` + `BookEventPublisher`. `BookService.create` y `BookDataSeeder` publican eventos.
+- **review-service**: `RabbitConfig` (exchange + cola `review-service.books.created` + binding), `BookCreatedEvent` (copia local para deserialización), `BookCreatedEventConsumer` → upsert `BookRefReadModel` (isbn, title, author) en Mongo.
+- Verificación: reset de libros + re-seeding → 8 `book_refs` en review-service; POST /books → evento → 9º `book_ref`.
+
+### Fase 4.3 — Reseñas CQRS con stats agregadas ✅ Completada
+
+- `domain/Review` (JPA, unique `(book_isbn, user_id)`, rating 1-5) + `ReviewRepository`.
+- `readmodel/ReviewReadModel` (Mongo, `_id` = `"<isbn>:<userId>"`) + `ReviewStatsReadModel` (Mongo, ratingCount, averageRating).
+- `ReviewService`: `create` (verifica catálogo local → 422 si no existe, dual-write + syncStats), `update`, `listByBook` (Mongo), `summary` (Mongo).
+- `ReviewController`: `POST /reviews/{isbn}` (201/409/422), `PUT /reviews/{isbn}` (200), `GET /reviews/books/{isbn}`, `GET /reviews/books/{isbn}/summary`.
+- DTOs record con validación, excepciones 404/409/422/400, `GlobalExceptionHandler`.
+- E2E: POST 201, duplicate 409, rating inválido 400, PUT 200 con sync, libro inexistente 422, review de libro nuevo vía evento 201. `verify` local OK.
+
+### Cierre de la Fase 4
+
+- [x] Fase 4.1 — Esqueleto del review-service contenerizado.
+- [x] Fase 4.2 — Evento cruzado BookCreatedEvent (book-service → review-service).
+- [x] Fase 4.3 — Reseñas CQRS con catálogo local y stats agregadas.
+- [x] Actualizar este documento al cerrar la fase.
+
+---
+
+## Fase 5 — shelf-service: estanterías personales CQRS
+
+**Objetivo**: construir `shelf-service` (puerto `8085`), propietario de las estanterías personales de cada usuario (leído / leyendo / quiero leer), consumiendo `BookCreatedEvent` para mantener un catálogo local desnormalizado, con CQRS (Postgres command + Mongo query).
 
 ### Fase 5.1 — Esqueleto del shelf-service
 
-- Proyecto Spring Initializr en `shelf-service/` con starters `webmvc`, `data-jpa`, `data-mongodb`, `security`, `validation`, `actuator`, `amqp`; parent `booksocial-parent` + jjwt; driver `postgresql`.
-- Puerto `8085`, seguridad parse-only copiada, gateway `Path=/shelves/**` → `${SHELF_SERVICE_URI:http://localhost:8085}`.
-- Compose con `depends_on` postgres+mongodb+rabbitmq, `SPRING_RABBITMQ_HOST`.
+- Proyecto Spring Initializr en `shelf-service/` con starters `webmvc`, `data-jpa`, `data-mongodb`, `security`, `validation`, `actuator`, `amqp`; parent `booksocial-parent` + jjwt 0.12.6; driver `postgresql`.
+- Puerto `8085`, seguridad parse-only copiada de review-service.
+- Gateway: ruta `Path=/shelves/**` → `${SHELF_SERVICE_URI:http://localhost:8085}`.
+- Compose: `shelf-service` con `depends_on` postgres+mongodb+rabbitmq, `SPRING_RABBITMQ_HOST`.
+- Añadir `<module>` al parent POM raíz.
 
-### Fase 5.2 — Evento cruzado BookCreatedEvent
+### Fase 5.2 — Evento cruzado BookCreatedEvent (consumer)
 
-- **shelf-service**: `RabbitConfig` (exchange + cola `shelf-service.books.created` + binding a `book.created`), `BookCreatedEvent` (copia local), `BookCreatedEventConsumer` → upsert `BookRefReadModel` (isbn, title, author) en colección `book_refs` de Mongo.
+- `config/RabbitConfig`: exchange `booksocial.events` + cola `shelf-service.books.created` + binding key `book.created` + `JacksonJsonMessageConverter` (trusted `com.booksocial.shelf.events`).
+- `events/BookCreatedEvent` (copia local), `events/BookCreatedEventConsumer` → upsert `BookRefReadModel` (isbn, title, author) en Mongo.
+- Verificar: re-seed de libros → book_refs en shelf-service, POST /books → evento → nuevo book_ref.
 
-### Fase 5.3 — CRUD de estanterías CQRS
+### Fase 5.3 — Estanterías CQRS
 
-- **Dominio**: `ShelfType` (enum: READ, READING, WANT_TO_READ), `UserShelf` (JPA, unique `(user_id, book_isbn)`), `domain/exceptions`.
-- **Read models**: `UserShelfReadModel` (Mongo, `_id`=`<userId>:<isbn>`), `UserShelfRepository` (Mongo).
-- **Command side**: `UserShelfRepository` (JPA), `ShelfService` (create/remove/listByUser/listByUserAndType), dual-write + catálogo local.
-- **Controller**: `POST /shelves/{isbn}`, `DELETE /shelves/{isbn}`, `GET /shelves/{userId}`, `GET /shelves/{userId}?shelfType=READ`.
-- DTOs record, `GlobalExceptionHandler`.
+- `domain/ShelfStatus` (enum: `WANTS_TO_READ`, `READING`, `READ`).
+- `domain/Shelf` (JPA, unique `(user_id, book_isbn)`, status, timestamps).
+- `readmodel/ShelfReadModel` (Mongo, `_id` = `"<userId>:<isbn>"`, con title/author desnormalizados desde eventos).
+- `ShelfService`: create (verifica catálogo local → 422, 409 si duplicado), update status, delete, listByUser (Mongo), findByIsbn (Mongo).
+- `ShelfController`: `POST /shelves` (201), `PUT /shelves/{isbn}` (200), `DELETE /shelves/{isbn}` (204), `GET /shelves` (lista del usuario actual), `GET /shelves/{isbn}` (check), `GET /shelves/users/{userId}` (público).
+- DTOs record, excepciones 404/409/422/400, `GlobalExceptionHandler`.
+- E2E completo y `verify` local.
 
 ### Cierre de la Fase 5
 
 - [ ] Fase 5.1 — Esqueleto del shelf-service contenerizado.
-- [ ] Fase 5.2 — Evento cruzado BookCreatedEvent (book-service → shelf-service).
-- [ ] Fase 5.3 — CRUD de estanterías CQRS.
+- [ ] Fase 5.2 — Evento cruzado BookCreatedEvent (consumer).
+- [ ] Fase 5.3 — Estanterías CQRS con catálogo local.
 - [ ] Actualizar este documento al cerrar la fase.
-
----
