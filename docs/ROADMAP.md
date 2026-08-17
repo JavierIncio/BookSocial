@@ -555,9 +555,11 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 
 ---
 
-## Fase 5 — shelf-service: estanterías personales CQRS
+## Fase 5 — shelf-service: estanterías personales CQRS ✅ Completada
 
 **Objetivo**: construir `shelf-service` (puerto `8085`), propietario de las estanterías personales de cada usuario (leído / leyendo / quiero leer), consumiendo `BookCreatedEvent` para mantener un catálogo local desnormalizado, con CQRS (Postgres command + Mongo query).
+
+**Progreso**: Fase 5 completada — esqueleto (5.1), evento cruzado (5.2) y estanterías CQRS (5.3).
 
 ### Fase 5.1 — Esqueleto del shelf-service
 
@@ -585,7 +587,7 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 
 ### Cierre de la Fase 5
 
-- [ ] Fase 5.1 — Esqueleto del shelf-service contenerizado.
-- [ ] Fase 5.2 — Evento cruzado BookCreatedEvent (consumer).
-- [ ] Fase 5.3 — Estanterías CQRS con catálogo local.
-- [ ] Actualizar este documento al cerrar la fase.
+- [x] Fase 5.1 — Esqueleto del shelf-service contenerizado.
+- [x] Fase 5.2 — Evento cruzado BookCreatedEvent (consumer).
+- [x] Fase 5.3 — Estanterías CQRS con catálogo local.
+- [x] Actualizar este documento al cerrar la fase.
