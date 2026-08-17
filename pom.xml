@@ -44,5 +44,6 @@
         <module>user-service</module>
         <module>book-service</module>
         <module>review-service</module>
+        <module>shelf-service</module>
     </modules>
 </project>

@@ -34,6 +34,11 @@ spring:
               predicates:
                 - Path=/reviews/**
 
+            - id: shelf-service
+              uri: ${SHELF_SERVICE_URI:http://localhost:8085}
+              predicates:
+                - Path=/shelves/**
+
 server:
   port: 8080
 

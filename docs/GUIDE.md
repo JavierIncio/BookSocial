@@ -29,6 +29,7 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 | [6. user-service](#bloque-6--fase-2-user-service-perfil-con-cqrs-dual-write) | CQRS, follows, RabbitMQ | Fase 2 |
 | [7. book-service](#bloque-7--book-service-catálogo-de-libros-con-cqrs) | Catálogo, búsqueda, roles | Fase 3 |
 | [8. review-service](#bloque-8--review-service-reseñas--primer-evento-cruzado) | Eventos cruzados, stats | Fase 4 |
+| [9. shelf-service](#bloque-9--shelf-service-estantería-personal-del-usuario) | Estantería, dual-write, evento cruzado | Fase 4 |
 | [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable) | JwtService, filtros, config | Referencia |
 | [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño) | Resumen arquitectónico | Referencia |
 
@@ -52,12 +53,14 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
    ┌──────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
    │  identity   │ │    user     │ │    book     │
    │  :8081      │ │  :8082      │ │  :8083      │
-   └─────────────┘ └─────────────┘ └─────────────┘
-                           │
-                    ┌──────▼───────┐
-                    │   review     │
-                    │   :8084      │
-                    └──────────────┘
+   └─────────────┘ └─────────────┘ └──────┬──────┘
+                                          │
+                 ┌────────────────────────┼────────────────────────┐
+                 │                        │                        │
+          ┌──────▼──────┐         ┌──────▼──────┐         ┌──────▼──────┐
+          │   review    │         │   shelf     │         │  (future)   │
+          │   :8084      │         │   :8085     │         │             │
+          └─────────────┘         └─────────────┘         └─────────────┘
 ```
 
 **Infraestructura**: PostgreSQL (datos relacionales), MongoDB (lecturas CQRS), RabbitMQ (eventos asíncronos).
@@ -3952,9 +3955,323 @@ public record ReviewSummaryResponse(String bookIsbn, long ratingCount, double av
 
 ---
 
+## Bloque 9 — shelf-service (estantería personal del usuario)
+
+La Fase 4 continúa con el patrón de eventos cruzados: `shelf-service` consume `BookCreatedEvent` de la misma forma que review-service, pero su dominio es distinto — una **estantería personal** donde cada usuario clasifica libros en tres estados: *wants to read*, *reading* y *read*. Es el primer servicio que usa `X-User-Id` como identificador principal (en vez de `X-User-Email`).
+
+### 9.1 — Esqueleto del shelf-service
+
+#### Creación y estructura
+
+Mismo procedimiento que 7.1 y 8.1, con estas variantes:
+
+- Puerto **`8085`**. Dependencias: los mismos 6 starters + `spring-boot-starter-amqp` + driver `postgresql`.
+- Gateway: ruta `Path=/shelves/**` → `${SHELF_SERVICE_URI:http://localhost:8085}`.
+- Compose: `shelf-service` con `depends_on` postgres + mongodb + **rabbitmq** (los tres `service_healthy`).
+
+```
+shelf-service/
+├── .env                              # APP_JWT_SECRET
+├── Dockerfile
+├── pom.xml
+└── src/main/java/com/booksocial/shelf/
+    ├── ShelfServiceApplication.java
+    ├── config/
+    │   ├── SecurityConfig.java       # parse-only JWT (Apéndice A)
+    │   └── RabbitConfig.java         # exchange + cola + binding del consumer
+    ├── domain/
+    │   ├── Shelf.java               # JPA entity (Postgres)
+    │   ├── ShelfStatus.java         # enum: WANTS_TO_READ, READING, READ
+    │   ├── ShelfNotFoundException.java
+    │   ├── ShelfAlreadyExistsException.java
+    │   └── BookNotInCatalogException.java
+    ├── readmodel/
+    │   ├── ShelfReadModel.java       # Mongo document (_id = "userId:isbn")
+    │   ├── ShelfReadModelRepository.java
+    │   ├── BookRefReadModel.java     # Mongo document (_id = isbn)
+    │   └── BookRefReadModelRepository.java
+    ├── repository/
+    │   └── ShelfRepository.java      # JPA
+    ├── security/
+    │   ├── JwtService.java
+    │   ├── JwtAuthFilter.java
+    │   └── RestAuthenticationEntryPoint.java
+    ├── service/
+    │   └── ShelfService.java
+    ├── events/
+    │   ├── BookCreatedEvent.java     # record (copia del publicador)
+    │   └── BookCreatedEventConsumer.java  # @RabbitListener
+    └── web/
+        ├── ShelfController.java
+        ├── GlobalExceptionController.java
+        └── dto/
+            ├── CreateShelfRequest.java
+            ├── UpdateShelfRequest.java
+            └── ShelfResponse.java
+```
+
+> **Seguridad**: las 4 clases de seguridad se copian tal cual del [Apéndice A](#apéndice-a--plantilla-de-seguridad-reutilizable). No hay diferencias.
+
+### 9.2 — Modelo de dominio: `Shelf`
+
+```java
+@Entity
+@Table(name = "shelves",
+       uniqueConstraints = @UniqueConstraint(columnNames = "book_isbn, user_id"))
+public class Shelf {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "book_isbn", nullable = false, length = 20)
+    private String bookIsbn;
+
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
+
+    @Enumerated(EnumType.STRING)
+    private ShelfStatus status;
+
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt;
+
+    private Instant updatedAt;
+}
+```
+
+```java
+public enum ShelfStatus {
+    WANTS_TO_READ,
+    READING,
+    READ
+}
+```
+
+**Restricción de unicidad**: un usuario solo puede tener **una entrada por ISBN**. Si quiere cambiar el estado, usa `PUT` en vez de `POST`.
+
+### 9.3 — Read models (MongoDB)
+
+#### `ShelfReadModel` — proyección desnormalizada del estante
+
+```java
+@Document(collection = "shelves")
+public class ShelfReadModel {
+    @Id private String id;        // "userId:isbn"
+    private Long userId;
+    private String bookIsbn;
+    private String title;          // ← desnormalizado de BookRefReadModel
+    private String author;         // ← desnormalizado de BookRefReadModel
+    private ShelfStatus status;
+    private Instant createdAt;
+    private Instant updatedAt;
+
+    public ShelfReadModel(Shelf shelf, BookRefReadModel book) {
+        this.id = shelf.getUserId() + ":" + shelf.getBookIsbn();
+        // ... copia campos del shelf y del bookRef
+    }
+}
+```
+
+**`_id`**: compuesto `userId:isbn` — idempotente y único por usuario+libro.
+
+#### `BookRefReadModel` — catálogo local de libros (copia exacta del de review-service)
+
+```java
+@Document(collection = "book_refs")
+public class BookRefReadModel {
+    @Id private String isbn;
+    private String title;
+    private String author;
+}
+```
+
+> **Patrón duplicado intencionalmente**: `shelf-service` y `review-service` mantienen cada uno su propia copia de `book_refs` en MongoDB. No se comparten bases de datos entre servicios. Esto mantiene el desacoplamiento: si review-service elimina su catálogo, shelf-service no se ve afectado.
+
+### 9.4 — Consumidor del evento `BookCreatedEvent`
+
+Mismo patrón que en review-service (sección 8.2):
+
+```java
+@Component
+public class BookCreatedEventConsumer {
+    private final BookRefReadModelRepository readModelRepository;
+
+    @RabbitListener(queues = RabbitConfig.SHELF_QUEUE)
+    public void onBookCreated(BookCreatedEvent event) {
+        readModelRepository.save(
+            new BookRefReadModel(event.bookIsbn(), event.title(), event.author()));
+    }
+}
+```
+
+```java
+@Configuration
+public class RabbitConfig {
+    public static final String EXCHANGE     = "booksocial.events";
+    public static final String SHELF_QUEUE  = "shelf-service.books.created";
+    public static final String SHELF_KEY    = "book.created";
+    // ... beans: exchange, queue, binding, jsonMessageConverter
+}
+```
+
+**La cola se llama `shelf-service.books.created`**: cada consumidor declara su propia cola duraderia. El routing key es el mismo `book.created`.
+
+### 9.5 — Servicio: operaciones CRUD
+
+```java
+@Service
+@Transactional
+public class ShelfService {
+
+    private final BookRefReadModelRepository bookRefRepository;
+    private final ShelfRepository shelfRepository;
+    private final ShelfReadModelRepository readModelRepository;
+
+    public ShelfResponse create(CreateShelfRequest req, Long userId) {
+        BookRefReadModel bookRef = bookRefRepository.findById(req.bookIsbn())
+                .orElseThrow(() -> new BookNotInCatalogException(req.bookIsbn()));
+
+        if (shelfRepository.existsByUserIdAndBookIsbn(userId, req.bookIsbn()))
+            throw new ShelfAlreadyExistsException(req.bookIsbn(), userId);
+
+        Shelf shelf = new Shelf(req.bookIsbn(), userId, req.status());
+        shelfRepository.save(shelf);
+
+        ShelfReadModel readModel = new ShelfReadModel(shelf, bookRef);
+        readModelRepository.save(readModel);
+
+        return toResponse(readModel);
+    }
+
+    public ShelfResponse updateStatus(String isbn, Long userId, UpdateShelfRequest req) {
+        BookRefReadModel bookRef = bookRefRepository.findById(isbn)
+                .orElseThrow(() -> new BookNotInCatalogException(isbn));
+
+        Shelf shelf = shelfRepository.findByUserIdAndBookIsbn(userId, isbn)
+                .orElseThrow(() -> new ShelfNotFoundException(isbn, userId));
+
+        shelf.setStatus(req.status());
+        shelf.setUpdatedAt(Instant.now());
+        shelfRepository.save(shelf);
+
+        ShelfReadModel readModel = readModelRepository.save(new ShelfReadModel(shelf, bookRef));
+        return toResponse(readModel);
+    }
+
+    public void delete(String isbn, Long userId) {
+        Shelf shelf = shelfRepository.findByUserIdAndBookIsbn(userId, isbn)
+                .orElseThrow(() -> new ShelfNotFoundException(isbn, userId));
+
+        shelfRepository.delete(shelf);
+        readModelRepository.deleteById(userId + ":" + isbn);
+    }
+
+    public List<ShelfResponse> listByUser(Long userId) {
+        return readModelRepository.findAllByUserId(userId)
+                .stream().map(this::toResponse).toList();
+    }
+}
+```
+
+**Flujo dual-write** (igual que user-service en 6.2):
+1. Validar que el libro existe en `book_refs` (catálogo local vía RabbitMQ).
+2. Verificar unicidad (solo en `create`).
+3. Escribir en PostgreSQL (`shelves`).
+4. Escribir en MongoDB (`shelves` read model).
+
+### 9.6 — Controlador
+
+```java
+@RestController
+@RequestMapping("/shelves")
+public class ShelfController {
+
+    private final ShelfService shelfService;
+
+    @PostMapping
+    public ResponseEntity<ShelfResponse> create(
+            @Valid @RequestBody CreateShelfRequest request,
+            @RequestHeader("X-User-Id") Long userId) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(shelfService.create(request, userId));
+    }
+
+    @PutMapping("/{isbn}")
+    public ResponseEntity<ShelfResponse> updateStatus(
+            @PathVariable String isbn,
+            @Valid @RequestBody UpdateShelfRequest request,
+            @RequestHeader("X-User-Id") Long userId) {
+        return ResponseEntity.ok(shelfService.updateStatus(isbn, userId, request));
+    }
+
+    @DeleteMapping("/{isbn}")
+    public ResponseEntity<Void> delete(
+            @PathVariable String isbn,
+            @RequestHeader("X-User-Id") Long userId) {
+        shelfService.delete(isbn, userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping
+    public ResponseEntity<List<ShelfResponse>> list(
+            @RequestHeader("X-User-Id") Long userId) {
+        return ResponseEntity.ok(shelfService.listByUser(userId));
+    }
+}
+```
+
+#### Endpoints
+
+| Método | Ruta | Descripción | Headers |
+|--------|------|-------------|---------|
+| `POST` | `/shelves` | Añadir libro al estante | `X-User-Id`, `Authorization` |
+| `PUT` | `/shelves/{isbn}` | Cambiar estado (wants/reading/read) | `X-User-Id`, `Authorization` |
+| `DELETE` | `/shelves/{isbn}` | Eliminar del estante | `X-User-Id`, `Authorization` |
+| `GET` | `/shelves` | Listar estante del usuario | `X-User-Id`, `Authorization` |
+
+> **Identidad del usuario**: a diferencia de los demás servicios que usan `X-User-Email`, shelf-service usa **`X-User-Id`** (el ID numérico del usuario). Esto simplifica las queries en PostgreSQL y MongoDB.
+
+### 9.7 — DTOs
+
+```java
+public record CreateShelfRequest(
+    @NotBlank String bookIsbn,
+    ShelfStatus status
+) {
+    public CreateShelfRequest {
+        if (status == null) status = ShelfStatus.WANTS_TO_READ;
+    }
+}
+
+public record UpdateShelfRequest(@NotNull ShelfStatus status) {}
+
+public record ShelfResponse(
+    Long id, String bookIsbn, String title, String author,
+    ShelfStatus status, Instant createdAt, Instant updatedAt
+) {}
+```
+
+**`CreateShelfRequest`**: si no se especifica `status`, por defecto es `WANTS_TO_READ`.
+
+### Excepciones
+
+| Excepción | HTTP | Error |
+|---|---|---|
+| `ShelfNotFoundException` | 404 | `not_found` |
+| `ShelfAlreadyExistsException` | 409 | `conflict` |
+| `BookNotInCatalogException` | 422 | `unprocessable` |
+
+### Decisiones de diseño de shelf-service
+
+- **Doble consumidor del mismo evento**: tanto review-service como shelf-service escuchan `book.created`. Cada uno mantiene su propia cola (`review-service.books.created` y `shelf-service.books.created`) y su propia copia de `book_refs`. Esto es desacoplamiento por diseño: no hay bases de datos compartidas entre servicios.
+- **`X-User-Id` en vez de `X-User-Email`**: el gateway extrae ambos headers del JWT. shelf-service usa el ID numérico porque es más eficiente como clave de búsqueda en MongoDB (`findAllByUserId`) y PostgreSQL (`WHERE user_id = ?`).
+- **Unicidad por constraint, no por código**: la restricción `UNIQUE(book_isbn, user_id)` en PostgreSQL garantiza que un usuario no pueda añadir el mismo libro dos veces, aunque el servicio también valida antes de insertar para devolver un error claro (`409`).
+- **Dual-write síncrono**: el servicio escribe Postgres y Mongo en la misma transacción. Es el mismo patrón que user-service (perfil) y review-service (reseñas). La consistencia eventual entre servicios se gestiona a nivel de eventos.
+
+---
+
 ## Apéndice A — Plantilla de seguridad reutilizable
 
-Los servicios downstream (user-service, book-service, review-service) comparten la misma configuración de seguridad: **solo validan JWT, no los generan**. El identity-service es el único que emite tokens. Esta sección consolida el patrón para evitar repetirlo en cada bloque.
+Los servicios downstream (user-service, book-service, review-service, shelf-service) comparten la misma configuración de seguridad: **solo validan JWT, no los generan**. El identity-service es el único que emite tokens. Esta sección consolida el patrón para evitar repetirlo en cada bloque.
 
 ### JwtService (parse-only)
 
