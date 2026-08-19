@@ -10,7 +10,7 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-5 están completadas** (iden
 
 - El usuario escribe todo el código (VS Code); el asistente guía, revisa y verifica.
 - Repositorio: monorepo, branch `main`, remoto `https://github.com/JavierIncio/BookSocial.git`.
-- Commits: Fase 5 = `6f23d48`, docs Fase 5 = `4a97f66`, fix frontend zoneless = pendiente.
+- Commits: Fase 5 = `6f23d48`, docs Fase 5 = `4a97f66`, fix frontend zoneless = `1ca3280`.
 - Runtime: Java 21, Spring Boot 4.1.0, Spring Cloud WebMVC 2025.1.2, Angular 21.2.19, Node 24, Maven wrapper, jjwt 0.12.6.
 - Stack Docker Compose: postgres:16-alpine, mongodb:8.0, rabbitmq:4-management, identity (:8081), gateway (:8080), user-service (:8082), book-service (:8083), review-service (:8084), shelf-service (:8085) — 9 contenedores.
 - Secretos en `.env` por módulo; todos comparten `APP_JWT_SECRET`.
@@ -74,7 +74,6 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-5 están completadas** (iden
 
 ### Active
 
-- **Fix frontend zoneless completado**: home, login, register migrados a signals. Build OK. Pendiente commit/push.
 - **Fase 6: Frontend Angular — integrar catálogo, reseñas y estanterías.**
 
 ### Blocked
