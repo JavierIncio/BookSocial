@@ -7,22 +7,22 @@
 </header>
 
 <main>
-  @if (loading) {
+  @if (loading()) {
   <p>Loading profile…</p>
-  } @else if (error) {
-  <p class="error">{{ error }}</p>
-  } @else if (user) {
+  } @else if (error()) {
+  <p class="error">{{ error() }}</p>
+  } @else if (user()) {
   <section class="profile">
-    <div class="avatar">{{ user.firstName + ' ' + user.lastName | initials }}</div>
-    <h2>{{ user.firstName }} {{ user.lastName }}</h2>
+    <div class="avatar">{{ user()?.firstName + ' ' + user()?.lastName | initials }}</div>
+    <h2>{{ user()?.firstName }} {{ user()?.lastName }}</h2>
     <dl>
       <dt>Email</dt>
-      <dd>{{ user.email }}</dd>
+      <dd>{{ user()?.email }}</dd>
       <dt>Age</dt>
-      <dd>{{ user.age ?? '—' }}</dd>
+      <dd>{{ user()?.age === -1 ? '—' : user()?.age }}</dd>
       <dt>Roles</dt>
       <dd>
-        @for (role of user.roles; track role) {
+        @for (role of user()?.roles; track role) {
         <span class="role">{{ role | capitalize }}</span>
         }
       </dd>

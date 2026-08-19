@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, inject } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import {
   FormBuilder,
   ReactiveFormsModule,
@@ -39,24 +39,25 @@ export class Register {
     birthDate: ['', [Validators.required, pastDate]],
   });
 
-  errorMessage = '';
-  loading = false;
+  errorMessage = signal<string>('');
+  loading = signal<boolean>(false);
 
   submit(): void {
     if (this.form.invalid) return;
 
-    this.loading = true;
-    this.errorMessage = '';
+    this.loading.set(true);
+    this.errorMessage.set('');
     this.auth.register(this.form.getRawValue()).subscribe({
       next: () => this.router.navigate(['/home']),
       error: (error: HttpErrorResponse) => {
-        this.loading = false;
-        this.errorMessage =
+        this.loading.set(false);
+        this.errorMessage.set(
           error.status === 409
             ? 'There is already an account with that email.'
             : error.status === 400
               ? 'Please check the form data.'
-              : 'Unexpected error. Please try again.';
+              : 'Unexpected error. Please try again.',
+        );
       },
     });
   }

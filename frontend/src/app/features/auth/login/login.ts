@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { environment } from '@env/environments';
@@ -22,26 +22,27 @@ export class Login implements OnInit {
     password: ['', Validators.required],
   });
 
-  errorMessage: string = '';
-  loading: boolean = false;
+  errorMessage = signal<string>('');
+  loading = signal<boolean>(false);
 
   ngOnInit(): void {
-    this.errorMessage = this.route.snapshot.queryParamMap.get('googleError') ?? '';
+    this.errorMessage.set(this.route.snapshot.queryParamMap.get('googleError') ?? '');
   }
 
   submit(): void {
     if (this.form.invalid) return;
 
-    this.loading = true;
-    this.errorMessage = '';
+    this.loading.set(true);
+    this.errorMessage.set('');
     this.auth.login(this.form.getRawValue()).subscribe({
       next: () => this.router.navigate(['/home']),
       error: (error: HttpErrorResponse) => {
-        this.loading = false;
-        this.errorMessage =
+        this.loading.set(false);
+        this.errorMessage.set(
           error.status === 401
             ? 'Invalid email or password.'
-            : 'Unexpected error. Please try again.';
+            : 'Unexpected error. Please try again.',
+        );
       },
     });
   }

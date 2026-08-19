@@ -1,4 +1,4 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
 import { UserService } from '@core/services/user.service';
@@ -17,19 +17,19 @@ export class Home implements OnInit {
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
 
-  user: UserResponse | null = null;
-  loading = true;
-  error = '';
+  user = signal<UserResponse | null>(null);
+  loading = signal<boolean>(true);
+  error = signal<string>('');
 
   ngOnInit(): void {
     this.userService.me().subscribe({
       next: (user) => {
-        this.user = user;
-        this.loading = false;
+        this.user.set(user);
+        this.loading.set(false);
       },
       error: () => {
-        this.loading = false;
-        this.error = 'Failed to load your profile.';
+        this.loading.set(false);
+        this.error.set('Failed to load your profile.');
       },
     });
   }

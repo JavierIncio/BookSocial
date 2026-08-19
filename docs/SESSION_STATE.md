@@ -10,7 +10,7 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-5 están completadas** (iden
 
 - El usuario escribe todo el código (VS Code); el asistente guía, revisa y verifica.
 - Repositorio: monorepo, branch `main`, remoto `https://github.com/JavierIncio/BookSocial.git`.
-- Commits: Fase 5 = `6f23d48`, docs Fase 5 = `4a97f66`.
+- Commits: Fase 5 = `6f23d48`, docs Fase 5 = `4a97f66`, fix frontend zoneless = pendiente.
 - Runtime: Java 21, Spring Boot 4.1.0, Spring Cloud WebMVC 2025.1.2, Angular 21.2.19, Node 24, Maven wrapper, jjwt 0.12.6.
 - Stack Docker Compose: postgres:16-alpine, mongodb:8.0, rabbitmq:4-management, identity (:8081), gateway (:8080), user-service (:8082), book-service (:8083), review-service (:8084), shelf-service (:8085) — 9 contenedores.
 - Secretos en `.env` por módulo; todos comparten `APP_JWT_SECRET`.
@@ -22,6 +22,7 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-5 están completadas** (iden
 - Eventos: exchange `booksocial.events`, keys `follow.followed`, `follow.unfollowed`, `book.created`. Colas durables declaradas por cada consumidor.
 - CI: GitHub Actions, Postgres service (no RabbitMQ/Mongo). Context tests pasan porque AMQP/MongoDB son lazy.
 - Frontend (convención): signals + `inject()` (standalone, sin constructor).
+- **Angular 21 zoneless**: NO usa zone.js. Todos los componentes deben usar **signals** para estado reactivo (`signal()`, `.set()`, `.asReadonly()`). Las propiedades normales mutadas en `.subscribe()` NO disparan change detection. Templates usan `signal()` como funciones: `@if (loading())`, `{{ user()?.name }}`.
 
 ## Resumen de APIs disponibles (vía gateway :8080)
 
@@ -69,9 +70,11 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-5 están completadas** (iden
 - **Fase 3 cerrada (book-service)**: catálogo CQRS con búsqueda, seeder 8 libros, control de roles ADMIN, publicación de BookCreatedEvent.
 - **Fase 4 cerrada (review-service)**: reseñas CQRS con stats agregadas, consumer de BookCreatedEvent (book_refs en Mongo).
 - **Fase 5 cerrada (shelf-service)**: estanterías CQRS (WANTS_TO_READ/READING/READ), consumer de BookCreatedEvent (book_refs en Mongo).
+- **Fix frontend zoneless**: home.ts, login.ts, register.ts migrados de propiedades normales a `signal()` para compatibilidad con Angular 21 zoneless. Build OK.
 
 ### Active
 
+- **Fix frontend zoneless completado**: home, login, register migrados a signals. Build OK. Pendiente commit/push.
 - **Fase 6: Frontend Angular — integrar catálogo, reseñas y estanterías.**
 
 ### Blocked
@@ -102,8 +105,11 @@ Empezar la **Fase 6 — Frontend Angular**. Planificación sugerida:
 - `infrastructure/docker-compose.yml` — 9 servicios.
 
 ### Frontend (pendiente Fase 6)
-- `frontend/` — Angular 21.2.19, actualmente solo tiene login/registro/OAuth2/guardas/interceptor JWT.
-- Convenciones: signals + `inject()` (standalone components, sin constructor).
+- `frontend/` — Angular 21.2.19, login/registro/OAuth2/guardas/interceptor JWT + home con profile.
+- `features/home/` — signals para user/loading/error, llama a `GET /users/me`.
+- `features/auth/login/` — signals para errorMessage/loading, Reactive Forms.
+- `features/auth/register/` — signals para errorMessage/loading, Reactive Forms.
+- Convenciones: **signals** + `inject()` (standalone, sin constructor). Obligatorio en zoneless.
 
 ### Docs
 - `docs/GUIDE.md` — Bloques 0-8.

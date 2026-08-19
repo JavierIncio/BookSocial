@@ -52,15 +52,15 @@
     />
   </label>
 
-  @if (errorMessage) {
-  <p class="error">{{ errorMessage }}</p>
+  @if (errorMessage()) {
+  <p class="error">{{ errorMessage() }}</p>
   }
 
   <button
     type="submit"
-    [disabled]="form.invalid || loading"
+    [disabled]="form.invalid || loading()"
   >
-    {{ loading ? 'Creating…' : 'Create Account' }}
+    {{ loading() ? 'Creating…' : 'Create Account' }}
   </button>
 
   <button

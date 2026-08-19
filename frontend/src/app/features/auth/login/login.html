@@ -23,15 +23,15 @@
     >
   </label>
 
-  @if (errorMessage) {
-  <p class="error">{{ errorMessage }}</p>
+  @if (errorMessage()) {
+  <p class="error">{{ errorMessage() }}</p>
   }
 
   <button
     type="submit"
     [disabled]="form.invalid"
   >
-    {{ loading ? 'Logging in...' : 'Login' }}
+    {{ loading() ? 'Logging in...' : 'Login' }}
   </button>
 
   <button
