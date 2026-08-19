@@ -2298,16 +2298,22 @@ Antes de renderizar la app, Angular intenta renovar la sesión con el refresh to
     password: ['', Validators.required],
   });
 
+  errorMessage = signal<string>('');
+  loading = signal<boolean>(false);
+
   submit(): void {
     if (this.form.invalid) return;              // el botón además se deshabilita en el HTML
-    this.loading = true;
+    this.loading.set(true);
+    this.errorMessage.set('');
     this.auth.login(this.form.getRawValue()).subscribe({
       next: () => this.router.navigate(['/home']),
       error: (error: HttpErrorResponse) => {
-        this.loading = false;
-        this.errorMessage = error.status === 401
-          ? 'Invalid email or password.'
-          : 'Unexpected error. Please try again.';
+        this.loading.set(false);
+        this.errorMessage.set(
+          error.status === 401
+            ? 'Invalid email or password.'
+            : 'Unexpected error. Please try again.',
+        );
       },
     });
   }
@@ -2317,7 +2323,7 @@ Antes de renderizar la app, Angular intenta renovar la sesión con el refresh to
   }
   ```
 
-  `nonNullable.group(...)` crea controles que nunca devuelven `null` (mejor tipado). En la plantilla (`login.html`), el botón de envío muestra "Logging in..." mientras carga y se deshabilita con `[disabled]="form.invalid"`; el error se muestra con `@if (errorMessage)`.
+  `nonNullable.group(...)` crea controles que nunca devuelven `null` (mejor tipado). En la plantilla (`login.html`), el botón de envío muestra "Logging in..." mientras carga y se deshabilita con `[disabled]="form.invalid"`; el error se muestra con `@if (errorMessage())`.
 
 - **`register`**: igual que login, pero con un **validador personalizado** para la fecha de nacimiento (no puede ser hoy ni futura):
 
@@ -2379,8 +2385,8 @@ Antes de renderizar la app, Angular intenta renovar la sesión con el refresh to
   ```ts
   ngOnInit(): void {
     this.userService.me().subscribe({
-      next: (user) => { this.user = user; this.loading = false; },
-      error: () => { this.loading = false; this.error = 'Failed to load your profile.'; },
+      next: (user) => { this.user.set(user); this.loading.set(false); },
+      error: () => { this.loading.set(false); this.error.set('Failed to load your profile.'); },
     });
   }
 
@@ -2399,24 +2405,24 @@ Con sesión:  /home → interceptor añade Bearer → gateway valida → me() re
 Las plantillas usan las **nuevas estructuras de control** de Angular (`@if`, `@else if`, `@for`) en lugar de los antiguos `*ngIf`/`*ngFor`. En `home.html`:
 
 ```html
-@if (loading) {
+@if (loading()) {
 <p>Loading profile…</p>
-} @else if (error) {
-<p class="error">{{ error }}</p>
-} @else if (user) {
+} @else if (error()) {
+<p class="error">{{ error() }}</p>
+} @else if (user()) {
 <section class="profile">
   <div class="avatar">
-    {{ user.firstName + ' ' + user.lastName | initials }}
+    {{ user()?.firstName + ' ' + user()?.lastName | initials }}
   </div>
-  <h2>{{ user.firstName }} {{ user.lastName }}</h2>
+  <h2>{{ user()?.firstName }} {{ user()?.lastName }}</h2>
   <dl>
     <dt>Email</dt>
-    <dd>{{ user.email }}</dd>
+    <dd>{{ user()?.email }}</dd>
     <dt>Age</dt>
-    <dd>{{ user.age ?? '—' }}</dd>
+    <dd>{{ user()?.age === -1 ? '--' : user()?.age }}</dd>
     <dt>Roles</dt>
     <dd>
-      @for (role of user.roles; track role) {
+      @for (role of user()?.roles; track role) {
       <span class="role">{{ role | capitalize }}</span>
       }
     </dd>
@@ -2427,16 +2433,16 @@ Las plantillas usan las **nuevas estructuras de control** de Angular (`@if`, `@e
 
 Detalles:
 
-- **`@if` / `@else if`**: se renderiza solo el bloque cuya condición se cumple (loading → error → usuario).
+- **`@if` / `@else if`**: se renderiza solo el bloque cuya condición se cumple (loading → error → usuario). Las condiciones leen signals como funciones: `loading()`, `error()`, `user()`.
 - **`@for ... track role`**: el `track` proporciona a Angular la clave de identidad de cada elemento de la lista (clave para el rendimiento al re-renderizar).
 - **Pipes**: `initials` muestra las iniciales del nombre (`InitialsPipe`) y `capitalize` pone la primera letra del rol en mayúscula (`CapitalizePipe`).
-- **`user.age ?? '—'`**: _nullish coalescing_ en plantilla; muestra el guion si la edad es `null` (usuarios de Google sin `birth_date`).
+- **`user()?.age === -1 ? '--' : user()?.age`**: el operador `?.` (optional chaining) es necesario porque `user()` puede ser `null`. Si la edad es `-1` (usuarios de Google sin `birth_date`), muestra `--`.
 
-El mismo patrón `@if` se usa en `login.html` para mostrar `errorMessage`, y el botón se deshabilita con `[disabled]="form.invalid"` para evitar envíos de formularios inválidos.
+El mismo patrón `@if` se usa en `login.html` para mostrar `errorMessage()`, y el botón se deshabilita con `[disabled]="form.invalid"` para evitar envíos de formularios inválidos.
 
 ## Bloque 4 — Contenerización y CI ampliado
 
-Hasta ahora los servicios se ejecutan directamente en el host. Este bloque los contenedoriza con Docker y amplía el pipeline de CI para verificar que todo funciona en entorno aislado. Es la transición de desarrollo local a部署 consistente.
+Hasta ahora los servicios se ejecutan directamente en el host. Este bloque los contenedoriza con Docker y amplía el pipeline de CI para verificar que todo funciona en entorno aislado. Es la transición de desarrollo local a despliegue consistente.
 
 **Qué añadimos**: Dockerfiles multi-stage (build + runtime), `.dockerignore` para reducir el tamaño de imagen, `docker-compose.yml` con servicios de infraestructura + aplicaciones, healthchecks con dependencias, y CI con PostgreSQL + jobs paralelos.
 
