@@ -3254,7 +3254,7 @@ Topología:
 
 > **Converter en Spring AMQP 4.x**: `Jackson2JsonMessageConverter` está deprecado (marcado para borrar); el reemplazo es **`JacksonJsonMessageConverter`**, con el mismo constructor de trusted packages: `new JacksonJsonMessageConverter("com.booksocial.user.events")`.
 
-#### Eventos
+#### _Events_
 
 ```java
 public record FollowedEvent(Long followerId, Long followeeId, Instant occurredAt) {
@@ -3270,9 +3270,9 @@ public record UnfollowedEvent(Long followerId, Long followeeId, Instant occurred
 }
 ```
 
-Ambos son **records** con constructor de conveniencia que auto-timpea `occurredAt`.
+Ambos son **records** con constructor de conveniencia que establece `occurredAt` de forma automática.
 
-#### Productor
+#### _Publisher_
 
 ```java
 @Component
@@ -3293,7 +3293,7 @@ public class FollowEventPublisher {
 
 Se publica **dentro de la misma transacción**: si `convertAndSend` falla, la excepción propaga y Postgres revierte → no hay evento fantasma. El único hueco es commit-tras-publish (la limitación del "sin Outbox").
 
-#### Consumidor
+#### _Consumer_
 
 ```java
 @Component
@@ -4495,4 +4495,34 @@ Resumen de las decisiones arquitectónicas clave del proyecto:
 
 - **Una cola por evento**: RabbitMQ reparte entre listeners de la misma cola; con una cola por tipo, cada listener recibe un tipo concreto.
 - **Contadores recalculados, no incrementados**: hace las operaciones idempotentes ante re-entregas del broker.
-- **Sin Outbox**: limitación documentada — hueco entre commit en Postgres y publicación en RabbitMQ.
+- **Sin Transactional Outbox**: se documenta como limitación conocida.
+
+#### ¿Qué es el Transactional Outbox?
+
+En un sistema dual-write (Postgres + RabbitMQ en la misma operación), existe un **hueco de consistencia**: si la app se cae después del `save()` en Postgres pero antes del `convertAndSend()` a RabbitMQ, el evento se pierde y los read models quedan desincronizados.
+
+El patrón Outbox resuelve esto escribiendo el evento en una tabla `outbox` **dentro de la misma transacción** que el negocio. Un mecanismo separado (polling con `@Scheduled` o CDC con Debezium) publica los eventos pendientes en RabbitMQ. Así, la escritura y la publicación nunca se separan.
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Transacción                                        │
+│  ┌──────────────┐  ┌────────────────────────────┐   │
+│  │ business_tbl │  │ outbox (evento pendiente)  │   │
+│  └──────┬───────┘  └─────────────┬──────────────┘   │
+│         └─────────── COMMIT ─────┘                  │
+└─────────────────────────────────────────────────────┘
+                     │
+              @Scheduled / CDC
+                     │
+                     ▼
+              RabbitMQ → consumers
+```
+
+#### Por qué no se implementa en BookSocial
+
+- **Baja frecuencia**: 3 eventos (`book.created`, `follow.followed`, `follow.unfollowed`) con tráfico mínimo.
+- **Consumidores idempotentes**: todos recalculan contadores o hacen upsert, nunca incrementan. Un evento perdido deja el read model desactualizado pero no corrupto.
+- **Reparabilidad manual**: si `book.created` se pierde, review-service y shelf-service no tendrán el libro en `book_refs`. Es fácil de detectar y reparar reenviando el evento.
+- **Complejidad añadida**: tabla `outbox`, polling o CDC (Debezium), limpieza de registros publicados. Injustificado para la escala actual.
+
+Se reconsideraría si el proyecto creciera a >100 eventos/minuto, se añadieran eventos críticos (pagos, notificaciones), o los consumidores dejaran de ser idempotentes.
