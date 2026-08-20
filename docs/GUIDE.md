@@ -8,7 +8,7 @@ Guía completa para construir **BookSocial**, una red social de libros con arqui
 
 La guía está organizada en **bloques cronológicos**: cada bloque se construye sobre el anterior, como un curso progresivo. Si empiezas desde cero, sigue el orden recomendado.
 
-**Para aprender haciendo**: cada bloque incluye código real del proyecto, explicaciones de *por qué* se toma cada decisión, y pasos de verificación. Ejecuta el código mientras lees.
+**Para aprender haciendo**: cada bloque incluye código real del proyecto, explicaciones de _por qué_ se toma cada decisión, y pasos de verificación. Ejecuta el código mientras lees.
 
 **Para consultar después**: la tabla de contenidos te permite saltar directamente al bloque que necesites. Los apéndices al final consolidan patrones repetidos (seguridad, Docker).
 
@@ -18,20 +18,20 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 
 ## Tabla de contenidos
 
-| Bloque | Tema | Fase |
-|--------|------|------|
-| [0. Cimientos](#bloque-0--cimientos-monorepo--infraestructura--ci) | Monorepo, Docker, CI | — |
-| [1. Identity Service](#bloque-1--identity-service) | Auth, JWT, OAuth2, roles | Fase 1 |
-| [2. API Gateway](#bloque-2--api-gateway) | Enrutamiento, JWT, headers | Fase 1 |
-| [3. Frontend Angular](#bloque-3--frontend-angular) | SPA, signals, OAuth2 flow | Fase 1 |
-| [4. Contenerización y CI](#bloque-4--contenerización-y-ci-ampliado) | Dockerfiles, compose, CI | Fase 1 |
-| [5. Errores y decisiones](#bloque-5--cierre-errores-resueltos-y-decisiones-de-diseño) | Retrospectiva Fase 1 | Fase 1 |
-| [6. user-service](#bloque-6--fase-2-user-service-perfil-con-cqrs-dual-write) | CQRS, follows, RabbitMQ | Fase 2 |
-| [7. book-service](#bloque-7--book-service-catálogo-de-libros-con-cqrs) | Catálogo, búsqueda, roles | Fase 3 |
-| [8. review-service](#bloque-8--review-service-reseñas--primer-evento-cruzado) | Eventos cruzados, stats | Fase 4 |
-| [9. shelf-service](#bloque-9--shelf-service-estantería-personal-del-usuario) | Estantería, dual-write, evento cruzado | Fase 4 |
-| [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable) | JwtService, filtros, config | Referencia |
-| [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño) | Resumen arquitectónico | Referencia |
+| Bloque                                                                                | Tema                                   | Fase       |
+| ------------------------------------------------------------------------------------- | -------------------------------------- | ---------- |
+| [0. Cimientos](#bloque-0--cimientos-monorepo--infraestructura--ci)                    | Monorepo, Docker, CI                   | —          |
+| [1. Identity Service](#bloque-1--identity-service)                                    | Auth, JWT, OAuth2, roles               | Fase 1     |
+| [2. API Gateway](#bloque-2--api-gateway)                                              | Enrutamiento, JWT, headers             | Fase 1     |
+| [3. Frontend Angular](#bloque-3--frontend-angular)                                    | SPA, signals, OAuth2 flow              | Fase 1     |
+| [4. Contenerización y CI](#bloque-4--contenerización-y-ci-ampliado)                   | Dockerfiles, compose, CI               | Fase 1     |
+| [5. Errores y decisiones](#bloque-5--cierre-errores-resueltos-y-decisiones-de-diseño) | Retrospectiva Fase 1                   | Fase 1     |
+| [6. user-service](#bloque-6--fase-2-user-service-perfil-con-cqrs-dual-write)          | CQRS, follows, RabbitMQ                | Fase 2     |
+| [7. book-service](#bloque-7--book-service-catálogo-de-libros-con-cqrs)                | Catálogo, búsqueda, roles              | Fase 3     |
+| [8. review-service](#bloque-8--review-service-reseñas--primer-evento-cruzado)         | Eventos cruzados, stats                | Fase 4     |
+| [9. shelf-service](#bloque-9--shelf-service-estantería-personal-del-usuario)          | Estantería, dual-write, evento cruzado | Fase 4     |
+| [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable)            | JwtService, filtros, config            | Referencia |
+| [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño)                          | Resumen arquitectónico                 | Referencia |
 
 ---
 
@@ -2776,6 +2776,7 @@ management:
 ```
 
 Puntos clave:
+
 - Puerto `8082`.
 - `spring.config.import: optional:file:.env[.properties]` para cargar secretos desde `.env` (mismo mecanismo que el resto de servicios).
 - Datasource PostgreSQL `booksocial`/`booksocial`, overridable con `SPRING_DATASOURCE_URL`.
@@ -2828,7 +2829,7 @@ public class Profile {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, nullable = false)
+    @Column(nullable = false)
     private Long userId;
 
     @Column(nullable = false)
@@ -2901,25 +2902,54 @@ public class ProfileService {
     private final ProfileReadModelRepository readModelRepository;
 
     public ProfileResponse getOrCreate(Long userId, String email) {
-        Profile profile = profileRepository.findByUserId(userId)
-            .orElseGet(() -> profileRepository.save(new Profile(userId, email)));
+        Profile profile = findOrCreateProfile(userId, email);
         return toResponse(upsertReadModel(profile));
     }
 
     public ProfileResponse update(Long userId, String email, UpdateProfileRequest request) {
-        Profile profile = profileRepository.findByUserId(userId)
-            .orElseGet(() -> profileRepository.save(new Profile(userId, email)));
+        Profile profile = findOrCreateProfile(userId, email);
+        updateProfile(profile, request);
+        profile.touch();
+        profileRepository.save(profile);
+        return toResponse(upsertReadModel(profile));
+    }
+
+    public ProfileResponse getByUserId(Long userId) {
+        ProfileReadModel readModel = readModelRepository.findByUserId(userId)
+                .orElseThrow(() -> new ProfileNotFoundException(userId));
+        return toResponse(readModel);
+    }
+
+    private Profile findOrCreateProfile(Long userId, String email) {
+        return profileRepository.findByUserId(userId)
+                .orElseGet(() -> createProfile(userId, email));
+    }
+
+    private Profile createProfile(Long userId, String email) {
+        Profile profile = new Profile();
+        profile.setUserId(userId);
+        profile.setEmail(email);
+        return profileRepository.save(profile);
+    }
+
+    private void updateProfile(Profile profile, UpdateProfileRequest request) {
         if (request.displayName() != null) profile.setDisplayName(request.displayName());
         if (request.bio() != null)          profile.setBio(request.bio());
         if (request.location() != null)     profile.setLocation(request.location());
         if (request.avatarUrl() != null)    profile.setAvatarUrl(request.avatarUrl());
-        profile.touch();
-        return toResponse(upsertReadModel(profileRepository.save(profile)));
     }
 
-    public ProfileResponse getByUserId(Long userId) {
-        return toResponse(readModelRepository.findByUserId(userId)
-                .orElseThrow(() -> new ProfileNotFoundException(userId)));
+    private ProfileReadModel upsertReadModel(Profile profile) {
+        ProfileReadModel readModel = readModelRepository.findByUserId(profile.getUserId())
+                .orElseGet(() -> new ProfileReadModel(profile.getUserId(), profile.getEmail()));
+        readModel.setUserId(profile.getUserId());
+        readModel.setEmail(profile.getEmail());
+        readModel.setDisplayName(profile.getDisplayName());
+        readModel.setBio(profile.getBio());
+        readModel.setLocation(profile.getLocation());
+        readModel.setAvatarUrl(profile.getAvatarUrl());
+        readModel.setUpdatedAt(profile.getUpdatedAt());
+        return readModelRepository.save(readModel);
     }
 }
 ```
@@ -2927,6 +2957,8 @@ public class ProfileService {
 - `getOrCreate(userId, email)`: si no existe el perfil en Postgres, lo crea; luego hace `upsertReadModel` (actualiza los campos de presentación del documento Mongo y lo guarda).
 - `update(userId, email, request)`: crea el perfil si faltaba (misma semántica on-demand), aplica los campos del DTO (solo los no nulos) y vuelve a sincronizar el read model.
 - `getByUserId(userId)`: lee **exclusivamente de Mongo** — demuestra la separación de rutas de lectura del CQRS.
+- `findOrCreateProfile`: lógica extraída para no duplicar la búsqueda+creación en `getOrCreate` y `update`.
+- `upsertReadModel`: si el documento Mongo no existe, lo crea con los campos base; si existe, actualiza todos los campos. Es idempotente.
 
 #### `ProfileController`
 
@@ -2971,7 +3003,7 @@ public record ProfileResponse(Long userId, String email, String displayName, Str
     int postsCount, Instant createdAt, Instant updatedAt) {}
 ```
 
-Los tres DTOs son **records** — la forma idiomática en Java 21. `UpdateProfileRequest` usa `@Size` para replicar en cliente las mismas restricciones que el backend (defensa en profundidad).
+Los DTOs son **records** — la forma idiomática en Java 21. `UpdateProfileRequest` usa `@Size` para validar la longitud de cada campo en la capa API; los mismos límites pueden replicarse en los formularios Angular como defensa en profundidad.
 
 #### Verificación E2E (Docker)
 
@@ -2991,7 +3023,7 @@ SELECT user_id, email, display_name FROM profiles;
 ```
 
 ```javascript
-db.profiles.find({}, {userId: 1, displayName: 1, _id: 0}).toArray()
+db.profiles.find({}, { userId: 1, displayName: 1, _id: 0 }).toArray();
 ```
 
 ### 6.3 — Errores encontrados en la Fase 2 (con solución directa)
@@ -3003,14 +3035,6 @@ db.profiles.find({}, {userId: 1, displayName: 1, _id: 0}).toArray()
 2. **`MongoCommandException ... AuthenticationFailed` (error 18)**
    - Causa: el usuario `booksocial` es root y se autentica contra `admin`; sin `?authSource=admin` el driver autentica contra la DB del URI (`booksocial`).
    - Solución: añadir `?authSource=admin` a la URI de Mongo.
-
-3. **`Unable to rename ...jar.original` al reconstruir con Maven en Windows**
-   - Causa: el proceso `java` que ejecuta el JAR (o el contenedor local de la app) mantiene el fichero bloqueado.
-   - Solución: detener el proceso `java` (o `docker compose down` del servicio) antes de `mvn clean/package`.
-
-4. **Nota (no es un bug): 401 en `/profiles/me` al probar con un script propio**
-   - Causa: el JSON de login devuelve `accessToken` (camelCase); usar `access_token` produce `Bearer ` vacío → el gateway responde `401`.
-   - Solución: usar `$login.accessToken`.
 
 ### 6.4 — Amistades (follows)
 
@@ -3054,15 +3078,13 @@ public class FollowReadModel {
 #### Repositorios
 
 ```java
-// PostgreSQL
+// PostgreSQL — solo escrituras y validaciones de integridad
 public interface FollowRepository extends JpaRepository<Follow, Long> {
     boolean existsByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
     Optional<Follow> findByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
-    List<Follow> findByFollowerId(Long followerId);
-    List<Follow> findByFolloweeId(Long followeeId);
 }
 
-// MongoDB
+// MongoDB — lecturas y contadores
 public interface FollowReadModelRepository extends MongoRepository<FollowReadModel, String> {
     boolean existsByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
     Optional<FollowReadModel> findByFollowerIdAndFolloweeId(Long followerId, Long followeeId);
@@ -3086,12 +3108,12 @@ public class FollowService {
 
     public FollowResponse follow(Long followerId, Long targetUserId) {
         if (followerId.equals(targetUserId)) throw new SelfFollowException();
-        if (followReadModelRepository.existsByFollowerIdAndFolloweeId(followerId, targetUserId))
+        if (followRepository.existsByFollowerIdAndFolloweeId(followerId, targetUserId))
             throw new AlreadyFollowingException(followerId, targetUserId);
 
-        followRepository.save(new Follow(followerId, targetUserId));
-        eventPublisher.publishFollowed(followerId, targetUserId);  // async RabbitMQ
-        return toResponse(followerId, targetUserId);
+        Follow follow = followRepository.save(new Follow(followerId, targetUserId));
+        eventPublisher.publishFollowed(follow.getFollowerId(), follow.getFolloweeId());  // async RabbitMQ
+        return toResponse(follow.getFollowerId(), follow.getFolloweeId(), follow.getCreatedAt());
     }
 
     public void unfollow(Long followerId, Long targetUserId) {
@@ -3099,17 +3121,23 @@ public class FollowService {
             .findByFollowerIdAndFolloweeId(followerId, targetUserId)
             .orElseThrow(() -> new NotFollowingException(followerId, targetUserId));
         followRepository.delete(follow);
-        eventPublisher.publishUnfollowed(followerId, targetUserId);  // async RabbitMQ
+        eventPublisher.publishUnfollowed(follow.getFollowerId(), follow.getFolloweeId());  // async RabbitMQ
     }
 
     public List<FollowResponse> followers(Long userId) {
         return followReadModelRepository.findByFolloweeId(userId).stream()
-                .map(this::toResponse).toList();  // solo Mongo (CQRS read)
+                .map(f -> toResponse(f.getFollowerId(), f.getFolloweeId(), f.getCreatedAt()))
+                .toList();  // solo Mongo (CQRS read)
     }
 
     public List<FollowResponse> following(Long userId) {
         return followReadModelRepository.findByFollowerId(userId).stream()
-                .map(this::toResponse).toList();
+                .map(f -> toResponse(f.getFollowerId(), f.getFolloweeId(), f.getCreatedAt()))
+                .toList();
+    }
+
+    private FollowResponse toResponse(Long followerId, Long followeeId, Instant createdAt) {
+        return new FollowResponse(followerId, followeeId, createdAt);
     }
 }
 ```
@@ -3151,23 +3179,23 @@ public class FollowController {
 }
 ```
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| `POST` | `/follows/{targetUserId}` | Seguir a un usuario (201) |
-| `DELETE` | `/follows/{targetUserId}` | Dejar de seguir (204) |
-| `GET` | `/follows/{userId}/followers` | Lista quién sigue a este usuario |
-| `GET` | `/follows/{userId}/following` | Lista a quién sigue este usuario |
+| Método   | Ruta                          | Descripción                      |
+| -------- | ----------------------------- | -------------------------------- |
+| `POST`   | `/follows/{targetUserId}`     | Seguir a un usuario (201)        |
+| `DELETE` | `/follows/{targetUserId}`     | Dejar de seguir (204)            |
+| `GET`    | `/follows/{userId}/followers` | Lista quién sigue a este usuario |
+| `GET`    | `/follows/{userId}/following` | Lista a quién sigue este usuario |
 
 El gateway ya enruta `/follows/**` → user-service, por lo que no hay que tocar su configuración para esta sub-fase.
 
 #### Excepciones
 
-| Excepción | HTTP | Mensaje |
-|---|---|---|
-| `SelfFollowException` | 400 | `"Cannot follow yourself"` |
-| `AlreadyFollowingException` | 409 | `"User X already follows Y"` |
-| `NotFollowingException` | 404 | `"User X does not follow Y"` |
-| `ProfileNotFoundException` | 404 | `"Profile not found for userId X"` |
+| Excepción                   | HTTP | Mensaje                            |
+| --------------------------- | ---- | ---------------------------------- |
+| `SelfFollowException`       | 400  | `"Cannot follow yourself"`         |
+| `AlreadyFollowingException` | 409  | `"User X already follows Y"`       |
+| `NotFollowingException`     | 404  | `"User X does not follow Y"`       |
+| `ProfileNotFoundException`  | 404  | `"Profile not found for userId X"` |
 
 #### Verificación E2E (Docker)
 
@@ -3215,6 +3243,7 @@ public class RabbitConfig {
 ```
 
 Topología:
+
 ```
 [booksocial.events] (Topic Exchange)
     ├── routing key "follow.followed"   → [user-service.follows.followed]
@@ -3536,21 +3565,22 @@ public class BookController {
     private final BookService bookService;
 
     @PostMapping
-    public ResponseEntity<BookResponse> createBook(
+    @ResponseStatus(HttpStatus.CREATED)
+    public BookResponse createBook(
             @RequestHeader(value = "X-User-Roles", required = false) String roles,
             @Valid @RequestBody CreateBookRequest request) {
         if (!isAdmin(roles)) throw new ForbiddenException("ADMIN required");
-        return ResponseEntity.status(HttpStatus.CREATED).body(bookService.create(request));
+        return bookService.create(request);
     }
 
     @GetMapping("/{isbn}")
-    public ResponseEntity<BookResponse> getBook(@PathVariable String isbn) {
-        return ResponseEntity.ok(bookService.findByIsbn(isbn));
+    public BookResponse getBook(@PathVariable String isbn) {
+        return bookService.findByIsbn(isbn);
     }
 
     @GetMapping("/search")
-    public ResponseEntity<List<BookResponse>> searchBooks(@RequestParam String q) {
-        return ResponseEntity.ok(bookService.search(q));
+    public List<BookResponse> searchBooks(@RequestParam String q) {
+        return bookService.search(q);
     }
 
     private boolean isAdmin(String roles) {
@@ -3560,11 +3590,11 @@ public class BookController {
 }
 ```
 
-| Método | Ruta | Auth | Descripción |
-|---|---|---|---|
-| `POST` | `/books` | `X-User-Roles` debe contener `ADMIN` | Crear libro (201) |
-| `GET` | `/books/{isbn}` | Autenticado | Buscar por ISBN (200) |
-| `GET` | `/books/search?q=` | Autenticado | Buscar por título o autor (200) |
+| Método | Ruta               | Auth                                 | Descripción                     |
+| ------ | ------------------ | ------------------------------------ | ------------------------------- |
+| `POST` | `/books`           | `X-User-Roles` debe contener `ADMIN` | Crear libro (201)               |
+| `GET`  | `/books/{isbn}`    | Autenticado                          | Buscar por ISBN (200)           |
+| `GET`  | `/books/search?q=` | Autenticado                          | Buscar por título o autor (200) |
 
 > **Roles vía header de confianza**: el gateway reconstruye `X-User-Roles` a partir del claim `roles` del JWT validado (mismo patrón strip-then-assert que `X-User-Id`). El control de permisos downstream es `roles != null && Arrays.stream(roles.split(",")).map(String::trim).anyMatch("ADMIN"::equals)`.
 
@@ -3697,6 +3727,7 @@ public class RabbitConfig {
 ```
 
 Topología:
+
 ```
 [booksocial.events] (Topic Exchange)
     └── routing key "book.created" → [review-service.books.created]
@@ -3777,6 +3808,7 @@ Unique constraint sobre `(book_isbn, user_id)`: un usuario solo puede dejar una 
 #### Query side — Read models en Mongo
 
 **ReviewReadModel** (colección `reviews`):
+
 ```java
 @Document(collection = "reviews")
 public class ReviewReadModel {
@@ -3792,6 +3824,7 @@ public class ReviewReadModel {
 ```
 
 **ReviewStatsReadModel** (colección `review_stats`):
+
 ```java
 @Document(collection = "review_stats")
 public class ReviewStatsReadModel {
@@ -3891,41 +3924,41 @@ public class ReviewService {
 public class ReviewController {
     private final ReviewService reviewService;
 
-    @PostMapping("/{bookIsbn}") @ResponseStatus(HttpStatus.CREATED)
-    public ResponseEntity<ReviewResponse> create(
+    @PostMapping("/{bookIsbn}")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ReviewResponse create(
             @RequestHeader("X-User-Id") Long userId,
             @PathVariable String bookIsbn,
             @Valid @RequestBody CreateReviewRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(reviewService.create(userId, bookIsbn, request));
+        return reviewService.create(userId, bookIsbn, request);
     }
 
     @PutMapping("/{bookIsbn}")
-    public ResponseEntity<ReviewResponse> update(
+    public ReviewResponse update(
             @RequestHeader("X-User-Id") Long userId,
             @PathVariable String bookIsbn,
             @Valid @RequestBody UpdateReviewRequest request) {
-        return ResponseEntity.ok(reviewService.update(userId, bookIsbn, request));
+        return reviewService.update(userId, bookIsbn, request);
     }
 
     @GetMapping("/books/{bookIsbn}")
-    public ResponseEntity<List<ReviewResponse>> listByBook(@PathVariable String bookIsbn) {
-        return ResponseEntity.ok(reviewService.listByBook(bookIsbn));
+    public List<ReviewResponse> listByBook(@PathVariable String bookIsbn) {
+        return reviewService.listByBook(bookIsbn);
     }
 
     @GetMapping("/books/{bookIsbn}/summary")
-    public ResponseEntity<ReviewSummaryResponse> summary(@PathVariable String bookIsbn) {
-        return ResponseEntity.ok(reviewService.summary(bookIsbn));
+    public ReviewSummaryResponse summary(@PathVariable String bookIsbn) {
+        return reviewService.summary(bookIsbn);
     }
 }
 ```
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| `POST` | `/reviews/{bookIsbn}` | Crear reseña (201 / 409 / 422) |
-| `PUT` | `/reviews/{bookIsbn}` | Actualizar reseña (200) |
-| `GET` | `/reviews/books/{bookIsbn}` | Lista de reseñas por libro (Mongo) |
-| `GET` | `/reviews/books/{bookIsbn}/summary` | Rating medio + count (Mongo) |
+| Método | Ruta                                | Descripción                        |
+| ------ | ----------------------------------- | ---------------------------------- |
+| `POST` | `/reviews/{bookIsbn}`               | Crear reseña (201 / 409 / 422)     |
+| `PUT`  | `/reviews/{bookIsbn}`               | Actualizar reseña (200)            |
+| `GET`  | `/reviews/books/{bookIsbn}`         | Lista de reseñas por libro (Mongo) |
+| `GET`  | `/reviews/books/{bookIsbn}/summary` | Rating medio + count (Mongo)       |
 
 #### DTOs
 
@@ -3946,11 +3979,11 @@ public record ReviewSummaryResponse(String bookIsbn, long ratingCount, double av
 
 #### Excepciones
 
-| Excepción | HTTP | Error |
-|---|---|---|
-| `ReviewNotFoundException` | 404 | `not_found` |
-| `ReviewAlreadyExistsException` | 409 | `conflict` |
-| `BookNotInCatalogException` | 422 | `unprocessable` |
+| Excepción                      | HTTP | Error           |
+| ------------------------------ | ---- | --------------- |
+| `ReviewNotFoundException`      | 404  | `not_found`     |
+| `ReviewAlreadyExistsException` | 409  | `conflict`      |
+| `BookNotInCatalogException`    | 422  | `unprocessable` |
 
 ### Decisiones de diseño de la Fase 4 (resumen)
 
@@ -3963,7 +3996,7 @@ public record ReviewSummaryResponse(String bookIsbn, long ratingCount, double av
 
 ## Bloque 9 — shelf-service (estantería personal del usuario)
 
-La Fase 4 continúa con el patrón de eventos cruzados: `shelf-service` consume `BookCreatedEvent` de la misma forma que review-service, pero su dominio es distinto — una **estantería personal** donde cada usuario clasifica libros en tres estados: *wants to read*, *reading* y *read*. Es el primer servicio que usa `X-User-Id` como identificador principal (en vez de `X-User-Email`).
+La Fase 4 continúa con el patrón de eventos cruzados: `shelf-service` consume `BookCreatedEvent` de la misma forma que review-service, pero su dominio es distinto — una **estantería personal** donde cada usuario clasifica libros en tres estados: _wants to read_, _reading_ y _read_. Es el primer servicio que usa `X-User-Id` como identificador principal (en vez de `X-User-Email`).
 
 ### 9.1 — Esqueleto del shelf-service
 
@@ -4179,6 +4212,7 @@ public class ShelfService {
 ```
 
 **Flujo dual-write** (igual que user-service en 6.2):
+
 1. Validar que el libro existe en `book_refs` (catálogo local vía RabbitMQ).
 2. Verificar unicidad (solo en `create`).
 3. Escribir en PostgreSQL (`shelves`).
@@ -4194,45 +4228,45 @@ public class ShelfController {
     private final ShelfService shelfService;
 
     @PostMapping
-    public ResponseEntity<ShelfResponse> create(
+    @ResponseStatus(HttpStatus.CREATED)
+    public ShelfResponse create(
             @Valid @RequestBody CreateShelfRequest request,
             @RequestHeader("X-User-Id") Long userId) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(shelfService.create(request, userId));
+        return shelfService.create(request, userId);
     }
 
     @PutMapping("/{isbn}")
-    public ResponseEntity<ShelfResponse> updateStatus(
+    public ShelfResponse updateStatus(
             @PathVariable String isbn,
             @Valid @RequestBody UpdateShelfRequest request,
             @RequestHeader("X-User-Id") Long userId) {
-        return ResponseEntity.ok(shelfService.updateStatus(isbn, userId, request));
+        return shelfService.updateStatus(isbn, userId, request);
     }
 
     @DeleteMapping("/{isbn}")
-    public ResponseEntity<Void> delete(
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(
             @PathVariable String isbn,
             @RequestHeader("X-User-Id") Long userId) {
         shelfService.delete(isbn, userId);
-        return ResponseEntity.noContent().build();
     }
 
     @GetMapping
-    public ResponseEntity<List<ShelfResponse>> list(
+    public List<ShelfResponse> list(
             @RequestHeader("X-User-Id") Long userId) {
-        return ResponseEntity.ok(shelfService.listByUser(userId));
+        return shelfService.listByUser(userId);
     }
 }
 ```
 
 #### Endpoints
 
-| Método | Ruta | Descripción | Headers |
-|--------|------|-------------|---------|
-| `POST` | `/shelves` | Añadir libro al estante | `X-User-Id`, `Authorization` |
-| `PUT` | `/shelves/{isbn}` | Cambiar estado (wants/reading/read) | `X-User-Id`, `Authorization` |
-| `DELETE` | `/shelves/{isbn}` | Eliminar del estante | `X-User-Id`, `Authorization` |
-| `GET` | `/shelves` | Listar estante del usuario | `X-User-Id`, `Authorization` |
+| Método   | Ruta              | Descripción                         | Headers                      |
+| -------- | ----------------- | ----------------------------------- | ---------------------------- |
+| `POST`   | `/shelves`        | Añadir libro al estante             | `X-User-Id`, `Authorization` |
+| `PUT`    | `/shelves/{isbn}` | Cambiar estado (wants/reading/read) | `X-User-Id`, `Authorization` |
+| `DELETE` | `/shelves/{isbn}` | Eliminar del estante                | `X-User-Id`, `Authorization` |
+| `GET`    | `/shelves`        | Listar estante del usuario          | `X-User-Id`, `Authorization` |
 
 > **Identidad del usuario**: a diferencia de los demás servicios que usan `X-User-Email`, shelf-service usa **`X-User-Id`** (el ID numérico del usuario). Esto simplifica las queries en PostgreSQL y MongoDB.
 
@@ -4260,11 +4294,11 @@ public record ShelfResponse(
 
 ### Excepciones
 
-| Excepción | HTTP | Error |
-|---|---|---|
-| `ShelfNotFoundException` | 404 | `not_found` |
-| `ShelfAlreadyExistsException` | 409 | `conflict` |
-| `BookNotInCatalogException` | 422 | `unprocessable` |
+| Excepción                     | HTTP | Error           |
+| ----------------------------- | ---- | --------------- |
+| `ShelfNotFoundException`      | 404  | `not_found`     |
+| `ShelfAlreadyExistsException` | 409  | `conflict`      |
+| `BookNotInCatalogException`   | 422  | `unprocessable` |
 
 ### Decisiones de diseño de shelf-service
 
@@ -4450,6 +4484,12 @@ Resumen de las decisiones arquitectónicas clave del proyecto:
 - **Parent POM como única fuente de versión** (Spring Boot 4.1.0 + BOM Spring Cloud 2025.1.2).
 - **Contenedores con healthchecks y `depends_on: service_healthy`** para arranques ordenados y verificables.
 - **Dockerfiles multi-stage** para imágenes mínimas (build en `maven:3.9-eclipse-temurin-21`, runtime en `eclipse-temurin:21-jre`).
+
+### Controllers
+
+- **Return directo** para respuestas 200 (Spring envuelve el objeto en JSON automáticamente).
+- **`@ResponseStatus`** para códigos explícitos: `CREATED` (201) en POST, `NO_CONTENT` (204) en DELETE.
+- **`ResponseEntity`** solo cuando se necesita manipular la respuesta programáticamente (headers, cookies). Ejemplo justificado: `AuthController` que añade `Set-Cookie` vía `HttpServletResponse`.
 
 ### Mensajería
 

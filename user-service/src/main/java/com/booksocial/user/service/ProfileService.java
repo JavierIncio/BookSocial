@@ -22,27 +22,16 @@ public class ProfileService {
     }
 
     public ProfileResponse getOrCreate(Long userId, String email) {
-        Profile profile = profileRepository.findByUserId(userId).orElseGet(() -> {
-            Profile created = new Profile();
-            created.setUserId(userId);
-            created.setEmail(email);
-            return profileRepository.save(created);
-        });
+        Profile profile = findOrCreateProfile(userId, email);
         return toResponse(upsertReadModel(profile));
     }
 
     public ProfileResponse update(Long userId, String email, UpdateProfileRequest request) {
-        Profile profile = profileRepository.findByUserId(userId).orElseGet(() -> {
-            Profile created = new Profile();
-            created.setUserId(userId);
-            created.setEmail(email);
-            return profileRepository.save(created);
-        });
-        if (request.displayName() != null) profile.setDisplayName(request.displayName());
-        if (request.bio() != null) profile.setBio(request.bio());
-        if (request.location() != null) profile.setLocation(request.location());
-        if (request.avatarUrl() != null) profile.setAvatarUrl(request.avatarUrl());
+        Profile profile = findOrCreateProfile(userId, email);
+
+        updateProfile(profile, request);
         profile.touch();
+
         profileRepository.save(profile);
         return toResponse(upsertReadModel(profile));
     }
@@ -50,7 +39,34 @@ public class ProfileService {
     public ProfileResponse getByUserId(Long userId) {
         ProfileReadModel readModel = readModelRepository.findByUserId(userId)
                 .orElseThrow(() -> new ProfileNotFoundException(userId));
+
         return toResponse(readModel);
+    }
+
+    private Profile findOrCreateProfile(Long userId, String email) {
+        return profileRepository.findByUserId(userId)
+                .orElseGet(() -> createProfile(userId, email));
+    }
+
+    private Profile createProfile(Long userId, String email) {
+        Profile profile = new Profile();
+        profile.setUserId(userId);
+        profile.setEmail(email);
+        return profileRepository.save(profile);
+    }
+
+    private void updateProfile(Profile profile, UpdateProfileRequest request) {
+        if (request.displayName() != null)
+            profile.setDisplayName(request.displayName());
+
+        if (request.bio() != null)
+            profile.setBio(request.bio());
+
+        if (request.location() != null)
+            profile.setLocation(request.location());
+
+        if (request.avatarUrl() != null)
+            profile.setAvatarUrl(request.avatarUrl());
     }
 
     private ProfileReadModel upsertReadModel(Profile profile) {

@@ -6,7 +6,6 @@ import com.booksocial.book.web.dto.BookResponse;
 import com.booksocial.book.web.dto.CreateBookRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
@@ -23,25 +22,22 @@ public class BookController {
     }
 
     @PostMapping
-    public ResponseEntity<BookResponse> createBook(@RequestHeader(value = "X-User-Roles", required = false) String roles,
-                                                @Valid @RequestBody CreateBookRequest request) {
+    @ResponseStatus(HttpStatus.CREATED)
+    public BookResponse createBook(@RequestHeader(value = "X-User-Roles", required = false) String roles,
+                                   @Valid @RequestBody CreateBookRequest request) {
         if (!isAdmin(roles))
             throw new ForbiddenException("ADMIN required");
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
-                .body(bookService.create(request));
+        return bookService.create(request);
     }
 
     @GetMapping("/{isbn}")
-    public ResponseEntity<BookResponse> getBook(@PathVariable String isbn) {
-        return ResponseEntity.status(HttpStatus.OK)
-                .body(bookService.findByIsbn(isbn));
+    public BookResponse getBook(@PathVariable String isbn) {
+        return bookService.findByIsbn(isbn);
     }
 
     @GetMapping("/search")
-    public ResponseEntity<List<BookResponse>> searchBooks(@RequestParam String q) {
-        return ResponseEntity.status(HttpStatus.OK)
-                .body(bookService.search(q));
+    public List<BookResponse> searchBooks(@RequestParam String q) {
+        return bookService.search(q);
     }
 
     private boolean isAdmin(String roles) {

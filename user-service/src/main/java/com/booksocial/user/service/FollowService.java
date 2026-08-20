@@ -32,14 +32,12 @@ public class FollowService {
     }
 
     public FollowResponse follow(Long followerId, Long targetUserId) {
-        if (followerId.equals(targetUserId)) {
-            throw new SelfFollowException();
-        }
-        if (followRepository.existsByFollowerIdAndFolloweeId(followerId, targetUserId)) {
+        if (followerId.equals(targetUserId)) throw new SelfFollowException();
+        if (followRepository.existsByFollowerIdAndFolloweeId(followerId, targetUserId))
             throw new AlreadyFollowingException(followerId, targetUserId);
-        }
+
         Follow follow = followRepository.save(new Follow(followerId, targetUserId));
-        eventPublisher.publishFollowed(followerId, targetUserId);
+        eventPublisher.publishFollowed(follow.getFollowerId(), follow.getFolloweeId());
         return toResponse(follow.getFollowerId(), follow.getFolloweeId(), follow.getCreatedAt());
     }
 
@@ -47,7 +45,7 @@ public class FollowService {
         Follow follow = followRepository.findByFollowerIdAndFolloweeId(followerId, targetUserId)
                 .orElseThrow(() -> new NotFollowingException(followerId, targetUserId));
         followRepository.delete(follow);
-        eventPublisher.publishUnfollowed(followerId, targetUserId);
+        eventPublisher.publishUnfollowed(follow.getFollowerId(), follow.getFolloweeId());
     }
 
     public List<FollowResponse> followers(Long userId) {
