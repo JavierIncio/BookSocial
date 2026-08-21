@@ -591,3 +591,56 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - [x] Fase 5.2 — Evento cruzado BookCreatedEvent (consumer).
 - [x] Fase 5.3 — Estanterías CQRS con catálogo local.
 - [x] Actualizar este documento al cerrar la fase.
+
+---
+
+## Fase 6 — Backend integración + APIs públicas ✅ Completada
+
+**Objetivo**: enriquecer el backend con integración externa (Google Books API) y abrir endpoints públicos para que el frontend pueda consumir catálogo, reseñas y estanterías sin depender del estado de autenticación.
+
+**Progreso**: Fase 6 completada — Google Books en book-service (6.1), endpoints de usuario en review-service (6.2), endpoints públicos en shelf-service (6.3).
+
+### Fase 6.1 — Google Books API en book-service ✅ Completada
+
+**Objetivo**: auto-import de libros desde Google Books API con búsqueda extendida y creación on-demand por ISBN.
+
+- `config/GoogleBooksProperties`: `@ConfigurationProperties(prefix = "app.google-books")`, record `apiKey` + `apiUrl`.
+- `service/google/GoogleBooksClient`: `RestClient` contra Google Books API, `search(query)` y `findByIsbn(isbn)` (query `isbn:{isbn}`), manejo de errores con log.
+- `service/google/GoogleBooksResponse`: records anidados (Volume, VolumeInfo, ImageLinks, IndustryIdentifier) con `@JsonProperty` para snake_case.
+- `service/google/GoogleBooksMapper`: `mapToBook(Volume)` → Book entity, extracción ISBN_13→ISBN_10, año de `publishedDate`.
+- `BookService`: `searchExternal(q)` combina BD + Google (sin persistir resultados externos), `findByIsbn(isbn)` auto-importa si no existe en BD.
+- `BookController`: `GET /books/search/full` (BD + Google), `GET /books/search` (solo BD), `GET /books/{isbn}` auto-importa on-demand.
+- Gateway + SecurityConfig: `GET /books/**` permitido sin auth en ambos niveles.
+- Config: `GOOGLE_BOOKS_API_KEY` en `.env` (100 req/día sin key, 1000 con key).
+
+**Errores encontrados y corregidos**:
+1. `findByIsbn` usaba `.queryParam("isbn", isbn)` en vez de `.queryParam("q", "isbn:" + isbn)`.
+2. Campo `category` (singular, String) no mapeaba `categories` (plural, List<String>) de Google Books API.
+3. `api-key` en `application.yaml` sin default vacío → fallaba en CI sin `.env`.
+4. Gateway + book-service bloqueaban GETs sin auth → añadido `permitAll()` para `GET /books/**`.
+
+### Fase 6.2 — Endpoints de usuario en review-service ✅ Completada
+
+**Objetivo**: permitir listar reseñas por usuario (perfil público y mi perfil).
+
+- `ReviewReadModelRepository`: añadido `findByUserIdOrderByCreatedAtDesc(Long userId)`.
+- `ReviewService.listByUser(Long userId)`: lista reseñas desde Mongo por userId.
+- `ReviewController`: `GET /reviews/me` (usa header `X-User-Id`), `GET /reviews/users/{userId}` (path variable).
+
+### Fase 6.3 — Endpoints públicos en shelf-service ✅ Completada
+
+**Objetivo**: permitir consultar estanterías por usuario y por libro sin autenticación (para perfil público y detalle de libro).
+
+- `ShelfReadModelRepository`: añadido `findAllByBookIsbn(String bookIsbn)`.
+- `ShelfService.listByBookIsbn(String bookIsbn)`: lista todas las estanterías con un libro.
+- `ShelfController`: `GET /shelves/{isbn}` (usuarios con ese libro), `GET /shelves/users/{userId}` (estanterías de un usuario).
+- **Path ordering**: `GET /shelves/users/{userId}` declarado antes de `GET /shelves/{isbn}` para evitar conflicto de path matching.
+- Gateway + shelf-service SecurityConfig: `GET /shelves/**` permitido sin auth.
+
+### Cierre de la Fase 6
+
+- [x] Fase 6.1 — Google Books API integrada en book-service (search full + auto-import ISBN).
+- [x] Fase 6.2 — Endpoints de usuario en review-service (GET /reviews/me + GET /reviews/users/{userId}).
+- [x] Fase 6.3 — Endpoints públicos en shelf-service (GET /shelves/{isbn} + GET /shelves/users/{userId}).
+- [x] Gateway SecurityConfig actualizado para permitir GETs públicos en books y shelves.
+- [x] Actualizar este documento al cerrar la fase.
