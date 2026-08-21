@@ -3412,8 +3412,6 @@ book-service/
             └── BookResponse.java
 ```
 
-> **Errores típicos de réplica**: olvidar la dependencia `org.postgresql:postgresql` (runtime) en el POM del nuevo módulo — sin ella el arranque falla con `ClassNotFoundException: org.postgresql.Driver`. También es fácil dejar el JAR en ejecución bloqueando `mvn clean/package` en Windows (detener el proceso java antes).
-
 #### Configuración
 
 `application.yaml` idéntico al de user-service cambiando el nombre del servicio y el puerto:
@@ -3433,7 +3431,7 @@ Dockerfile y servicio de compose espejo de user-service (healthcheck curl a `/ac
 
 #### Seguridad
 
-La seguridad es **parse-only** copiada de user-service (`JwtService`, `JwtAuthFilter`, `RestAuthenticationEntryPoint`, `SecurityConfig`). El control de acceso a `POST /books` se hace en el **controlador** leyendo el header `X-User-Roles` del gateway, no en SecurityConfig.
+La seguridad es **parse-only**: `JwtService`, `JwtAuthFilter`, `RestAuthenticationEntryPoint`, `SecurityConfig` (consultar el [Apéndice A](#apéndice-a--plantilla-de-seguridad-reutilizable)). El control de acceso a `POST /books` se hace en el **controlador** leyendo el header `X-User-Roles` del gateway, no en SecurityConfig.
 
 ### 7.2 — Catálogo CQRS con búsqueda
 
@@ -3498,20 +3496,31 @@ public class BookReadModel {
 }
 ```
 
-`isbn` como `_id` de Mongo: las búsquedas por ISBN son `O(1)` (lookup directo por `_id`). La colección se llama `books` en Mongo.
+`isbn` como `_id` de Mongo: las búsquedas por ISBN son directas. La colección se llama `books` en Mongo.
 
 #### Repositorios
 
 ```java
 // PostgreSQL
 public interface BookRepository extends JpaRepository<Book, Long> {
+    // SELECT * FROM book WHERE isbn = ?;
     Optional<Book> findByIsbn(String isbn);
+
+    // SELECT EXISTS (SELECT 1 FROM book WHERE isbn = ?);
     boolean existsByIsbn(String isbn);
 }
 
 // MongoDB
 public interface BookReadModelRepository extends MongoRepository<BookReadModel, String> {
-    List<BookReadModel> findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(
+  /*
+    db.books.find({
+      $or: [
+          { title: { $regex: "<title>", $options: "i" } },
+          { author: { $regex: "<author>", $options: "i" } }
+      ]
+  })
+  */
+  List<BookReadModel> findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(
         String title, String author);
 }
 ```
@@ -3536,9 +3545,9 @@ public class BookService {
             request.description(), request.coverUrl(),
             request.publishedYear(), request.category()));
 
-        upsertReadModel(book);
+        BookResponse response = toResponse(upsertReadModel(book));
         bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), book.getAuthor());
-        return toResponse(book);
+        return response;
     }
 
     public BookResponse findByIsbn(String isbn) {
@@ -3551,10 +3560,26 @@ public class BookService {
             .findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(q, q)
             .stream().map(this::toResponse).toList();
     }
+
+    private BookReadModel upsertReadModel(Book book) {
+        BookReadModel readModel = new BookReadModel(
+            book.getIsbn(), book.getTitle(), book.getAuthor(),
+            book.getDescription(), book.getCoverUrl(),
+            book.getPublishedYear(), book.getCategory());
+        return readModelRepository.save(readModel);
+    }
+
+    private BookResponse toResponse(BookReadModel readModel) {
+        return new BookResponse(
+            readModel.getIsbn(), readModel.getTitle(), readModel.getAuthor(),
+            readModel.getDescription(), readModel.getCoverUrl(),
+            readModel.getPublishedYear(), readModel.getCategory(),
+            readModel.getCreatedAt());
+    }
 }
 ```
 
-- `create()`: verifica unicidad por ISBN en Postgres, guarda, hace upsert del read model y publica evento `BookCreatedEvent`.
+- `create()`: verifica unicidad por ISBN en Postgres, guarda, hace upsert del _read model_ y publica evento `BookCreatedEvent`.
 - `findByIsbn()` y `search()` leen **solo de Mongo** (misma separación CQRS que el perfil).
 
 #### `BookController`

@@ -40,6 +40,11 @@ public class BookController {
         return bookService.search(q);
     }
 
+    @GetMapping("/search/full")
+    public List<BookResponse> searchFull(@RequestParam String q) {
+        return bookService.searchExternal(q);
+    }
+
     private boolean isAdmin(String roles) {
         return roles != null && Arrays.stream(roles.split(",")).map(String::trim).anyMatch("ADMIN"::equals);
     }

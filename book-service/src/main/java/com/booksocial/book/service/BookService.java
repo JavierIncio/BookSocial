@@ -7,12 +7,17 @@ import com.booksocial.book.events.BookEventPublisher;
 import com.booksocial.book.readmodel.BookReadModel;
 import com.booksocial.book.readmodel.BookReadModelRepository;
 import com.booksocial.book.repository.BookRepository;
+import com.booksocial.book.service.google.GoogleBooksClient;
+import com.booksocial.book.service.google.GoogleBooksMapper;
+import com.booksocial.book.service.google.GoogleBooksResponse;
 import com.booksocial.book.web.dto.BookResponse;
 import com.booksocial.book.web.dto.CreateBookRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 @Service
 @Transactional
@@ -20,11 +25,19 @@ public class BookService {
     private final BookRepository bookRepository;
     private final BookReadModelRepository readModelRepository;
     private final BookEventPublisher bookEventPublisher;
+    private final GoogleBooksClient googleBooksClient;
+    private final GoogleBooksMapper googleBooksMapper;
 
-    public BookService(BookRepository bookRepository, BookReadModelRepository readModelRepository, BookEventPublisher bookEventPublisher) {
+    public BookService(BookRepository bookRepository,
+                       BookReadModelRepository readModelRepository,
+                       BookEventPublisher bookEventPublisher,
+                       GoogleBooksClient googleBooksClient,
+                       GoogleBooksMapper googleBooksMapper) {
         this.bookRepository = bookRepository;
         this.readModelRepository = readModelRepository;
         this.bookEventPublisher = bookEventPublisher;
+        this.googleBooksClient = googleBooksClient;
+        this.googleBooksMapper = googleBooksMapper;
     }
 
     public BookResponse create(CreateBookRequest request) {
@@ -48,14 +61,49 @@ public class BookService {
     }
 
     public BookResponse findByIsbn(String isbn) {
-        BookReadModel readModel = readModelRepository.findById(isbn)
-                .orElseThrow(() -> new BookNotFoundException(isbn));
-        return toResponse(readModel);
+        return readModelRepository.findById(isbn)
+                .map(this::toResponse)
+                .orElseGet(() -> {
+                    GoogleBooksResponse.Volume volume =
+                            googleBooksClient.findByIsbn(isbn);
+
+                    if (volume == null)
+                        throw new BookNotFoundException(isbn);
+
+                    Book book = googleBooksMapper.mapToBook(volume);
+                    BookResponse response = toResponse(upsertReadModel(book));
+
+                    bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), book.getAuthor());
+
+                    return response;
+                });
     }
 
     public List<BookResponse> search(String q) {
         return readModelRepository.findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(q, q)
                 .stream().map(this::toResponse).toList();
+    }
+
+    public List<BookResponse> searchExternal(String q) {
+        List<BookResponse> dbResults = this.search(q);
+        List<BookResponse> googleResults = googleBooksClient.search(q).stream()
+                .map(googleBooksMapper::mapToBook)
+                .map(b -> {
+                    return new BookReadModel(
+                            b.getIsbn(),
+                            b.getTitle(),
+                            b.getAuthor(),
+                            b.getDescription(),
+                            b.getCoverUrl(),
+                            b.getPublishedYear(),
+                            b.getCategory()
+                    );
+                })
+                .map(this::toResponse)
+                .toList();
+
+        return Stream.concat(dbResults.stream(), googleResults.stream())
+                .toList();
     }
 
     private BookReadModel upsertReadModel(Book book) {

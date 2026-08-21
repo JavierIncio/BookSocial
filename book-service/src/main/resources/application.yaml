@@ -32,6 +32,10 @@ app:
     secret: ${APP_JWT_SECRET}
     issuer: booksocial-identity
 
+  google-books:
+    api-key: ${GOOGLE_BOOKS_API_KEY:}
+    api-url: https://www.googleapis.com/books/v1/
+
 management:
   endpoints:
     web:
