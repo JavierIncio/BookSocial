@@ -27,6 +27,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/**", "/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/books/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/shelves/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface ShelfReadModelRepository extends MongoRepository<ShelfReadModel,String> {
     List<ShelfReadModel> findAllByUserId(Long userId);
+    List<ShelfReadModel> findAllByBookIsbn(String bookIsbn);
 }

@@ -60,6 +60,11 @@ public class ReviewService {
                 .stream().map(this::toResponse).toList();
     }
 
+    public List<ReviewResponse> listByUser(Long userId) {
+        return readModelRepo.findByUserIdOrderByCreatedAtDesc(userId)
+                .stream().map(this::toResponse).toList();
+    }
+
     public ReviewSummaryResponse summary(String bookIsbn) {
         return statsRepo.findByBookIsbn(bookIsbn)
                 .map(s -> new ReviewSummaryResponse(s.getBookIsbn(), s.getRatingCount(), s.getAverageRating()))

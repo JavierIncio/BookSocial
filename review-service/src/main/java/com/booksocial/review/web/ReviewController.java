@@ -46,4 +46,14 @@ public class ReviewController {
     public ReviewSummaryResponse summary(@PathVariable String bookIsbn) {
         return reviewService.summary(bookIsbn);
     }
+
+    @GetMapping("/me")
+    public List<ReviewResponse> myReviews(@RequestHeader("X-User-Id") Long userId) {
+        return reviewService.listByUser(userId);
+    }
+
+    @GetMapping("/users/{userId}")
+    public List<ReviewResponse> userReviews(@PathVariable Long userId) {
+        return reviewService.listByUser(userId);
+    }
 }

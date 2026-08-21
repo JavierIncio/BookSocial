@@ -45,4 +45,14 @@ public class ShelfController {
     public List<ShelfResponse> list(@RequestHeader("X-User-Id") Long userId) {
         return shelfService.listByUser(userId);
     }
+
+    @GetMapping("/users/{userId}")
+    public List<ShelfResponse> listByUserPublic(@PathVariable Long userId) {
+        return shelfService.listByUser(userId);
+    }
+
+    @GetMapping("/{isbn}")
+    public List<ShelfResponse> listByIsbn(@PathVariable String isbn) {
+        return shelfService.listByBookIsbn(isbn);
+    }
 }

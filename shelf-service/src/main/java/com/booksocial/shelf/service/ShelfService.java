@@ -81,6 +81,13 @@ public class ShelfService {
                 .toList();
     }
 
+    public List<ShelfResponse> listByBookIsbn(String bookIsbn) {
+        return readModelRepository.findAllByBookIsbn(bookIsbn)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
     private ShelfResponse toResponse(ShelfReadModel rm){
         return new ShelfResponse(
                 null, rm.getBookIsbn(), rm.getTitle(), rm.getAuthor(),
