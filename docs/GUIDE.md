@@ -29,7 +29,7 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 | [6. user-service](#bloque-6--fase-2-user-service-perfil-con-cqrs-dual-write)          | CQRS, follows, RabbitMQ                | Fase 2     |
 | [7. book-service](#bloque-7--book-service-catálogo-de-libros-con-cqrs)                | Catálogo, búsqueda, roles              | Fase 3     |
 | [8. review-service](#bloque-8--review-service-reseñas--primer-evento-cruzado)         | Eventos cruzados, stats                | Fase 4     |
-| [9. shelf-service](#bloque-9--shelf-service-estantería-personal-del-usuario)          | Estantería, dual-write, evento cruzado | Fase 4     |
+| [9. shelf-service](#bloque-9--shelf-service-estantería-personal-del-usuario)          | Estantería, dual-write, evento cruzado | Fase 5     |
 | [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable)            | JwtService, filtros, config            | Referencia |
 | [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño)                          | Resumen arquitectónico                 | Referencia |
 
@@ -1968,12 +1968,15 @@ http
         .exceptionHandling(eh -> eh.authenticationEntryPoint(entryPoint))
         .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/auth/**", "/actuator/health").permitAll()
+                .requestMatchers(HttpMethod.GET, "/books/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/shelves/**").permitAll()
                 .anyRequest().authenticated())
         .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 ```
 
 - **`STATELESS`**: el gateway no mantiene sesión HTTP (a diferencia de identity-service, que la necesita para OAuth2). Cada petición es independiente.
 - **`permitAll`** para `/auth/**` (login, register, refresh, logout — no pueden exigir token) y `/actuator/health` (healthcheck de Docker).
+- **GETs públicos**: `/books/**` y `/shelves/**` permiten acceso sin autenticación para búsquedas y catálogo público. Los POST/PUT/DELETE siguen requiriendo token.
 - **Todo lo demás autenticado**: cualquier ruta nueva hacia otros microservicios estará protegida por defecto.
 - `RestAuthenticationEntryPoint` es idéntico al de identity-service: responde `401` con JSON `{"error":"unauthorized","message":"Authentication required"}`.
 
@@ -3662,6 +3665,77 @@ Si `bookRepository.count() == 0`, inserta 8 libros de ejemplo escribiendo **ambo
 
 > **Ordering del seeder**: en un entorno limpio, el seeder publica eventos que review-service consumirá si su cola ya está declarada. Si review-service arranca después, las colas durables en RabbitMQ mantienen los mensajes hasta que se conecte.
 
+### 7.3 — Google Books API: búsqueda extendida y auto-import
+
+En esta sub-fase se enriquece el catálogo con integración externa: el servicio puede buscar libros en **Google Books API** y auto-importarlos por ISBN cuando no existen en la base de datos local.
+
+#### Configuración
+
+```yaml
+app:
+  google-books:
+    api-key: ${GOOGLE_BOOKS_API_KEY:}
+    api-url: https://www.googleapis.com/books/v1/
+```
+
+```java
+@ConfigurationProperties(prefix = "app.google-books")
+public record GoogleBooksProperties(String apiKey, String apiUrl) {}
+```
+
+La API key es **opcional**: sin ella se permiten 100 peticiones/día; con ella hasta 1000. Se almacena en `.env` del book-service (nunca en git).
+
+#### `GoogleBooksClient`
+
+```java
+@Component
+public class GoogleBooksClient {
+    private final RestClient restClient;
+    private final GoogleBooksProperties props;
+
+    public GoogleBooksResponse.Volume search(String query) { ... }
+    public GoogleBooksResponse.Volume findByIsbn(String isbn) { ... }
+}
+```
+
+Usa `RestClient` (nuevo en Spring Boot 3.2+) contra la API de Google. `findByIsbn` busca con query `isbn:{isbn}` y devuelve el primer resultado.
+
+#### `GoogleBooksMapper`
+
+```java
+@Component
+public class GoogleBooksMapper {
+    public Book mapToBook(GoogleBooksResponse.Volume volume) {
+        // Extrae ISBN (ISBN_13 preferido, fallback ISBN_10)
+        // Extrae año de publishedDate
+        // Mapea title, authors (join con ", "), description, coverUrl, category
+    }
+}
+```
+
+#### Endpoints modificados
+
+| Método | Ruta | Auth | Descripción |
+| ------ | ---- | ---- | ----------- |
+| `GET` | `/books/search?q=` | Público | Búsqueda solo en BD local |
+| `GET` | `/books/search/full?q=` | Público | Búsqueda BD + Google Books |
+| `GET` | `/books/{isbn}` | Público | Auto-importa si no existe en BD |
+| `POST` | `/books` | ADMIN | Crear libro manualmente |
+
+`GET /books/{isbn}` ahora **auto-importa**: si el ISBN no existe en la BD local, lo busca en Google Books API, lo guarda en Postgres + Mongo y lo devuelve. La segunda llamada ya lo retorna de la BD local.
+
+`GET /books/search/full` combina resultados de la BD local con resultados de Google Books (sin persistir los externos).
+
+#### SecurityConfig del book-service
+
+```java
+.requestMatchers("/actuator/health").permitAll()
+.requestMatchers(HttpMethod.GET, "/books/**").permitAll()
+.anyRequest().authenticated()
+```
+
+Los GETs son públicos (sin auth). Solo `POST /books` requiere autenticación y rol ADMIN.
+
 ### Decisiones de diseño de la Fase 3 (resumen)
 
 - **Catálogo en CQRS puro sin eventos**: el alta hace dual-write; las lecturas y la búsqueda van solo a Mongo. No hay publicador/consumidor porque **no existe todavía un consumidor del catálogo**; cuando aparezca (reseñas, notificaciones), el alta publicará `BookCreatedEvent` y el seeder dejará de escribir Mongo directamente.
@@ -3930,6 +4004,11 @@ public class ReviewService {
             stats != null ? stats.getAverageRating() : 0.0);
     }
 
+    public List<ReviewResponse> listByUser(Long userId) {
+        return readModelRepo.findByUserIdOrderByCreatedAtDesc(userId)
+                .stream().map(this::toResponse).toList();
+    }
+
     private void syncStats(String bookIsbn) {
         List<ReviewReadModel> reviews = readModelRepo.findByBookIsbnOrderByCreatedAtDesc(bookIsbn);
         double avg = reviews.stream().mapToInt(ReviewReadModel::getRating).average().orElse(0.0);
@@ -3975,15 +4054,27 @@ public class ReviewController {
     public ReviewSummaryResponse summary(@PathVariable String bookIsbn) {
         return reviewService.summary(bookIsbn);
     }
+
+    @GetMapping("/me")
+    public List<ReviewResponse> myReviews(@RequestHeader("X-User-Id") Long userId) {
+        return reviewService.listByUser(userId);
+    }
+
+    @GetMapping("/users/{userId}")
+    public List<ReviewResponse> userReviews(@PathVariable Long userId) {
+        return reviewService.listByUser(userId);
+    }
 }
 ```
 
-| Método | Ruta                                | Descripción                        |
-| ------ | ----------------------------------- | ---------------------------------- |
-| `POST` | `/reviews/{bookIsbn}`               | Crear reseña (201 / 409 / 422)     |
-| `PUT`  | `/reviews/{bookIsbn}`               | Actualizar reseña (200)            |
-| `GET`  | `/reviews/books/{bookIsbn}`         | Lista de reseñas por libro (Mongo) |
-| `GET`  | `/reviews/books/{bookIsbn}/summary` | Rating medio + count (Mongo)       |
+| Método | Ruta                                | Auth | Descripción                        |
+| ------ | ----------------------------------- | ---- | ---------------------------------- |
+| `POST` | `/reviews/{bookIsbn}`               | Token | Crear reseña (201 / 409 / 422)     |
+| `PUT`  | `/reviews/{bookIsbn}`               | Token | Actualizar reseña (200)            |
+| `GET`  | `/reviews/books/{bookIsbn}`         | Token | Lista de reseñas por libro (Mongo) |
+| `GET`  | `/reviews/books/{bookIsbn}/summary` | Token | Rating medio + count (Mongo)       |
+| `GET`  | `/reviews/me`                       | Token | Reseñas del usuario actual         |
+| `GET`  | `/reviews/users/{userId}`           | Token | Reseñas de un usuario específico   |
 
 #### DTOs
 
@@ -4150,6 +4241,17 @@ public class BookRefReadModel {
 
 > **Patrón duplicado intencionalmente**: `shelf-service` y `review-service` mantienen cada uno su propia copia de `book_refs` en MongoDB. No se comparten bases de datos entre servicios. Esto mantiene el desacoplamiento: si review-service elimina su catálogo, shelf-service no se ve afectado.
 
+#### Repositorio del read model
+
+```java
+public interface ShelfReadModelRepository extends MongoRepository<ShelfReadModel, String> {
+    List<ShelfReadModel> findAllByUserId(Long userId);
+    List<ShelfReadModel> findAllByBookIsbn(String bookIsbn);
+}
+```
+
+`findAllByBookIsbn` se usa en `GET /shelves/{isbn}` para listar todos los usuarios que tienen un libro en su estantería.
+
 ### 9.4 — Consumidor del evento `BookCreatedEvent`
 
 Mismo patrón que en review-service (sección 8.2):
@@ -4233,6 +4335,11 @@ public class ShelfService {
         return readModelRepository.findAllByUserId(userId)
                 .stream().map(this::toResponse).toList();
     }
+
+    public List<ShelfResponse> listByBookIsbn(String bookIsbn) {
+        return readModelRepository.findAllByBookIsbn(bookIsbn)
+                .stream().map(this::toResponse).toList();
+    }
 }
 ```
 
@@ -4281,17 +4388,33 @@ public class ShelfController {
             @RequestHeader("X-User-Id") Long userId) {
         return shelfService.listByUser(userId);
     }
+
+    @GetMapping("/users/{userId}")
+    public List<ShelfResponse> listByUserPublic(@PathVariable Long userId) {
+        return shelfService.listByUser(userId);
+    }
+
+    @GetMapping("/{isbn}")
+    public List<ShelfResponse> listByIsbn(@PathVariable String isbn) {
+        return shelfService.listByBookIsbn(isbn);
+    }
 }
 ```
 
 #### Endpoints
 
-| Método   | Ruta              | Descripción                         | Headers                      |
-| -------- | ----------------- | ----------------------------------- | ---------------------------- |
-| `POST`   | `/shelves`        | Añadir libro al estante             | `X-User-Id`, `Authorization` |
-| `PUT`    | `/shelves/{isbn}` | Cambiar estado (wants/reading/read) | `X-User-Id`, `Authorization` |
-| `DELETE` | `/shelves/{isbn}` | Eliminar del estante                | `X-User-Id`, `Authorization` |
-| `GET`    | `/shelves`        | Listar estante del usuario          | `X-User-Id`, `Authorization` |
+| Método   | Ruta                    | Auth | Descripción                         | Headers                      |
+| -------- | ----------------------- | ---- | ----------------------------------- | ---------------------------- |
+| `POST`   | `/shelves`              | Token | Añadir libro al estante             | `X-User-Id`, `Authorization` |
+| `PUT`    | `/shelves/{isbn}`       | Token | Cambiar estado (wants/reading/read) | `X-User-Id`, `Authorization` |
+| `DELETE` | `/shelves/{isbn}`       | Token | Eliminar del estante                | `X-User-Id`, `Authorization` |
+| `GET`    | `/shelves`              | Token | Listar estante del usuario          | `X-User-Id`, `Authorization` |
+| `GET`    | `/shelves/users/{userId}` | Público | Estanterías de un usuario       | —                            |
+| `GET`    | `/shelves/{isbn}`       | Público | Usuarios con este libro en estantería | —                          |
+
+> **GETs públicos**: `GET /shelves/users/{userId}` y `GET /shelves/{isbn}` no requieren autenticación. El gateway y el SecurityConfig del shelf-service permiten `GET /shelves/**` sin token. Esto permite al frontend mostrar estanterías de usuarios y popularity de libros sin login.
+
+> **Path ordering**: `GET /shelves/users/{userId}` se declara **antes** de `GET /shelves/{isbn}` para evitar que Spring confunda `/shelves/users` con un ISBN. Spring MVC resuelve por especificidad de patrón.
 
 > **Identidad del usuario**: a diferencia de los demás servicios que usan `X-User-Email`, shelf-service usa **`X-User-Id`** (el ID numérico del usuario). Esto simplifica las queries en PostgreSQL y MongoDB.
 
@@ -4331,6 +4454,7 @@ public record ShelfResponse(
 - **`X-User-Id` en vez de `X-User-Email`**: el gateway extrae ambos headers del JWT. shelf-service usa el ID numérico porque es más eficiente como clave de búsqueda en MongoDB (`findAllByUserId`) y PostgreSQL (`WHERE user_id = ?`).
 - **Unicidad por constraint, no por código**: la restricción `UNIQUE(book_isbn, user_id)` en PostgreSQL garantiza que un usuario no pueda añadir el mismo libro dos veces, aunque el servicio también valida antes de insertar para devolver un error claro (`409`).
 - **Dual-write síncrono**: el servicio escribe Postgres y Mongo en la misma transacción. Es el mismo patrón que user-service (perfil) y review-service (reseñas). La consistencia eventual entre servicios se gestiona a nivel de eventos.
+- **GETs públicos**: `GET /shelves/users/{userId}` y `GET /shelves/{isbn}` no requieren autenticación. El SecurityConfig permite `GET /shelves/**` sin token, igual que el gateway. Esto permite al frontend mostrar estanterías de usuarios y popularidad de libros sin login.
 
 ---
 
@@ -4426,12 +4550,16 @@ public class SecurityConfig {
             .exceptionHandling(eh -> eh.authenticationEntryPoint(entryPoint))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers(HttpMethod.GET, "/books/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/shelves/**").permitAll()
                 .anyRequest().authenticated())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 }
 ```
+
+> **Nota**: book-service y shelf-service añaden `requestMatchers(HttpMethod.GET, ...)` para permitir GETs públicos. Los demás servicios usan solo `permitAll` para `/actuator/health`.
 
 ### application.yaml (sección de seguridad)
 
@@ -4483,6 +4611,7 @@ Al crear un nuevo servicio downstream:
 2. Añadir las dependencias de JWT en el `pom.xml`.
 3. Añadir `app.jwt.secret` e `app.jwt.issuer` en `application.yaml` y `.env`.
 4. Si el servicio tiene endpoints públicos (como `/actuator/health`), añadirlos a `permitAll` en `SecurityConfig`.
+5. Si el servicio expone GETs públicos (catálogo, búsqueda), añadir `requestMatchers(HttpMethod.GET, "/ruta/**").permitAll()` tanto en el gateway como en el SecurityConfig del servicio.
 
 > **No copiar JwtService de identity-service**: ese tiene capacidad de generar tokens. Los servicios downstream solo necesitan `parse()`.
 
@@ -4498,6 +4627,7 @@ Resumen de las decisiones arquitectónicas clave del proyecto:
 - **JWT stateless + secret compartido**: el gateway valida los tokens sin consultar al identity-service.
 - **Access corto (15 min) + refresh largo (7 días) rotativo**: el refresh viaja en cookie `httpOnly` + `SameSite=Lax`; el hash SHA-256 se guarda en BD (nunca el token en claro).
 - **Patrón strip-then-assert**: el gateway elimina los `X-User-*` del cliente y los reemplaza por los derivados del JWT → los servicios downstream confían en ellos.
+- **GETs públicos**: el gateway y los servicios permiten `GET /books/**` y `GET /shelves/**` sin autenticación. Los POST/PUT/DELETE siguen requiriendo token.
 
 ### Persistencia
 
