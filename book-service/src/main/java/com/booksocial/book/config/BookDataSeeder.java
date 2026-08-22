@@ -86,11 +86,7 @@ public class BookDataSeeder implements CommandLineRunner {
     private Author findOrCreateAuthor(String name) {
         return authorRepository.findByNameContainingIgnoreCase(name)
                 .stream().findFirst()
-                .orElseGet(() -> {
-                    Author a = new Author();
-                    a.setName(name);
-                    return authorRepository.save(a);
-                });
+                .orElseGet(() -> authorRepository.save(new Author(name)));
     }
 }
 

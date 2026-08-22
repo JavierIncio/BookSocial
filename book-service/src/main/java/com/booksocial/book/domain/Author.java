@@ -40,6 +40,11 @@ public class Author {
 
     protected Author() {}
 
+    public Author(String name) {
+        this.name = name;
+        this.createdAt = Instant.now();
+    }
+
     public Author(String openLibraryId, String name, String bio, String birthDate,
                   String deathDate, String photoUrl, String topSubjects, Integer workCount) {
         this.openLibraryId = openLibraryId;

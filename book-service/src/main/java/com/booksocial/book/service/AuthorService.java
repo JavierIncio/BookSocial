@@ -71,8 +71,6 @@ public class AuthorService {
     }
 
     public Author createAuthor(String name) {
-        Author newAuthor = new Author();
-        newAuthor.setName(name);
-        return authorRepository.save(newAuthor);
+        return authorRepository.save(new Author(name));
     }
 }

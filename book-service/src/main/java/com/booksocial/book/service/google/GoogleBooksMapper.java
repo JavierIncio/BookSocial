@@ -2,6 +2,7 @@ package com.booksocial.book.service.google;
 
 import com.booksocial.book.domain.Author;
 import com.booksocial.book.domain.Book;
+import com.booksocial.book.readmodel.BookReadModel;
 import com.booksocial.book.repository.AuthorRepository;
 import org.springframework.stereotype.Component;
 
@@ -20,30 +21,24 @@ public class GoogleBooksMapper {
 
     public Book mapToBook(Volume volume) {
         VolumeInfo info = volume.volumeInfo();
-        String isbn = extractIsbn(info);
-        Integer publishedYear = extractYear(info.publishedDate());
-        String category = (info.categories() != null && !info.categories().isEmpty())
-                ? info.categories().getFirst() : null;
-        String coverUrl = (info.imageLinks() != null) ? info.imageLinks().thumbnail() : null;
-        String authorName = (info.authors() != null && !info.authors().isEmpty())
-                ? info.authors().getFirst() : "Unknown";
-
-        Author author = findOrCreateAuthor(authorName);
-
-        return new Book(isbn, info.title(), author.getId(), info.description(), coverUrl, publishedYear, category);
+        Author author = findOrCreateAuthor(extractAuthorName(info));
+        return new Book(extractIsbn(info), info.title(), author.getId(),
+                info.description(), extractCoverUrl(info), extractYear(info.publishedDate()), extractCategory(info));
     }
 
-    private Author findOrCreateAuthor(String name) {
+    public BookReadModel toReadModel(Volume volume) {
+        VolumeInfo info = volume.volumeInfo();
+        return new BookReadModel(extractIsbn(info), info.title(), extractAuthorName(info), null,
+                info.description(), extractCoverUrl(info), extractYear(info.publishedDate()), extractCategory(info));
+    }
+
+    public Author findOrCreateAuthor(String name) {
         Optional<Author> existing = authorRepository.findByNameContainingIgnoreCase(name)
                 .stream().findFirst();
-        if (existing.isPresent()) return existing.get();
-
-        Author newAuthor = new Author();
-        newAuthor.setName(name);
-        return authorRepository.save(newAuthor);
+        return existing.orElseGet(() -> authorRepository.save(new Author(name)));
     }
 
-    private String extractIsbn(VolumeInfo info) {
+    public String extractIsbn(VolumeInfo info) {
         if (info.industryIdentifiers() == null) return null;
         return info.industryIdentifiers().stream()
                 .filter(id -> "ISBN_13".equals(id.type()))
@@ -55,12 +50,24 @@ public class GoogleBooksMapper {
                         .findFirst().orElse(null));
     }
 
-    private Integer extractYear(String date) {
+    public Integer extractYear(String date) {
         if (date == null || date.isEmpty()) return null;
         try {
             return Integer.parseInt(date.length() >= 4 ? date.substring(0, 4) : date);
         } catch (NumberFormatException e) { return null; }
     }
 
+    public String extractAuthorName(VolumeInfo info) {
+        return (info.authors() != null && !info.authors().isEmpty())
+                ? info.authors().getFirst() : "Unknown";
+    }
 
+    public String extractCategory(VolumeInfo info) {
+        return (info.categories() != null && !info.categories().isEmpty())
+                ? info.categories().getFirst() : null;
+    }
+
+    public String extractCoverUrl(VolumeInfo info) {
+        return (info.imageLinks() != null) ? info.imageLinks().thumbnail() : null;
+    }
 }
