@@ -3657,8 +3657,7 @@ public class BookService {
             request.description(), request.coverUrl(),
             request.publishedYear(), request.category()));
 
-        Author author = authorRepository.findById(book.getAuthorId())
-            .orElseThrow(() -> new RuntimeException("Author not found with ID: " + book.getAuthorId()));
+        Author author = resolveAuthor(book.getAuthorId());
 
         BookResponse response = toResponse(upsertReadModel(book));
         bookEventPublisher.publishBookCreated(
@@ -3677,8 +3676,7 @@ public class BookService {
                 Book book = googleBooksMapper.mapToBook(volume);
                 BookResponse response = toResponse(upsertReadModel(book));
 
-                Author author = authorRepository.findById(book.getAuthorId())
-                    .orElseThrow(() -> new RuntimeException("Author not found"));
+                Author author = resolveAuthor(book.getAuthorId());
                 bookEventPublisher.publishBookCreated(
                     book.getIsbn(), book.getTitle(), author.getName(), author.getId().toString());
                 return response;
@@ -3696,8 +3694,7 @@ public class BookService {
         List<BookResponse> googleResults = googleBooksClient.search(q).stream()
             .map(googleBooksMapper::mapToBook)
             .map(b -> {
-                Author author = authorRepository.findById(b.getAuthorId())
-                    .orElseThrow(() -> new RuntimeException("Author not found"));
+                Author author = resolveAuthor(b.getAuthorId());
                 return new BookReadModel(
                     b.getIsbn(), b.getTitle(), author.getName(),
                     b.getAuthorId().toString(), b.getDescription(),
@@ -3708,8 +3705,7 @@ public class BookService {
     }
 
     private BookReadModel upsertReadModel(Book book) {
-        Author author = authorRepository.findById(book.getAuthorId())
-            .orElseThrow(() -> new RuntimeException("Author not found"));
+        Author author = resolveAuthor(book.getAuthorId());
         BookReadModel readModel = new BookReadModel(
             book.getIsbn(), book.getTitle(), author.getName(),
             book.getAuthorId().toString(), book.getDescription(),
@@ -3718,13 +3714,17 @@ public class BookService {
     }
 
     private BookResponse toResponse(BookReadModel readModel) {
-        Author author = authorRepository.findById(Long.valueOf(readModel.getAuthorId()))
-            .orElseThrow(() -> new RuntimeException("Author not found"));
+        Author author = resolveAuthor(Long.valueOf(readModel.getAuthorId()));
         return new BookResponse(
             readModel.getIsbn(), readModel.getTitle(), author.getName(),
             readModel.getAuthorId(), readModel.getDescription(),
             readModel.getCoverUrl(), readModel.getPublishedYear(),
             readModel.getCategory(), readModel.getCreatedAt());
+    }
+
+    private Author resolveAuthor(Long authorId) {
+        return authorRepository.findById(authorId)
+                .orElseThrow(() -> new RuntimeException("Author not found with ID: " + authorId));
     }
 }
 ```
@@ -3732,7 +3732,7 @@ public class BookService {
 - `create()`: verifica unicidad por ISBN en Postgres, resuelve el `Author` por `authorId`, guarda, hace upsert del _read model_ con `authorName`+`authorId` y publica evento `BookCreatedEvent` con los 4 campos.
 - `findByIsbn()`: primero intenta Mongo; si no existe, auto-importa desde Google Books (que a su vez crea el Author via `GoogleBooksMapper`).
 - `search()` y `searchExternal()`: búsqueda en Mongo y combinación con Google Books.
-- `upsertReadModel()` y `toResponse()`: resuelven el `Author` por FK para enriquecer el read model y la respuesta.
+- `upsertReadModel()` y `toResponse()`: utilizan `resolveAuthor()` para resolver el `Author` por FK para enriquecer el read model y la respuesta.
 
 #### `BookController` y `AuthorController`
 

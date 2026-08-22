@@ -94,21 +94,35 @@ public class BookService {
         List<BookResponse> dbResults = this.search(q);
 
         List<BookResponse> googleResults = googleBooksClient.search(q).stream()
-                .map(googleBooksMapper::mapToBook)
-                .map(b -> {
-                    Author author = resolveAuthor(b.getAuthorId());
-                    return new BookReadModel(
-                            b.getIsbn(),
-                            b.getTitle(),
-                            author.getName(),
-                            b.getAuthorId().toString(),
-                            b.getDescription(),
-                            b.getCoverUrl(),
-                            b.getPublishedYear(),
-                            b.getCategory()
-                    );
+                .map(volume -> {
+                    GoogleBooksResponse.VolumeInfo info = volume.volumeInfo();
+                    String authorName = (info.authors() != null && !info.authors().isEmpty())
+                            ? info.authors().getFirst() : "Unknown";
+                    String isbn = null;
+                    if (info.industryIdentifiers() != null) {
+                        isbn = info.industryIdentifiers().stream()
+                                .filter(id -> "ISBN_13".equals(id.type()))
+                                .map(GoogleBooksResponse.IndustryIdentifier::identifier)
+                                .findFirst()
+                                .orElseGet(() -> info.industryIdentifiers().stream()
+                                        .filter(id -> "ISBN_10".equals(id.type()))
+                                        .map(GoogleBooksResponse.IndustryIdentifier::identifier)
+                                        .findFirst().orElse(null));
+                    }
+                    Integer publishedYear = null;
+                    if (info.publishedDate() != null && !info.publishedDate().isEmpty()) {
+                        try { publishedYear = Integer.parseInt(info.publishedDate().substring(0, 4)); }
+                        catch (NumberFormatException ignored) {}
+                    }
+                    String category = (info.categories() != null && !info.categories().isEmpty())
+                            ? info.categories().getFirst() : null;
+                    String coverUrl = (info.imageLinks() != null) ? info.imageLinks().thumbnail() : null;
+
+                    BookReadModel readModel = new BookReadModel(
+                            isbn, info.title(), authorName, null,
+                            info.description(), coverUrl, publishedYear, category);
+                    return toResponse(readModel);
                 })
-                .map(this::toResponse)
                 .toList();
 
         return Stream.concat(dbResults.stream(), googleResults.stream())
