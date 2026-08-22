@@ -644,3 +644,74 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - [x] Fase 6.3 — Endpoints públicos en shelf-service (GET /shelves/{isbn} + GET /shelves/users/{userId}).
 - [x] Gateway SecurityConfig actualizado para permitir GETs públicos en books y shelves.
 - [x] Actualizar este documento al cerrar la fase.
+
+---
+
+## Fase 7 — Author entity + Open Library + migración `author` → `authorId`/`authorName` ✅ Completada
+
+**Objetivo**: promover el campo `author` (String) a una entidad independiente `Author` (Postgres + Mongo) integrada con **Open Library API** para datos biográficos y obras. Migrar todos los servicios downstream para usar `authorName`+`authorId` en el evento cruzado `BookCreatedEvent` y sus read models.
+
+**Progreso**: Fase 7 completada — Author entity + Open Library en book-service (7.1), migración de downstream services (7.2).
+
+### Fase 7.1 — Author entity + Open Library en book-service ✅ Completada
+
+**Objetivo**: entidad `Author` con cache dual (Postgres + Mongo), integración Open Library API, y migración de `Book.author` a `Book.authorId`.
+
+- **Author entity** (`domain/Author.java`): JPA entity con `id`, `openLibraryId` (único), `name`, `bio`, `birthDate`, `deathDate`, `photoUrl`, `topSubjects` (JSON serializado), `workCount`, `createdAt`.
+- **AuthorReadModel** (`readmodel/AuthorReadModel.java`): Mongo document con `_id` = `openLibraryId`, mismos campos + `cachedAt`.
+- **AuthorRepository** (JPA): `findByOpenLibraryId`, `findByNameContainingIgnoreCase`.
+- **AuthorReadModelRepository** (Mongo): `findByNameContainingIgnoreCase`.
+- **Book.java migrado**: campo `author` eliminado, añadido `authorId` (Long FK → `authors.id`).
+- **BookReadModel migrado**: campos `authorName`+`authorId` (String) en vez de `author`.
+- **BookReadModelRepository migrado**: query `findByTitleContainingIgnoreCaseOrAuthorNameContainingIgnoreCase`.
+- **BookResponse + CreateBookRequest**: `authorName`+`authorId` en vez de `author`.
+- **BookService migrado**: `create`, `findByIsbn` (auto-import), `search`, `searchExternal`, `upsertReadModel`, `toResponse` — todos resuelven `Author` por FK.
+- **GoogleBooksMapper migrado**: inyecta `AuthorRepository`, crea/busca `Author` antes de construir `Book`.
+- **BookDataSeeder migrado**: crea autores vía `AuthorRepository`, asigna `authorId`, publica evento con 4 args.
+- **BookCreatedEvent migrado**: `(bookIsbn, title, authorName, authorId, occurredAt)`.
+- **BookEventPublisher migrado**: `publishBookCreated(bookIsbn, title, authorName, authorId)`.
+
+#### Open Library integration
+
+- **OpenLibraryProperties**: `@ConfigurationProperties(prefix = "app.open-library")`, record `apiUrl` + `userAgent`.
+- **OpenLibraryClient**: `RestClient` contra `https://openlibrary.org`, endpoints `searchAuthors`, `getAuthor`, `getWorks`. User-Agent `booksocial/1.0`. Rate limit ~3 req/s.
+- **OpenLibraryMapper**: `toReadModel(AuthorDoc)` → `AuthorReadModel`, `coverUrl(olId)` → URL de cover, `extractKey(path)` → OL key.
+- **OpenLibraryResponse**, **AuthorDetailResponse**, **WorksResponse**: records anidados para la API de Open Library.
+- **AuthorService**: `searchAuthors` (cache local → Open Library), `getAuthor` (cache → Open Library), `getAuthorWorks`, `createAuthor`.
+- **AuthorController**: `GET /authors/search`, `GET /{olId}`, `GET /{olId}/works`, `POST` (ADMIN).
+- **Cache pattern**: primera búsqueda → Open Library API → guardar en Postgres+Mongo; siguientes → Mongo.
+- **BookServiceApplication**: `@EnableConfigurationProperties({GoogleBooksProperties.class, OpenLibraryProperties.class})`.
+
+#### Gateway + SecurityConfig
+
+- **Gateway application.yaml**: ruta `/books/**,/authors/**` → book-service.
+- **Gateway SecurityConfig**: `GET /authors/**` permitAll.
+- **book-service SecurityConfig**: `GET /authors/**` permitAll.
+
+### Fase 7.2 — Migración de downstream services ✅ Completada
+
+**Objetivo**: actualizar `BookCreatedEvent` y `BookRefReadModel` en review-service y shelf-service para usar `authorName`+`authorId`.
+
+- **review-service**:
+  - `BookCreatedEvent`: `(bookIsbn, title, authorName, authorId, occurredAt)`.
+  - `BookCreatedEventConsumer`: constructor con 4 args.
+  - `BookRefReadModel`: `authorName`+`authorId` en vez de `author`.
+- **shelf-service**:
+  - `BookCreatedEvent`: `(bookIsbn, title, authorName, authorId, occurredAt)`.
+  - `BookCreatedEventConsumer`: constructor con 4 args.
+  - `BookRefReadModel`: `authorName`+`authorId` en vez de `author`.
+  - `ShelfReadModel`: `authorName`+`authorId` en vez de `author`, constructor actualizado.
+  - `ShelfResponse`: `authorName`+`authorId` en vez de `author`.
+  - `ShelfService.toResponse()`: actualizado.
+
+#### Verificación
+
+- Los 4 servicios (book, review, shelf, gateway) compilan y pasan tests (`mvn compile -q` + `mvn test -q`).
+
+### Cierre de la Fase 7
+
+- [x] Fase 7.1 — Author entity + Open Library en book-service.
+- [x] Fase 7.2 — Migración de downstream services (review + shelf).
+- [x] Gateway + SecurityConfig actualizados para `/authors/**`.
+- [x] Verificación: compilación y tests OK en los 4 servicios.
+- [x] Actualizar este documento al cerrar la fase.

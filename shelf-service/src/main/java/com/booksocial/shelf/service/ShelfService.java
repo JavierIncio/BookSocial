@@ -90,7 +90,7 @@ public class ShelfService {
 
     private ShelfResponse toResponse(ShelfReadModel rm){
         return new ShelfResponse(
-                null, rm.getBookIsbn(), rm.getTitle(), rm.getAuthor(),
+                null, rm.getBookIsbn(), rm.getTitle(), rm.getAuthorName(), rm.getAuthorId(),
                 rm.getStatus(), rm.getCreatedAt(), rm.getUpdatedAt()
         );
     }

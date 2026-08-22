@@ -17,8 +17,8 @@ public class Book {
     @Column(nullable = false)
     private String title;
 
-    @Column(nullable = false)
-    private String author;
+    @Column(name = "author_id")
+    private Long authorId;
 
     @Column(columnDefinition = "text")
     private String description;
@@ -32,10 +32,11 @@ public class Book {
 
     public Book() {}
 
-    public Book(String isbn, String title, String author, String description, String coverUrl, Integer publishedYear, String category) {
+    public Book(String isbn, String title, Long authorId, String description,
+                String coverUrl, Integer publishedYear, String category) {
         this.isbn = isbn;
         this.title = title;
-        this.author = author;
+        this.authorId = authorId;
         this.description = description;
         this.coverUrl = coverUrl;
         this.publishedYear = publishedYear;
@@ -67,12 +68,12 @@ public class Book {
         this.title = title;
     }
 
-    public String getAuthor() {
-        return author;
+    public Long getAuthorId() {
+        return authorId;
     }
 
-    public void setAuthor(String author) {
-        this.author = author;
+    public void setAuthorId(Long authorId) {
+        this.authorId = authorId;
     }
 
     public String getDescription() {

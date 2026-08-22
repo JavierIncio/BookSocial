@@ -12,7 +12,8 @@ public class BookReadModel {
     private String isbn;
 
     private String title;
-    private String author;
+    private String authorName;
+    private String authorId;
     private String description;
     private String coverUrl;
     private Integer publishedYear;
@@ -22,10 +23,13 @@ public class BookReadModel {
     public BookReadModel() {
     }
 
-    public BookReadModel(String isbn, String title, String author, String description, String coverUrl, Integer publishedYear, String category) {
+    public BookReadModel(String isbn, String title, String authorName,
+                         String authorId, String description, String coverUrl,
+                         Integer publishedYear, String category) {
         this.isbn = isbn;
         this.title = title;
-        this.author = author;
+        this.authorName = authorName;
+        this.authorId = authorId;
         this.description = description;
         this.coverUrl = coverUrl;
         this.publishedYear = publishedYear;
@@ -49,12 +53,20 @@ public class BookReadModel {
         this.title = title;
     }
 
-    public String getAuthor() {
-        return author;
+    public String getAuthorName() {
+        return authorName;
     }
 
-    public void setAuthor(String author) {
-        this.author = author;
+    public void setAuthorName(String authorName) {
+        this.authorName = authorName;
+    }
+
+    public String getAuthorId() {
+        return authorId;
+    }
+
+    public void setAuthorId(String authorId) {
+        this.authorId = authorId;
     }
 
     public String getDescription() {

@@ -20,7 +20,7 @@ public class BookCreatedEventConsumer {
 
     @RabbitListener(queues = RabbitConfig.SHELF_QUEUE)
     public void onBookCreated(BookCreatedEvent event) {
-        readModelRepository.save(new BookRefReadModel(event.bookIsbn(), event.title(), event.author()));
+        readModelRepository.save(new BookRefReadModel(event.bookIsbn(), event.title(), event.authorName(), event.authorId()));
         log.info("Processed BookCreatedEvent: {} - {}", event.bookIsbn(), event.title());
     }
 }

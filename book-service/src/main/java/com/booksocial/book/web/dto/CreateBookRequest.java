@@ -6,7 +6,8 @@ import jakarta.validation.constraints.Size;
 public record CreateBookRequest(
         @NotBlank @Size(max = 20) String isbn,
         @NotBlank String title,
-        @NotBlank String author,
+        @NotBlank String authorName,
+        String authorId,
         String description,
         String coverUrl,
         Integer publishedYear,

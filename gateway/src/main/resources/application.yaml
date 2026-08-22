@@ -27,7 +27,7 @@ spring:
             - id: book-service
               uri: ${BOOK_SERVICE_URI:http://localhost:8083}
               predicates:
-                - Path=/books/**
+                - Path=/books/**,/authors/**
 
             - id: review-service
               uri: ${REVIEW_SERVICE_URI:http://localhost:8084}

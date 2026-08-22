@@ -13,11 +13,11 @@ public class BookEventPublisher {
         this.rabbitTemplate = rabbitTemplate;
     }
 
-    public void publishBookCreated(String bookIsbn, String title, String author) {
+    public void publishBookCreated(String bookIsbn, String title, String authorName, String authorId) {
         rabbitTemplate.convertAndSend(
                 RabbitConfig.EXCHANGE,
                 RabbitConfig.BOOK_CREATED_KEY,
-                new BookCreatedEvent(bookIsbn, title, author)
+                new BookCreatedEvent(bookIsbn, title, authorName, authorId)
         );
     }
 }

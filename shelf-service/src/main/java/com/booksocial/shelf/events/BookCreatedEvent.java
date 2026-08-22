@@ -4,5 +4,6 @@ import java.time.Instant;
 
 public record BookCreatedEvent(String bookIsbn,
                                String title,
-                               String author,
+                               String authorName,
+                               String authorId,
                                Instant occurredAt) {}

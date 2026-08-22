@@ -10,15 +10,17 @@ public class BookRefReadModel {
     private String isbn;
 
     private String title;
-    private String author;
+    private String authorName;
+    private String authorId;
 
     public BookRefReadModel() {
     }
 
-    public BookRefReadModel(String isbn, String title, String author) {
+    public BookRefReadModel(String isbn, String title, String authorName, String authorId) {
         this.isbn = isbn;
         this.title = title;
-        this.author = author;
+        this.authorName = authorName;
+        this.authorId = authorId;
     }
 
     public String getIsbn() {
@@ -37,11 +39,19 @@ public class BookRefReadModel {
         this.title = title;
     }
 
-    public String getAuthor() {
-        return author;
+    public String getAuthorName() {
+        return authorName;
     }
 
-    public void setAuthor(String author) {
-        this.author = author;
+    public void setAuthorName(String authorName) {
+        this.authorName = authorName;
+    }
+
+    public String getAuthorId() {
+        return authorId;
+    }
+
+    public void setAuthorId(String authorId) {
+        this.authorId = authorId;
     }
 }

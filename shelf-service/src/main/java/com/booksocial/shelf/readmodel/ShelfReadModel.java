@@ -14,7 +14,8 @@ public class ShelfReadModel {
     private Long userId;
     private String bookIsbn;
     private String title;
-    private String author;
+    private String authorName;
+    private String authorId;
     private ShelfStatus status;
     private Instant createdAt;
     private Instant updatedAt;
@@ -26,7 +27,8 @@ public class ShelfReadModel {
         this.userId = shelf.getUserId();
         this.bookIsbn = shelf.getBookIsbn();
         this.title = book.getTitle();
-        this.author = book.getAuthor();
+        this.authorName = book.getAuthorName();
+        this.authorId = book.getAuthorId();
         this.status = shelf.getStatus();
         this.createdAt = shelf.getCreatedAt();
         this.updatedAt = shelf.getUpdatedAt();
@@ -64,12 +66,20 @@ public class ShelfReadModel {
         this.title = title;
     }
 
-    public String getAuthor() {
-        return author;
+    public String getAuthorName() {
+        return authorName;
     }
 
-    public void setAuthor(String author) {
-        this.author = author;
+    public void setAuthorName(String authorName) {
+        this.authorName = authorName;
+    }
+
+    public String getAuthorId() {
+        return authorId;
+    }
+
+    public void setAuthorId(String authorId) {
+        this.authorId = authorId;
     }
 
     public ShelfStatus getStatus() {

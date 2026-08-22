@@ -3366,7 +3366,7 @@ Y en los logs del servicio: `Processed FollowedEvent: 10 -> 19` / `Processed Unf
 
 ## Bloque 7 — book-service (catálogo de libros con CQRS)
 
-La Fase 3 replica el patrón de la Fase 2 en un nuevo microservicio: **Postgres para comandos, Mongo para lecturas/búsquedas**, pero sin eventos todavía (no hay consumidores del catálogo; se añadirán cuando exista uno, p.ej. reseñas o notificaciones).
+La Fase 3 replica el patrón de la Fase 2 en un nuevo microservicio: **Postgres para comandos, Mongo para lecturas/búsquedas**, con una entidad `Author` independiente integrada con **Open Library API** para enriquecer el catálogo con datos biográficos de autores. El servicio también integra **Google Books API** para auto-import de libros por ISBN.
 
 ### 7.1 — Esqueleto del book-service
 
@@ -3380,35 +3380,54 @@ Mismo procedimiento que 6.1, con estas variantes:
 
 ```
 book-service/
-├── .env                              # APP_JWT_SECRET
+├── .env                              # APP_JWT_SECRET, GOOGLE_BOOKS_API_KEY
 ├── Dockerfile
 ├── pom.xml
 └── src/main/java/com/booksocial/book/
+    ├── BookServiceApplication.java   # @EnableConfigurationProperties
     ├── config/
     │   ├── SecurityConfig.java       # parse-only JWT (copiado de user-service)
     │   ├── RabbitConfig.java         # exchange + MessageConverter (sin colas)
+    │   ├── GoogleBooksProperties.java
+    │   ├── OpenLibraryProperties.java
     │   └── BookDataSeeder.java       # CommandLineRunner — 8 libros de ejemplo
     ├── domain/
-    │   ├── Book.java                 # JPA entity (Postgres)
+    │   ├── Author.java               # JPA entity (Postgres authors)
+    │   ├── Book.java                 # JPA entity (Postgres books, FK → authors)
     │   ├── BookNotFoundException.java
     │   ├── BookAlreadyExistsException.java
     │   └── ForbiddenException.java
     ├── readmodel/
+    │   ├── AuthorReadModel.java      # Mongo document (author_read_models)
+    │   ├── AuthorReadModelRepository.java
     │   ├── BookReadModel.java        # Mongo document (_id = isbn)
     │   └── BookReadModelRepository.java
     ├── repository/
+    │   ├── AuthorRepository.java     # JPA
     │   └── BookRepository.java       # JPA
     ├── security/
     │   ├── JwtService.java
     │   ├── JwtAuthFilter.java
     │   └── RestAuthenticationEntryPoint.java
     ├── service/
-    │   └── BookService.java
+    │   ├── BookService.java
+    │   ├── AuthorService.java
+    │   ├── google/
+    │   │   ├── GoogleBooksClient.java
+    │   │   ├── GoogleBooksMapper.java
+    │   │   └── GoogleBooksResponse.java
+    │   └── openlibrary/
+    │       ├── OpenLibraryClient.java
+    │       ├── OpenLibraryMapper.java
+    │       ├── OpenLibraryResponse.java
+    │       ├── AuthorDetailResponse.java
+    │       └── WorksResponse.java
     ├── events/
-    │   ├── BookCreatedEvent.java     # record
+    │   ├── BookCreatedEvent.java     # record (isbn, title, authorName, authorId)
     │   └── BookEventPublisher.java   # RabbitTemplate
     └── web/
         ├── BookController.java
+        ├── AuthorController.java
         ├── GlobalExceptionHandler.java
         └── dto/
             ├── CreateBookRequest.java
@@ -3426,9 +3445,16 @@ spring:
   application:
     name: book-service
   # ... mismo patrón: .env import, datasource, mongodb, rabbitmq, jwt
+app:
+  google-books:
+    api-key: ${GOOGLE_BOOKS_API_KEY:}
+    api-url: https://www.googleapis.com/books/v1/
+  open-library:
+    api-url: https://openlibrary.org
+    user-agent: booksocial/1.0 (javierincio.dev@gmail.com)
 ```
 
-Gateway: ruta `Path=/books/**` → `${BOOK_SERVICE_URI:http://localhost:8083}` y variable `BOOK_SERVICE_URI: http://book-service:8083` en el compose del gateway.
+Gateway: ruta `Path=/books/**,/authors/**` → `${BOOK_SERVICE_URI:http://localhost:8083}` y variable `BOOK_SERVICE_URI: http://book-service:8083` en el compose del gateway.
 
 Dockerfile y servicio de compose espejo de user-service (healthcheck curl a `/actuator/health` en `8083`, `depends_on` postgres y mongodb `service_healthy`).
 
@@ -3437,6 +3463,46 @@ Dockerfile y servicio de compose espejo de user-service (healthcheck curl a `/ac
 La seguridad es **parse-only**: `JwtService`, `JwtAuthFilter`, `RestAuthenticationEntryPoint`, `SecurityConfig` (consultar el [Apéndice A](#apéndice-a--plantilla-de-seguridad-reutilizable)). El control de acceso a `POST /books` se hace en el **controlador** leyendo el header `X-User-Roles` del gateway, no en SecurityConfig.
 
 ### 7.2 — Catálogo CQRS con búsqueda
+
+#### Command side — `domain/Author` (Postgres)
+
+```java
+@Entity
+@Table(name = "authors")
+public class Author {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "open_library_id", unique = true)
+    private String openLibraryId;
+
+    @Column(nullable = false)
+    private String name;
+
+    @Column(columnDefinition = "text")
+    private String bio;
+
+    @Column(name = "birth_date")
+    private String birthDate;
+
+    @Column(name = "death_date")
+    private String deathDate;
+
+    @Column(name = "photo_url")
+    private String photoUrl;
+
+    @Column(name = "top_subjects")
+    private String topSubjects; // JSON serializado
+
+    @Column(name = "work_count")
+    private Integer workCount;
+
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt = Instant.now();
+}
+```
+
+`Author` es una entidad independiente con datos biográficos procedentes de Open Library. `openLibraryId` es único y se usa como clave de cache. Los autores se crean bajo demanda cuando se importa un libro desde Google Books o cuando se busca un autor en Open Library.
 
 #### Command side — `domain/Book` (Postgres)
 
@@ -3453,8 +3519,8 @@ public class Book {
     @Column(nullable = false)
     private String title;
 
-    @Column(nullable = false)
-    private String author;
+    @Column(name = "author_id")
+    private Long authorId;          // FK lógica → authors.id
 
     @Column(columnDefinition = "text")
     private String description;
@@ -3466,11 +3532,11 @@ public class Book {
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
-    public Book(String isbn, String title, String author, String description,
+    public Book(String isbn, String title, Long authorId, String description,
                 String coverUrl, Integer publishedYear, String category) {
         this.isbn = isbn;
         this.title = title;
-        this.author = author;
+        this.authorId = authorId;
         this.description = description;
         this.coverUrl = coverUrl;
         this.publishedYear = publishedYear;
@@ -3480,7 +3546,7 @@ public class Book {
 }
 ```
 
-`isbn` tiene `uniqueConstraints` en la tabla; `createdAt` se fija en el constructor y no se actualiza (`updatable = false`).
+`isbn` tiene `uniqueConstraints` en la tabla; `createdAt` se fija en el constructor y no se actualiza (`updatable = false`). `authorId` es la FK lógica a `authors.id` — no es una FK de JPA con `@ManyToOne` porque se resuelve por código (on-demand) y la relación es ligera.
 
 #### Query side — `readmodel/BookReadModel` (Mongo)
 
@@ -3490,7 +3556,8 @@ public class BookReadModel {
     @Id
     private String isbn;     // ISBN como _id de Mongo
     private String title;
-    private String author;
+    private String authorName;
+    private String authorId;  // String.valueOf(author.id)
     private String description;
     private String coverUrl;
     private Integer publishedYear;
@@ -3499,36 +3566,44 @@ public class BookReadModel {
 }
 ```
 
-`isbn` como `_id` de Mongo: las búsquedas por ISBN son directas. La colección se llama `books` en Mongo.
+`isbn` como `_id` de Mongo: las búsquedas por ISBN son directas. `authorName` y `authorId` se desnormalizan del `Author` para que las lecturas desde Mongo no necesiten joins.
 
 #### Repositorios
 
 ```java
-// PostgreSQL
-public interface BookRepository extends JpaRepository<Book, Long> {
-    // SELECT * FROM book WHERE isbn = ?;
-    Optional<Book> findByIsbn(String isbn);
+// PostgreSQL — Authors
+public interface AuthorRepository extends JpaRepository<Author, Long> {
+    Optional<Author> findByOpenLibraryId(String openLibraryId);
+    List<Author> findByNameContainingIgnoreCase(String name);
+}
 
-    // SELECT EXISTS (SELECT 1 FROM book WHERE isbn = ?);
+// PostgreSQL — Books
+public interface BookRepository extends JpaRepository<Book, Long> {
+    Optional<Book> findByIsbn(String isbn);
     boolean existsByIsbn(String isbn);
 }
 
-// MongoDB
+// MongoDB — Author read model
+public interface AuthorReadModelRepository extends MongoRepository<AuthorReadModel, String> {
+    List<AuthorReadModel> findByNameContainingIgnoreCase(String name);
+}
+
+// MongoDB — Book read model
 public interface BookReadModelRepository extends MongoRepository<BookReadModel, String> {
   /*
     db.books.find({
       $or: [
           { title: { $regex: "<title>", $options: "i" } },
-          { author: { $regex: "<author>", $options: "i" } }
+          { authorName: { $regex: "<author>", $options: "i" } }
       ]
   })
   */
-  List<BookReadModel> findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(
-        String title, String author);
+  List<BookReadModel> findByTitleContainingIgnoreCaseOrAuthorNameContainingIgnoreCase(
+        String title, String authorName);
 }
 ```
 
-La consulta derivada de Spring Data genera un `$regex` en Mongo con `i` (case-insensitive) sobre título **o** autor.
+La consulta derivada de Spring Data genera un `$regex` en Mongo con `i` (case-insensitive) sobre título **o** nombre de autor.
 
 #### `BookService`
 
@@ -3538,54 +3613,97 @@ public class BookService {
     private final BookRepository bookRepository;
     private final BookReadModelRepository readModelRepository;
     private final BookEventPublisher bookEventPublisher;
+    private final GoogleBooksClient googleBooksClient;
+    private final GoogleBooksMapper googleBooksMapper;
+    private final AuthorRepository authorRepository;
 
     public BookResponse create(CreateBookRequest request) {
         if (bookRepository.existsByIsbn(request.isbn()))
             throw new BookAlreadyExistsException(request.isbn());
 
         Book book = bookRepository.save(new Book(
-            request.isbn(), request.title(), request.author(),
+            request.isbn(), request.title(), Long.valueOf(request.authorId()),
             request.description(), request.coverUrl(),
             request.publishedYear(), request.category()));
 
+        Author author = authorRepository.findById(book.getAuthorId())
+            .orElseThrow(() -> new RuntimeException("Author not found with ID: " + book.getAuthorId()));
+
         BookResponse response = toResponse(upsertReadModel(book));
-        bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), book.getAuthor());
+        bookEventPublisher.publishBookCreated(
+            book.getIsbn(), book.getTitle(), author.getName(), author.getId().toString());
         return response;
     }
 
     public BookResponse findByIsbn(String isbn) {
-        return toResponse(readModelRepository.findById(isbn)
-                .orElseThrow(() -> new BookNotFoundException(isbn)));
+        return readModelRepository.findById(isbn)
+            .map(this::toResponse)
+            .orElseGet(() -> {
+                // Auto-import desde Google Books si no existe en BD
+                GoogleBooksResponse.Volume volume = googleBooksClient.findByIsbn(isbn);
+                if (volume == null) throw new BookNotFoundException(isbn);
+
+                Book book = googleBooksMapper.mapToBook(volume);
+                BookResponse response = toResponse(upsertReadModel(book));
+
+                Author author = authorRepository.findById(book.getAuthorId())
+                    .orElseThrow(() -> new RuntimeException("Author not found"));
+                bookEventPublisher.publishBookCreated(
+                    book.getIsbn(), book.getTitle(), author.getName(), author.getId().toString());
+                return response;
+            });
     }
 
     public List<BookResponse> search(String q) {
         return readModelRepository
-            .findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(q, q)
+            .findByTitleContainingIgnoreCaseOrAuthorNameContainingIgnoreCase(q, q)
             .stream().map(this::toResponse).toList();
     }
 
+    public List<BookResponse> searchExternal(String q) {
+        List<BookResponse> dbResults = this.search(q);
+        List<BookResponse> googleResults = googleBooksClient.search(q).stream()
+            .map(googleBooksMapper::mapToBook)
+            .map(b -> {
+                Author author = authorRepository.findById(b.getAuthorId())
+                    .orElseThrow(() -> new RuntimeException("Author not found"));
+                return new BookReadModel(
+                    b.getIsbn(), b.getTitle(), author.getName(),
+                    b.getAuthorId().toString(), b.getDescription(),
+                    b.getCoverUrl(), b.getPublishedYear(), b.getCategory());
+            })
+            .map(this::toResponse).toList();
+        return Stream.concat(dbResults.stream(), googleResults.stream()).toList();
+    }
+
     private BookReadModel upsertReadModel(Book book) {
+        Author author = authorRepository.findById(book.getAuthorId())
+            .orElseThrow(() -> new RuntimeException("Author not found"));
         BookReadModel readModel = new BookReadModel(
-            book.getIsbn(), book.getTitle(), book.getAuthor(),
-            book.getDescription(), book.getCoverUrl(),
-            book.getPublishedYear(), book.getCategory());
+            book.getIsbn(), book.getTitle(), author.getName(),
+            book.getAuthorId().toString(), book.getDescription(),
+            book.getCoverUrl(), book.getPublishedYear(), book.getCategory());
         return readModelRepository.save(readModel);
     }
 
     private BookResponse toResponse(BookReadModel readModel) {
+        Author author = authorRepository.findById(Long.valueOf(readModel.getAuthorId()))
+            .orElseThrow(() -> new RuntimeException("Author not found"));
         return new BookResponse(
-            readModel.getIsbn(), readModel.getTitle(), readModel.getAuthor(),
-            readModel.getDescription(), readModel.getCoverUrl(),
-            readModel.getPublishedYear(), readModel.getCategory(),
-            readModel.getCreatedAt());
+            readModel.getIsbn(), readModel.getTitle(), author.getName(),
+            readModel.getAuthorId(), readModel.getDescription(),
+            readModel.getCoverUrl(), readModel.getPublishedYear(),
+            readModel.getCategory(), readModel.getCreatedAt());
     }
 }
 ```
 
-- `create()`: verifica unicidad por ISBN en Postgres, guarda, hace upsert del _read model_ y publica evento `BookCreatedEvent`.
-- `findByIsbn()` y `search()` leen **solo de Mongo** (misma separación CQRS que el perfil).
+- `create()`: verifica unicidad por ISBN en Postgres, resuelve el `Author` por `authorId`, guarda, hace upsert del _read model_ con `authorName`+`authorId` y publica evento `BookCreatedEvent` con los 4 campos.
+- `findByIsbn()`: primero intenta Mongo; si no existe, auto-importa desde Google Books (que a su vez crea el Author via `GoogleBooksMapper`).
+- `search()` y `searchExternal()`: búsqueda en Mongo y combinación con Google Books.
+- `upsertReadModel()` y `toResponse()`: resuelven el `Author` por FK para enriquecer el read model y la respuesta.
 
-#### `BookController`
+#### `BookController` y `AuthorController`
 
 ```java
 @RestController @RequestMapping("/books")
@@ -3611,6 +3729,11 @@ public class BookController {
         return bookService.search(q);
     }
 
+    @GetMapping("/search/full")
+    public List<BookResponse> searchBooksFull(@RequestParam String q) {
+        return bookService.searchExternal(q);
+    }
+
     private boolean isAdmin(String roles) {
         return roles != null && Arrays.stream(roles.split(","))
                 .map(String::trim).anyMatch("ADMIN"::equals);
@@ -3618,11 +3741,52 @@ public class BookController {
 }
 ```
 
-| Método | Ruta               | Auth                                 | Descripción                     |
-| ------ | ------------------ | ------------------------------------ | ------------------------------- |
-| `POST` | `/books`           | `X-User-Roles` debe contener `ADMIN` | Crear libro (201)               |
-| `GET`  | `/books/{isbn}`    | Autenticado                          | Buscar por ISBN (200)           |
-| `GET`  | `/books/search?q=` | Autenticado                          | Buscar por título o autor (200) |
+```java
+@RestController @RequestMapping("/authors")
+public class AuthorController {
+    private final AuthorService authorService;
+
+    @GetMapping("/search")
+    public List<AuthorReadModel> searchAuthors(@RequestParam String q) {
+        return authorService.searchAuthors(q);
+    }
+
+    @GetMapping("/{openLibraryId}")
+    public AuthorReadModel getAuthor(@PathVariable String openLibraryId) {
+        return authorService.getAuthor(openLibraryId);
+    }
+
+    @GetMapping("/{openLibraryId}/works")
+    public WorksResponse getAuthorWorks(@PathVariable String openLibraryId) {
+        return authorService.getAuthorWorks(openLibraryId);
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public Author createAuthor(
+            @RequestHeader(value = "X-User-Roles", required = false) String roles,
+            @RequestBody String name) {
+        if (!isAdmin(roles)) throw new ForbiddenException("ADMIN required");
+        return authorService.createAuthor(name);
+    }
+
+    private boolean isAdmin(String roles) {
+        return roles != null && Arrays.stream(roles.split(","))
+                .map(String::trim).anyMatch("ADMIN"::equals);
+    }
+}
+```
+
+| Método | Ruta                         | Auth                                 | Descripción                               |
+| ------ | ---------------------------- | ------------------------------------ | ----------------------------------------- |
+| `POST` | `/books`                     | `X-User-Roles` debe contener `ADMIN` | Crear libro (201)                         |
+| `GET`  | `/books/{isbn}`              | Público                              | Buscar por ISBN (auto-importa, 200)       |
+| `GET`  | `/books/search?q=`           | Público                              | Búsqueda solo en BD local (200)           |
+| `GET`  | `/books/search/full?q=`      | Público                              | Búsqueda BD + Google Books (200)          |
+| `GET`  | `/authors/search?q=`         | Público                              | Buscar autores (BD local + Open Library)  |
+| `GET`  | `/authors/{olId}`            | Público                              | Detalle de autor (Open Library)           |
+| `GET`  | `/authors/{olId}/works`      | Público                              | Obras de un autor (Open Library)          |
+| `POST` | `/authors`                   | ADMIN                                | Crear autor manualmente (201)             |
 
 > **Roles vía header de confianza**: el gateway reconstruye `X-User-Roles` a partir del claim `roles` del JWT validado (mismo patrón strip-then-assert que `X-User-Id`). El control de permisos downstream es `roles != null && Arrays.stream(roles.split(",")).map(String::trim).anyMatch("ADMIN"::equals)`.
 
@@ -3632,42 +3796,70 @@ public class BookController {
 public record CreateBookRequest(
     @NotBlank @Size(max = 20) String isbn,
     @NotBlank String title,
-    @NotBlank String author,
+    @NotBlank String authorName,
+    String authorId,
     String description,
     String coverUrl,
     Integer publishedYear,
     String category) {}
 
-public record BookResponse(String isbn, String title, String author, String description,
-    String coverUrl, Integer publishedYear, String category, Instant createdAt) {}
+public record BookResponse(String isbn, String title, String authorName, String authorId,
+    String description, String coverUrl, Integer publishedYear, String category,
+    Instant createdAt) {}
 ```
 
 #### `BookDataSeeder` (CommandLineRunner)
 
 ```java
 @Component
+@ConditionalOnProperty(name = "app.seed.books", havingValue = "true", matchIfMissing = true)
 public class BookDataSeeder implements CommandLineRunner {
     private final BookRepository bookRepository;
     private final BookReadModelRepository readModelRepository;
     private final BookEventPublisher bookEventPublisher;
+    private final AuthorRepository authorRepository;
 
-    @Override
+    private record SeedBook(String isbn, String title, String authorName, String description,
+                            String coverUrl, Integer publishedYear, String category) {}
+
+    private static final List<SeedBook> books = List.of(
+        // 8 libros de ejemplo con authorName
+    );
+
+    @Override @Transactional
     public void run(String... args) {
-        if (bookRepository.count() == 0) {
-            // inserta 8 libros de ejemplo
-            // por cada uno: save en Postgres + upsert en Mongo + publica BookCreatedEvent
+        if (bookRepository.count() > 0) return;
+        for (SeedBook seed : books) {
+            Author author = findOrCreateAuthor(seed.authorName());
+            Book book = bookRepository.save(new Book(
+                seed.isbn(), seed.title(), author.getId(), seed.description(),
+                seed.coverUrl(), seed.publishedYear(), seed.category()));
+            readModelRepository.save(new BookReadModel(
+                seed.isbn(), seed.title(), author.getName(), author.getId().toString(),
+                seed.description(), seed.coverUrl(), seed.publishedYear(), seed.category()));
+            bookEventPublisher.publishBookCreated(
+                book.getIsbn(), book.getTitle(), author.getName(), author.getId().toString());
         }
+    }
+
+    private Author findOrCreateAuthor(String name) {
+        return authorRepository.findByNameContainingIgnoreCase(name)
+            .stream().findFirst()
+            .orElseGet(() -> { Author a = new Author(); a.setName(name); return authorRepository.save(a); });
     }
 }
 ```
 
-Si `bookRepository.count() == 0`, inserta 8 libros de ejemplo escribiendo **ambos lados** (Postgres + Mongo) y publicando eventos. Se usa para dar datos a la búsqueda en local sin levantar la UI.
+Si `bookRepository.count() == 0`, crea primero los `Author` y luego los libros, escribiendo **ambos lados** (Postgres + Mongo) y publicando eventos con los 4 campos (`isbn`, `title`, `authorName`, `authorId`).
 
 > **Ordering del seeder**: en un entorno limpio, el seeder publica eventos que review-service consumirá si su cola ya está declarada. Si review-service arranca después, las colas durables en RabbitMQ mantienen los mensajes hasta que se conecte.
 
-### 7.3 — Google Books API: búsqueda extendida y auto-import
+### 7.3 — Integración con APIs externas: Google Books + Open Library
 
-En esta sub-fase se enriquece el catálogo con integración externa: el servicio puede buscar libros en **Google Books API** y auto-importarlos por ISBN cuando no existen en la base de datos local.
+En esta sub-fase el catálogo se enriquece con dos integraciones externas:
+
+1. **Google Books API**: búsqueda de libros y auto-import por ISBN.
+2. **Open Library API**: búsqueda de autores, datos biográficos y obras.
 
 #### Configuración
 
@@ -3676,14 +3868,25 @@ app:
   google-books:
     api-key: ${GOOGLE_BOOKS_API_KEY:}
     api-url: https://www.googleapis.com/books/v1/
+  open-library:
+    api-url: https://openlibrary.org
+    user-agent: booksocial/1.0 (javierincio.dev@gmail.com)
 ```
 
 ```java
 @ConfigurationProperties(prefix = "app.google-books")
 public record GoogleBooksProperties(String apiKey, String apiUrl) {}
+
+@ConfigurationProperties(prefix = "app.open-library")
+public record OpenLibraryProperties(String apiUrl, String userAgent) {}
 ```
 
-La API key es **opcional**: sin ella se permiten 100 peticiones/día; con ella hasta 1000. Se almacena en `.env` del book-service (nunca en git).
+La API key de Google es **opcional**: sin ella se permiten 100 peticiones/día; con ella hasta 1000. Open Library no requiere API key pero exige un `User-Agent` identificativo. Se configuran en `BookServiceApplication`:
+
+```java
+@EnableConfigurationProperties({GoogleBooksProperties.class, OpenLibraryProperties.class})
+public class BookServiceApplication { ... }
+```
 
 #### `GoogleBooksClient`
 
@@ -3705,13 +3908,68 @@ Usa `RestClient` (nuevo en Spring Boot 3.2+) contra la API de Google. `findByIsb
 ```java
 @Component
 public class GoogleBooksMapper {
-    public Book mapToBook(GoogleBooksResponse.Volume volume) {
+    private final AuthorRepository authorRepository;
+
+    public Book mapToBook(Volume volume) {
         // Extrae ISBN (ISBN_13 preferido, fallback ISBN_10)
         // Extrae año de publishedDate
-        // Mapea title, authors (join con ", "), description, coverUrl, category
+        // Extrae autor: info.authors().getFirst()
+        // findOrCreateAuthor(authorName) → Author entity con FK
+        // Mapea title, authorId, description, coverUrl, category
+    }
+
+    private Author findOrCreateAuthor(String name) {
+        // Busca por nombreIgnoreCase en AuthorRepository; si no existe, crea uno nuevo
     }
 }
 ```
+
+El mapper inyecta `AuthorRepository` y crea/busca el `Author` antes de construir el `Book`. Esto garantiza que cada libro importado tiene un `authorId` válido.
+
+#### `OpenLibraryClient`
+
+```java
+@Component
+public class OpenLibraryClient {
+    private final RestClient restClient;  // baseUrl: https://openlibrary.org
+
+    public OpenLibraryResponse searchAuthors(String query) { ... }
+    public AuthorDetailResponse getAuthor(String openLibraryId) { ... }
+    public WorksResponse getWorks(String openLibraryId) { ... }
+}
+```
+
+Usa `RestClient` contra la API de Open Library. Los endpoints son:
+
+| Método Open Library | Descripción |
+| --- | --- |
+| `GET /search/authors.json?q={query}` | Búsqueda de autores por nombre |
+| `GET /authors/{id}.json` | Detalle de autor (bio, fechas, fotos) |
+| `GET /authors/{id}/works.json` | Lista de obras del autor |
+
+La API no requiere key pero rate-limita a ~3 req/s; se identifica con `User-Agent: booksocial/1.0`.
+
+#### `OpenLibraryMapper`
+
+```java
+@Component
+public class OpenLibraryMapper {
+    public AuthorReadModel toReadModel(AuthorDoc doc) {
+        String openLibraryId = extractKey(doc.key());  // "/authors/OL123A" → "OL123A"
+        String photoUrl = coverUrl(openLibraryId);     // https://covers.openlibrary.org/a/olid/OL123A-L.jpg
+        return new AuthorReadModel(openLibraryId, doc.name(), ...);
+    }
+}
+```
+
+#### Modelo de cache Open Library
+
+Los autores buscados en Open Library se cachean en dos lados:
+
+- **Postgres** `authors`: entidad JPA con `openLibraryId` único (fuente de verdad).
+- **Mongo** `author_read_models`: read model con `_id` = `openLibraryId` (para lecturas).
+
+El flujo de cache es: primera búsqueda → Open Library API → guardar en Postgres + Mongo; búsquedas siguientes → leer de Mongo directamente.
 
 #### Endpoints modificados
 
@@ -3721,27 +3979,36 @@ public class GoogleBooksMapper {
 | `GET` | `/books/search/full?q=` | Público | Búsqueda BD + Google Books |
 | `GET` | `/books/{isbn}` | Público | Auto-importa si no existe en BD |
 | `POST` | `/books` | ADMIN | Crear libro manualmente |
+| `GET` | `/authors/search?q=` | Público | Buscar autores (BD local + Open Library) |
+| `GET` | `/authors/{olId}` | Público | Detalle de autor (Open Library) |
+| `GET` | `/authors/{olId}/works` | Público | Obras de un autor (Open Library) |
+| `POST` | `/authors` | ADMIN | Crear autor manualmente |
 
-`GET /books/{isbn}` ahora **auto-importa**: si el ISBN no existe en la BD local, lo busca en Google Books API, lo guarda en Postgres + Mongo y lo devuelve. La segunda llamada ya lo retorna de la BD local.
+`GET /books/{isbn}` ahora **auto-importa**: si el ISBN no existe en la BD local, lo busca en Google Books API (que a su vez crea el `Author` via `GoogleBooksMapper`), lo guarda en Postgres + Mongo y lo devuelve. La segunda llamada ya lo retorna de la BD local.
 
 `GET /books/search/full` combina resultados de la BD local con resultados de Google Books (sin persistir los externos).
+
+`GET /authors/search` busca primero en el cache local (Mongo); si no encuentra, consulta Open Library API y cachea los resultados.
 
 #### SecurityConfig del book-service
 
 ```java
 .requestMatchers("/actuator/health").permitAll()
 .requestMatchers(HttpMethod.GET, "/books/**").permitAll()
+.requestMatchers(HttpMethod.GET, "/authors/**").permitAll()
 .anyRequest().authenticated()
 ```
 
-Los GETs son públicos (sin auth). Solo `POST /books` requiere autenticación y rol ADMIN.
+Los GETs son públicos (sin auth). Solo `POST /books` y `POST /authors` requieren autenticación y rol ADMIN.
 
 ### Decisiones de diseño de la Fase 3 (resumen)
 
-- **Catálogo en CQRS puro sin eventos**: el alta hace dual-write; las lecturas y la búsqueda van solo a Mongo. No hay publicador/consumidor porque **no existe todavía un consumidor del catálogo**; cuando aparezca (reseñas, notificaciones), el alta publicará `BookCreatedEvent` y el seeder dejará de escribir Mongo directamente.
-- **Alta protegida por rol**: la creación de libros exige `ADMIN` (header `X-User-Roles` del gateway). Los usuarios normales reciben 403.
-- **Búsqueda derivada en Mongo**: una única consulta derivada sobre título/autor es suficiente para esta fase; si hiciera falta ranking o tolerancia a errores, se migraría a un índice `text` de Mongo.
-- **Réplica del esqueleto**: el coste de crear un microservicio nuevo bajó respecto a la Fase 2: copiar la seguridad parse-only y el patrón de compose ya está estandarizado (único cambio: puerto, nombre y drivers).
+- **Author como entidad independiente**: `Author` vive en Postgres (`authors`) y Mongo (`author_read_models`), con `openLibraryId` como clave de cache. Se crea bajo demanda (auto-import desde Google Books, búsqueda en Open Library, o manual via `POST /authors`).
+- **Book con FK a Author**: `Book.authorId` (Long) es la FK lógica a `authors.id`. No se usa `@ManyToOne` porque la relación es ligera y se resuelve por código.
+- **Dual APIs externas**: Google Books para libros (búsqueda + auto-import por ISBN), Open Library para autores (búsqueda + datos biográficos + obras). Cada una cubre un dominio distinto.
+- **Cache de autores en Open Library**: la primera búsqueda cachea en Postgres+Mongo; las siguientes leen de Mongo. Rate limit ~3 req/s identificado con `User-Agent`.
+- **Búsqueda derivada en Mongo**: una única consulta derivada sobre título/autorName es suficiente para esta fase; si hiciera falta ranking o tolerancia a errores, se migraría a un índice `text` de Mongo.
+- **Réplica del esqueleto**: el coste de crear un microservicio nuevo bajó respecto a la Fase 2: copiar la seguridad parse-only y el patrón de compose ya está estandarizado.
 
 ---
 
@@ -3836,7 +4103,8 @@ Topología:
 
 ```java
 // Copia del record (mismo paquete que el publicador, pero en review-service)
-public record BookCreatedEvent(String bookIsbn, String title, String author, Instant occurredAt) {}
+public record BookCreatedEvent(String bookIsbn, String title, String authorName,
+                               String authorId, Instant occurredAt) {}
 ```
 
 ```java
@@ -3846,13 +4114,14 @@ public class BookCreatedEventConsumer {
 
     @RabbitListener(queues = RabbitConfig.REVIEW_QUEUE)
     public void onBookCreated(BookCreatedEvent event) {
-        bookRefRepository.save(new BookRefReadModel(event.bookIsbn(), event.title(), event.author()));
+        bookRefRepository.save(new BookRefReadModel(
+            event.bookIsbn(), event.title(), event.authorName(), event.authorId()));
         log.info("Processed BookCreatedEvent: {} - {}", event.bookIsbn(), event.title());
     }
 }
 ```
 
-Al recibir `BookCreatedEvent`, hace upsert de `BookRefReadModel` en la colección `book_refs` de Mongo. Este documento se usa para verificar que un libro existe antes de permitir una reseña.
+Al recibir `BookCreatedEvent`, hace upsert de `BookRefReadModel` en la colección `book_refs` de Mongo con los 4 campos (`isbn`, `title`, `authorName`, `authorId`). Este documento se usa para verificar que un libro existe antes de permitir una reseña.
 
 > **¿Por qué no declarar la cola del consumer en el publicador?** Si book-service declarara `review-service.books.created`, estaría acoplado al nombre de la cola del otro servicio. Cada consumidor declara su propia cola y binding: así, si mañana se añade otro consumidor (p.ej. `notification-service`), no hay que modificar book-service.
 
@@ -3866,11 +4135,12 @@ public class BookRefReadModel {
     @Id
     private String isbn;
     private String title;
-    private String author;
+    private String authorName;
+    private String authorId;
 }
 ```
 
-Colección `book_refs` en Mongo. Solo los campos necesarios para validar reseñas (sin `description`, `coverUrl`, etc.).
+Colección `book_refs` en Mongo. Solo los campos necesarios para validar reseñas y mostrar información básica del libro (sin `description`, `coverUrl`, etc.). `authorName` y `authorId` se desnormalizan del evento para que las respuestas incluyan el nombre del autor sin joins.
 
 ### 8.3 — Reseñas CQRS con stats
 
@@ -4103,7 +4373,7 @@ public record ReviewSummaryResponse(String bookIsbn, long ratingCount, double av
 
 ### Decisiones de diseño de la Fase 4 (resumen)
 
-- **Primer evento cruzado**: book-service publica `BookCreatedEvent`; review-service consume y mantiene un catálogo local (`book_refs`). Esto desacopla reseñas de catálogo: review-service nunca llama a book-service por REST.
+- **Primer evento cruzado**: book-service publica `BookCreatedEvent` (con `authorName`+`authorId`); review-service consume y mantiene un catálogo local (`book_refs`). Esto desacopla reseñas de catálogo: review-service nunca llama a book-service por REST.
 - **Reseñas en dual-write**: por ahora el comando escribe Postgres + Mongo (como el perfil en 2.2). Los eventos de reseña (para notificaciones, feed de actividad, etc.) se añadirán en una fase futura.
 - **Modelo agregado de stats**: `review_stats` se recalcula en cada operación en vez de incrementar/decrementar, lo que lo hace idempotente y simple de razonar.
 - **Ordering del seeder**: en un entorno limpio, el seeder publica eventos que review-service consumirá si su cola ya está declarada. Si review-service arranca después, las colas durables en RabbitMQ mantienen los mensajes hasta que se conecte.
@@ -4214,14 +4484,22 @@ public class ShelfReadModel {
     private Long userId;
     private String bookIsbn;
     private String title;          // ← desnormalizado de BookRefReadModel
-    private String author;         // ← desnormalizado de BookRefReadModel
+    private String authorName;     // ← desnormalizado de BookRefReadModel
+    private String authorId;       // ← desnormalizado de BookRefReadModel
     private ShelfStatus status;
     private Instant createdAt;
     private Instant updatedAt;
 
     public ShelfReadModel(Shelf shelf, BookRefReadModel book) {
         this.id = shelf.getUserId() + ":" + shelf.getBookIsbn();
-        // ... copia campos del shelf y del bookRef
+        this.userId = shelf.getUserId();
+        this.bookIsbn = shelf.getBookIsbn();
+        this.title = book.getTitle();
+        this.authorName = book.getAuthorName();
+        this.authorId = book.getAuthorId();
+        this.status = shelf.getStatus();
+        this.createdAt = shelf.getCreatedAt();
+        this.updatedAt = shelf.getUpdatedAt();
     }
 }
 ```
@@ -4235,7 +4513,8 @@ public class ShelfReadModel {
 public class BookRefReadModel {
     @Id private String isbn;
     private String title;
-    private String author;
+    private String authorName;
+    private String authorId;
 }
 ```
 
@@ -4264,7 +4543,8 @@ public class BookCreatedEventConsumer {
     @RabbitListener(queues = RabbitConfig.SHELF_QUEUE)
     public void onBookCreated(BookCreatedEvent event) {
         readModelRepository.save(
-            new BookRefReadModel(event.bookIsbn(), event.title(), event.author()));
+            new BookRefReadModel(event.bookIsbn(), event.title(),
+                event.authorName(), event.authorId()));
     }
 }
 ```
@@ -4433,7 +4713,7 @@ public record CreateShelfRequest(
 public record UpdateShelfRequest(@NotNull ShelfStatus status) {}
 
 public record ShelfResponse(
-    Long id, String bookIsbn, String title, String author,
+    Long id, String bookIsbn, String title, String authorName, String authorId,
     ShelfStatus status, Instant createdAt, Instant updatedAt
 ) {}
 ```
@@ -4450,7 +4730,7 @@ public record ShelfResponse(
 
 ### Decisiones de diseño de shelf-service
 
-- **Doble consumidor del mismo evento**: tanto review-service como shelf-service escuchan `book.created`. Cada uno mantiene su propia cola (`review-service.books.created` y `shelf-service.books.created`) y su propia copia de `book_refs`. Esto es desacoplamiento por diseño: no hay bases de datos compartidas entre servicios.
+- **Doble consumidor del mismo evento**: tanto review-service como shelf-service escuchan `book.created` (con `authorName`+`authorId`). Cada uno mantiene su propia cola (`review-service.books.created` y `shelf-service.books.created`) y su propia copia de `book_refs`. Esto es desacoplamiento por diseño: no hay bases de datos compartidas entre servicios.
 - **`X-User-Id` en vez de `X-User-Email`**: el gateway extrae ambos headers del JWT. shelf-service usa el ID numérico porque es más eficiente como clave de búsqueda en MongoDB (`findAllByUserId`) y PostgreSQL (`WHERE user_id = ?`).
 - **Unicidad por constraint, no por código**: la restricción `UNIQUE(book_isbn, user_id)` en PostgreSQL garantiza que un usuario no pueda añadir el mismo libro dos veces, aunque el servicio también valida antes de insertar para devolver un error claro (`409`).
 - **Dual-write síncrono**: el servicio escribe Postgres y Mongo en la misma transacción. Es el mismo patrón que user-service (perfil) y review-service (reseñas). La consistencia eventual entre servicios se gestiona a nivel de eventos.
@@ -4551,6 +4831,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers(HttpMethod.GET, "/books/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/authors/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/shelves/**").permitAll()
                 .anyRequest().authenticated())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
@@ -4559,7 +4840,7 @@ public class SecurityConfig {
 }
 ```
 
-> **Nota**: book-service y shelf-service añaden `requestMatchers(HttpMethod.GET, ...)` para permitir GETs públicos. Los demás servicios usan solo `permitAll` para `/actuator/health`.
+> **Nota**: book-service y shelf-service añaden `requestMatchers(HttpMethod.GET, ...)` para permitir GETs públicos en libros, autores y estanterías. Los demás servicios usan solo `permitAll` para `/actuator/health`.
 
 ### application.yaml (sección de seguridad)
 
@@ -4611,7 +4892,8 @@ Al crear un nuevo servicio downstream:
 2. Añadir las dependencias de JWT en el `pom.xml`.
 3. Añadir `app.jwt.secret` e `app.jwt.issuer` en `application.yaml` y `.env`.
 4. Si el servicio tiene endpoints públicos (como `/actuator/health`), añadirlos a `permitAll` en `SecurityConfig`.
-5. Si el servicio expone GETs públicos (catálogo, búsqueda), añadir `requestMatchers(HttpMethod.GET, "/ruta/**").permitAll()` tanto en el gateway como en el SecurityConfig del servicio.
+5. Si el servicio expone GETs públicos (catálogo, búsqueda, autores), añadir `requestMatchers(HttpMethod.GET, "/ruta/**").permitAll()` tanto en el gateway como en el SecurityConfig del servicio.
+6. Si el servicio usa RabbitMQ como consumidor, declarar su propia cola y binding en `RabbitConfig` (cada consumidor es dueño de su cola).
 
 > **No copiar JwtService de identity-service**: ese tiene capacidad de generar tokens. Los servicios downstream solo necesitan `parse()`.
 
@@ -4627,11 +4909,13 @@ Resumen de las decisiones arquitectónicas clave del proyecto:
 - **JWT stateless + secret compartido**: el gateway valida los tokens sin consultar al identity-service.
 - **Access corto (15 min) + refresh largo (7 días) rotativo**: el refresh viaja en cookie `httpOnly` + `SameSite=Lax`; el hash SHA-256 se guarda en BD (nunca el token en claro).
 - **Patrón strip-then-assert**: el gateway elimina los `X-User-*` del cliente y los reemplaza por los derivados del JWT → los servicios downstream confían en ellos.
-- **GETs públicos**: el gateway y los servicios permiten `GET /books/**` y `GET /shelves/**` sin autenticación. Los POST/PUT/DELETE siguen requiriendo token.
+- **GETs públicos**: el gateway y los servicios permiten `GET /books/**`, `GET /authors/**` y `GET /shelves/**` sin autenticación. Los POST/PUT/DELETE siguen requiriendo token.
 
 ### Persistencia
 
 - **CQRS dual-write**: PostgreSQL para comandos (escrituras), MongoDB para lecturas. Sincronización inicial directa, migrada a eventos RabbitMQ en fases posteriores.
+- **Author como entidad independiente**: `Author` en Postgres + Mongo, con `openLibraryId` como clave de cache. Se crea bajo demanda desde Google Books, Open Library o manualmente.
+- **Dual APIs externas**: Google Books para libros (búsqueda + auto-import por ISBN), Open Library para autores (búsqueda + datos biográficos + obras). Cache de autores en Postgres+Mongo.
 - **`ddl-auto: update` solo en desarrollo**; para producción se usarían migraciones (Flyway/Liquibase).
 
 ### Infraestructura
@@ -4650,6 +4934,7 @@ Resumen de las decisiones arquitectónicas clave del proyecto:
 
 - **Una cola por evento**: RabbitMQ reparte entre listeners de la misma cola; con una cola por tipo, cada listener recibe un tipo concreto.
 - **Contadores recalculados, no incrementados**: hace las operaciones idempotentes ante re-entregas del broker.
+- **Evento `BookCreatedEvent` con 4 campos**: `bookIsbn`, `title`, `authorName`, `authorId`. Los consumidores desnormalizan `authorName`+`authorId` en sus read models para evitar joins.
 - **Sin Transactional Outbox**: se documenta como limitación conocida.
 
 #### ¿Qué es el Transactional Outbox?
@@ -4675,7 +4960,7 @@ El patrón Outbox resuelve esto escribiendo el evento en una tabla `outbox` **de
 
 #### Por qué no se implementa en BookSocial
 
-- **Baja frecuencia**: 3 eventos (`book.created`, `follow.followed`, `follow.unfollowed`) con tráfico mínimo.
+- **Baja frecuencia**: 3 tipos de eventos (`book.created`, `follow.followed`, `follow.unfollowed`) con tráfico mínimo.
 - **Consumidores idempotentes**: todos recalculan contadores o hacen upsert, nunca incrementan. Un evento perdido deja el read model desactualizado pero no corrupto.
 - **Reparabilidad manual**: si `book.created` se pierde, review-service y shelf-service no tendrán el libro en `book_refs`. Es fácil de detectar y reparar reenviando el evento.
 - **Complejidad añadida**: tabla `outbox`, polling o CDC (Debezium), limpieza de registros publicados. Injustificado para la escala actual.

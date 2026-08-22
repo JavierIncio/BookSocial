@@ -5,7 +5,8 @@ import java.time.Instant;
 public record BookResponse(
         String isbn,
         String title,
-        String author,
+        String authorName,
+        String authorId,
         String description,
         String coverUrl,
         Integer publishedYear,

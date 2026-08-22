@@ -1,11 +1,13 @@
 package com.booksocial.book.service;
 
+import com.booksocial.book.domain.Author;
 import com.booksocial.book.domain.Book;
 import com.booksocial.book.domain.BookAlreadyExistsException;
 import com.booksocial.book.domain.BookNotFoundException;
 import com.booksocial.book.events.BookEventPublisher;
 import com.booksocial.book.readmodel.BookReadModel;
 import com.booksocial.book.readmodel.BookReadModelRepository;
+import com.booksocial.book.repository.AuthorRepository;
 import com.booksocial.book.repository.BookRepository;
 import com.booksocial.book.service.google.GoogleBooksClient;
 import com.booksocial.book.service.google.GoogleBooksMapper;
@@ -15,7 +17,6 @@ import com.booksocial.book.web.dto.CreateBookRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -27,17 +28,19 @@ public class BookService {
     private final BookEventPublisher bookEventPublisher;
     private final GoogleBooksClient googleBooksClient;
     private final GoogleBooksMapper googleBooksMapper;
+    private final AuthorRepository authorRepository;
 
     public BookService(BookRepository bookRepository,
                        BookReadModelRepository readModelRepository,
                        BookEventPublisher bookEventPublisher,
                        GoogleBooksClient googleBooksClient,
-                       GoogleBooksMapper googleBooksMapper) {
+                       GoogleBooksMapper googleBooksMapper, AuthorRepository authorRepository) {
         this.bookRepository = bookRepository;
         this.readModelRepository = readModelRepository;
         this.bookEventPublisher = bookEventPublisher;
         this.googleBooksClient = googleBooksClient;
         this.googleBooksMapper = googleBooksMapper;
+        this.authorRepository = authorRepository;
     }
 
     public BookResponse create(CreateBookRequest request) {
@@ -48,15 +51,18 @@ public class BookService {
         Book book = bookRepository.save(new Book(
                 request.isbn(),
                 request.title(),
-                request.author(),
+                Long.valueOf(request.authorId()),
                 request.description(),
                 request.coverUrl(),
                 request.publishedYear(),
                 request.category())
         );
 
+        Author author = authorRepository.findById(book.getAuthorId())
+                .orElseThrow(() -> new RuntimeException("Author not found with ID: " + book.getAuthorId()));
+
         BookResponse response = toResponse(upsertReadModel(book));
-        bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), book.getAuthor());
+        bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), author.getName(), author.getId().toString());
         return response;
     }
 
@@ -73,26 +79,32 @@ public class BookService {
                     Book book = googleBooksMapper.mapToBook(volume);
                     BookResponse response = toResponse(upsertReadModel(book));
 
-                    bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), book.getAuthor());
+                    Author author = authorRepository.findById(book.getAuthorId())
+                            .orElseThrow(() -> new RuntimeException("Author not found with ID: " + book.getAuthorId()));
+                    bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), author.getName(), author.getId().toString());
 
                     return response;
                 });
     }
 
     public List<BookResponse> search(String q) {
-        return readModelRepository.findByTitleContainingIgnoreCaseOrAuthorContainingIgnoreCase(q, q)
+        return readModelRepository.findByTitleContainingIgnoreCaseOrAuthorNameContainingIgnoreCase(q, q)
                 .stream().map(this::toResponse).toList();
     }
 
     public List<BookResponse> searchExternal(String q) {
         List<BookResponse> dbResults = this.search(q);
+
         List<BookResponse> googleResults = googleBooksClient.search(q).stream()
                 .map(googleBooksMapper::mapToBook)
                 .map(b -> {
+                    Author author = authorRepository.findById(b.getAuthorId())
+                            .orElseThrow(() -> new RuntimeException("Author not found with ID: " + b.getAuthorId()));
                     return new BookReadModel(
                             b.getIsbn(),
                             b.getTitle(),
-                            b.getAuthor(),
+                            author.getName(),
+                            b.getAuthorId().toString(),
                             b.getDescription(),
                             b.getCoverUrl(),
                             b.getPublishedYear(),
@@ -107,10 +119,13 @@ public class BookService {
     }
 
     private BookReadModel upsertReadModel(Book book) {
+        Author author = authorRepository.findById(book.getAuthorId())
+                .orElseThrow(() -> new RuntimeException("Author not found with ID: " + book.getAuthorId()));
         BookReadModel readModel = new BookReadModel(
                 book.getIsbn(),
                 book.getTitle(),
-                book.getAuthor(),
+                author.getName(),
+                book.getAuthorId().toString(),
                 book.getDescription(),
                 book.getCoverUrl(),
                 book.getPublishedYear(),
@@ -120,10 +135,13 @@ public class BookService {
     }
 
     private BookResponse toResponse(BookReadModel readModel) {
+        Author author = authorRepository.findById(Long.valueOf(readModel.getAuthorId()))
+                .orElseThrow(() -> new RuntimeException("Author not found with ID: " + readModel.getAuthorId()));
         return new BookResponse(
                 readModel.getIsbn(),
                 readModel.getTitle(),
-                readModel.getAuthor(),
+                author.getName(),
+                readModel.getAuthorId(),
                 readModel.getDescription(),
                 readModel.getCoverUrl(),
                 readModel.getPublishedYear(),

@@ -36,6 +36,10 @@ app:
     api-key: ${GOOGLE_BOOKS_API_KEY:}
     api-url: https://www.googleapis.com/books/v1/
 
+  open-library:
+    api-url: https://openlibrary.org
+    user-agent: booksocial/1.0 (javierincio.dev@gmail.com)
+
 management:
   endpoints:
     web:
