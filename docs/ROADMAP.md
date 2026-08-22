@@ -607,7 +607,7 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - `config/GoogleBooksProperties`: `@ConfigurationProperties(prefix = "app.google-books")`, record `apiKey` + `apiUrl`.
 - `service/google/GoogleBooksClient`: `RestClient` contra Google Books API, `search(query)` y `findByIsbn(isbn)` (query `isbn:{isbn}`), manejo de errores con log.
 - `service/google/GoogleBooksResponse`: records anidados (Volume, VolumeInfo, ImageLinks, IndustryIdentifier) con `@JsonProperty` para snake_case.
-- `service/google/GoogleBooksMapper`: `mapToBook(Volume)` → Book entity, extracción ISBN_13→ISBN_10, año de `publishedDate`.
+- `service/google/GoogleBooksMapper`: `toBook(Volume)` → Book entity (persiste Author), `toReadModel(Volume)` → BookReadModel (sin persistencia), métodos públicos `extractIsbn`, `extractYear`, `extractAuthorName`, `extractCategory`, `extractCoverUrl`.
 - `BookService`: `searchExternal(q)` combina BD + Google (sin persistir resultados externos), `findByIsbn(isbn)` auto-importa si no existe en BD.
 - `BookController`: `GET /books/search/full` (BD + Google), `GET /books/search` (solo BD), `GET /books/{isbn}` auto-importa on-demand.
 - Gateway + SecurityConfig: `GET /books/**` permitido sin auth en ambos niveles.

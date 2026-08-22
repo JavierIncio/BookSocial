@@ -3673,7 +3673,7 @@ public class BookService {
                 GoogleBooksResponse.Volume volume = googleBooksClient.findByIsbn(isbn);
                 if (volume == null) throw new BookNotFoundException(isbn);
 
-                Book book = googleBooksMapper.mapToBook(volume);
+                Book book = googleBooksMapper.toBook(volume);
                 BookResponse response = toResponse(upsertReadModel(book));
 
                 Author author = resolveAuthor(book.getAuthorId());
@@ -3691,16 +3691,12 @@ public class BookService {
 
     public List<BookResponse> searchExternal(String q) {
         List<BookResponse> dbResults = this.search(q);
+
         List<BookResponse> googleResults = googleBooksClient.search(q).stream()
-            .map(googleBooksMapper::mapToBook)
-            .map(b -> {
-                Author author = resolveAuthor(b.getAuthorId());
-                return new BookReadModel(
-                    b.getIsbn(), b.getTitle(), author.getName(),
-                    b.getAuthorId().toString(), b.getDescription(),
-                    b.getCoverUrl(), b.getPublishedYear(), b.getCategory());
-            })
-            .map(this::toResponse).toList();
+            .map(googleBooksMapper::toReadModel)
+            .map(this::toResponse)
+            .toList();
+
         return Stream.concat(dbResults.stream(), googleResults.stream()).toList();
     }
 
@@ -3731,7 +3727,8 @@ public class BookService {
 
 - `create()`: verifica unicidad por ISBN en Postgres, resuelve el `Author` por `authorId`, guarda, hace upsert del _read model_ con `authorName`+`authorId` y publica evento `BookCreatedEvent` con los 4 campos.
 - `findByIsbn()`: primero intenta Mongo; si no existe, auto-importa desde Google Books (que a su vez crea el Author via `GoogleBooksMapper`).
-- `search()` y `searchExternal()`: búsqueda en Mongo y combinación con Google Books.
+- `search()`: búsqueda en Mongo por título o nombre de autor.
+- `searchExternal()`: combina `search()` (BD local) con `googleBooksMapper::toReadModel` (sin persistencia) para mostrar resultados de Google Books sin crear autores en Postgres.
 - `upsertReadModel()` y `toResponse()`: utilizan `resolveAuthor()` para resolver el `Author` por FK para enriquecer el read model y la respuesta.
 
 #### `BookController` y `AuthorController`
@@ -3941,21 +3938,27 @@ Usa `RestClient` (nuevo en Spring Boot 3.2+) contra la API de Google. `findByIsb
 public class GoogleBooksMapper {
     private final AuthorRepository authorRepository;
 
-    public Book mapToBook(Volume volume) {
-        // Extrae ISBN (ISBN_13 preferido, fallback ISBN_10)
-        // Extrae año de publishedDate
-        // Extrae autor: info.authors().getFirst()
-        // findOrCreateAuthor(authorName) → Author entity con FK
-        // Mapea title, authorId, description, coverUrl, category
+    public Book toBook(Volume volume) {
+        // Persiste Author (findOrCreateAuthor) → devuelve Book con authorId
     }
 
-    private Author findOrCreateAuthor(String name) {
-        // Busca por nombreIgnoreCase en AuthorRepository; si no existe, crea uno nuevo
+    public BookReadModel toReadModel(Volume volume) {
+        // SIN persistencia → devuelve BookReadModel con authorId = null
     }
+
+    public Author findOrCreateAuthor(String name) { ... }
+
+    public String extractIsbn(VolumeInfo info) { ... }        // ISBN_13 preferido, fallback ISBN_10
+    public Integer extractYear(String date) { ... }            // Extrae año de publishedDate
+    public String extractAuthorName(VolumeInfo info) { ... }   // info.authors().getFirst() o "Unknown"
+    public String extractCategory(VolumeInfo info) { ... }     // info.categories().getFirst()
+    public String extractCoverUrl(VolumeInfo info) { ... }     // info.imageLinks().thumbnail()
 }
 ```
 
-El mapper inyecta `AuthorRepository` y crea/busca el `Author` antes de construir el `Book`. Esto garantiza que cada libro importado tiene un `authorId` válido.
+- `toBook()`: persiste el `Author` via `findOrCreateAuthor()` y devuelve `Book` con `authorId` válido. Se usa en `findByIsbn` (auto-import) y `create`.
+- `toReadModel()`: construye `BookReadModel` directamente desde la respuesta de Google **sin tocar Postgres**. El `authorId` es `null` ya que es solo para visualización. Se usa en `searchExternal`.
+- Métodos `extract*`: públicos y reutilizables, centralizan toda la lógica de mapeo de `VolumeInfo`.
 
 #### `OpenLibraryClient`
 
