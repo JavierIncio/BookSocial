@@ -58,8 +58,7 @@ public class BookService {
                 request.category())
         );
 
-        Author author = authorRepository.findById(book.getAuthorId())
-                .orElseThrow(() -> new RuntimeException("Author not found with ID: " + book.getAuthorId()));
+        Author author = resolveAuthor(book.getAuthorId());
 
         BookResponse response = toResponse(upsertReadModel(book));
         bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), author.getName(), author.getId().toString());
@@ -68,23 +67,22 @@ public class BookService {
 
     public BookResponse findByIsbn(String isbn) {
         return readModelRepository.findById(isbn)
-                .map(this::toResponse)
-                .orElseGet(() -> {
-                    GoogleBooksResponse.Volume volume =
-                            googleBooksClient.findByIsbn(isbn);
+            .map(this::toResponse)
+            .orElseGet(() -> {
+                GoogleBooksResponse.Volume volume =
+                        googleBooksClient.findByIsbn(isbn);
 
-                    if (volume == null)
-                        throw new BookNotFoundException(isbn);
+                if (volume == null)
+                    throw new BookNotFoundException(isbn);
 
-                    Book book = googleBooksMapper.mapToBook(volume);
-                    BookResponse response = toResponse(upsertReadModel(book));
+                Book book = googleBooksMapper.mapToBook(volume);
+                BookResponse response = toResponse(upsertReadModel(book));
 
-                    Author author = authorRepository.findById(book.getAuthorId())
-                            .orElseThrow(() -> new RuntimeException("Author not found with ID: " + book.getAuthorId()));
-                    bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), author.getName(), author.getId().toString());
+                Author author = resolveAuthor(book.getAuthorId());
+                bookEventPublisher.publishBookCreated(book.getIsbn(), book.getTitle(), author.getName(), author.getId().toString());
 
-                    return response;
-                });
+                return response;
+            });
     }
 
     public List<BookResponse> search(String q) {
@@ -98,8 +96,7 @@ public class BookService {
         List<BookResponse> googleResults = googleBooksClient.search(q).stream()
                 .map(googleBooksMapper::mapToBook)
                 .map(b -> {
-                    Author author = authorRepository.findById(b.getAuthorId())
-                            .orElseThrow(() -> new RuntimeException("Author not found with ID: " + b.getAuthorId()));
+                    Author author = resolveAuthor(b.getAuthorId());
                     return new BookReadModel(
                             b.getIsbn(),
                             b.getTitle(),
@@ -119,8 +116,7 @@ public class BookService {
     }
 
     private BookReadModel upsertReadModel(Book book) {
-        Author author = authorRepository.findById(book.getAuthorId())
-                .orElseThrow(() -> new RuntimeException("Author not found with ID: " + book.getAuthorId()));
+        Author author = resolveAuthor(book.getAuthorId());
         BookReadModel readModel = new BookReadModel(
                 book.getIsbn(),
                 book.getTitle(),
@@ -135,8 +131,7 @@ public class BookService {
     }
 
     private BookResponse toResponse(BookReadModel readModel) {
-        Author author = authorRepository.findById(Long.valueOf(readModel.getAuthorId()))
-                .orElseThrow(() -> new RuntimeException("Author not found with ID: " + readModel.getAuthorId()));
+        Author author = resolveAuthor(Long.valueOf(readModel.getAuthorId()));
         return new BookResponse(
                 readModel.getIsbn(),
                 readModel.getTitle(),
@@ -148,5 +143,10 @@ public class BookService {
                 readModel.getCategory(),
                 readModel.getCreatedAt()
         );
+    }
+
+    private Author resolveAuthor(Long authorId) {
+        return authorRepository.findById(authorId)
+                .orElseThrow(() -> new RuntimeException("Author not found with ID: " + authorId));
     }
 }

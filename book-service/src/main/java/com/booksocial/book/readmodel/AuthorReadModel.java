@@ -19,7 +19,7 @@ public class AuthorReadModel {
     private Integer workCount;
     private Instant cachedAt;
 
-    public AuthorReadModel() {}
+    protected AuthorReadModel() {}
 
     public AuthorReadModel(String openLibraryId, String name, String bio,
                            String birthDate, String deathDate, String photoUrl,

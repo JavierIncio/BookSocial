@@ -30,7 +30,7 @@ public class Book {
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
-    public Book() {}
+    protected Book() {}
 
     public Book(String isbn, String title, Long authorId, String description,
                 String coverUrl, Integer publishedYear, String category) {

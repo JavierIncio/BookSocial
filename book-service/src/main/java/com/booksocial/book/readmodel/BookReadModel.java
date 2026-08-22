@@ -20,8 +20,7 @@ public class BookReadModel {
     private String category;
     private Instant createdAt;
 
-    public BookReadModel() {
-    }
+    protected BookReadModel() {}
 
     public BookReadModel(String isbn, String title, String authorName,
                          String authorId, String description, String coverUrl,

@@ -3600,7 +3600,7 @@ public interface AuthorRepository extends JpaRepository<Author, Long> {
     // SELECT * FROM authors WHERE open_library_id = :openLibraryId;
     Optional<Author> findByOpenLibraryId(String openLibraryId);
 
-    // SELECT * FROM authors WHERE LOWER(name) LIKE LOWER(CONCAT('%', :name, '%'));
+    // SELECT * FROM authors WHERE LOWER(name) LIKE LOWER('%' || :name || '%')
     List<Author> findByNameContainingIgnoreCase(String name);
 }
 
@@ -3615,7 +3615,7 @@ public interface BookRepository extends JpaRepository<Book, Long> {
 
 // MongoDB — Author read model
 public interface AuthorReadModelRepository extends MongoRepository<AuthorReadModel, String> {
-    // db.authors
+    // db.authors.find({ name: { $regex: "<name>", $options: "i" } })
     List<AuthorReadModel> findByNameContainingIgnoreCase(String name);
 }
 

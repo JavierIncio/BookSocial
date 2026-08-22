@@ -38,7 +38,7 @@ public class Author {
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
-    public Author() {}
+    protected Author() {}
 
     public Author(String openLibraryId, String name, String bio, String birthDate,
                   String deathDate, String photoUrl, String topSubjects, Integer workCount) {
