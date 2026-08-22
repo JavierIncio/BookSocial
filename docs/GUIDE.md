@@ -3398,7 +3398,7 @@ book-service/
     │   ├── BookAlreadyExistsException.java
     │   └── ForbiddenException.java
     ├── readmodel/
-    │   ├── AuthorReadModel.java      # Mongo document (author_read_models)
+    │   ├── AuthorReadModel.java      # Mongo document (authors)
     │   ├── AuthorReadModelRepository.java
     │   ├── BookReadModel.java        # Mongo document (_id = isbn)
     │   └── BookReadModelRepository.java
@@ -3568,23 +3568,48 @@ public class BookReadModel {
 
 `isbn` como `_id` de Mongo: las búsquedas por ISBN son directas. `authorName` y `authorId` se desnormalizan del `Author` para que las lecturas desde Mongo no necesiten joins.
 
+#### Query side — `readmodel/AuthorReadModel` (Mongo)
+
+```java
+@Document(collection = "books")
+public class BookReadModel {
+    @Id
+    private String isbn;     // ISBN como _id de Mongo
+    private String title;
+    private String authorName;
+    private String authorId;  // String.valueOf(author.id)
+    private String description;
+    private String coverUrl;
+    private Integer publishedYear;
+    private String category;
+    private Instant createdAt;
+}
+```
+
 #### Repositorios
 
 ```java
 // PostgreSQL — Authors
 public interface AuthorRepository extends JpaRepository<Author, Long> {
+    // SELECT * FROM authors WHERE open_library_id = :openLibraryId;
     Optional<Author> findByOpenLibraryId(String openLibraryId);
+
+    // SELECT * FROM authors WHERE LOWER(name) LIKE LOWER(CONCAT('%', :name, '%'));
     List<Author> findByNameContainingIgnoreCase(String name);
 }
 
 // PostgreSQL — Books
 public interface BookRepository extends JpaRepository<Book, Long> {
+    // SELECT * FROM books WHERE isbn = :isbn;
     Optional<Book> findByIsbn(String isbn);
+
+    // SELECT EXISTS (SELECT 1 FROM books WHERE isbn = :isbn);
     boolean existsByIsbn(String isbn);
 }
 
 // MongoDB — Author read model
 public interface AuthorReadModelRepository extends MongoRepository<AuthorReadModel, String> {
+    // db.authors
     List<AuthorReadModel> findByNameContainingIgnoreCase(String name);
 }
 
@@ -3777,16 +3802,16 @@ public class AuthorController {
 }
 ```
 
-| Método | Ruta                         | Auth                                 | Descripción                               |
-| ------ | ---------------------------- | ------------------------------------ | ----------------------------------------- |
-| `POST` | `/books`                     | `X-User-Roles` debe contener `ADMIN` | Crear libro (201)                         |
-| `GET`  | `/books/{isbn}`              | Público                              | Buscar por ISBN (auto-importa, 200)       |
-| `GET`  | `/books/search?q=`           | Público                              | Búsqueda solo en BD local (200)           |
-| `GET`  | `/books/search/full?q=`      | Público                              | Búsqueda BD + Google Books (200)          |
-| `GET`  | `/authors/search?q=`         | Público                              | Buscar autores (BD local + Open Library)  |
-| `GET`  | `/authors/{olId}`            | Público                              | Detalle de autor (Open Library)           |
-| `GET`  | `/authors/{olId}/works`      | Público                              | Obras de un autor (Open Library)          |
-| `POST` | `/authors`                   | ADMIN                                | Crear autor manualmente (201)             |
+| Método | Ruta                    | Auth                                 | Descripción                              |
+| ------ | ----------------------- | ------------------------------------ | ---------------------------------------- |
+| `POST` | `/books`                | `X-User-Roles` debe contener `ADMIN` | Crear libro (201)                        |
+| `GET`  | `/books/{isbn}`         | Público                              | Buscar por ISBN (auto-importa, 200)      |
+| `GET`  | `/books/search?q=`      | Público                              | Búsqueda solo en BD local (200)          |
+| `GET`  | `/books/search/full?q=` | Público                              | Búsqueda BD + Google Books (200)         |
+| `GET`  | `/authors/search?q=`    | Público                              | Buscar autores (BD local + Open Library) |
+| `GET`  | `/authors/{olId}`       | Público                              | Detalle de autor (Open Library)          |
+| `GET`  | `/authors/{olId}/works` | Público                              | Obras de un autor (Open Library)         |
+| `POST` | `/authors`              | ADMIN                                | Crear autor manualmente (201)            |
 
 > **Roles vía header de confianza**: el gateway reconstruye `X-User-Roles` a partir del claim `roles` del JWT validado (mismo patrón strip-then-assert que `X-User-Id`). El control de permisos downstream es `roles != null && Arrays.stream(roles.split(",")).map(String::trim).anyMatch("ADMIN"::equals)`.
 
@@ -3941,11 +3966,11 @@ public class OpenLibraryClient {
 
 Usa `RestClient` contra la API de Open Library. Los endpoints son:
 
-| Método Open Library | Descripción |
-| --- | --- |
-| `GET /search/authors.json?q={query}` | Búsqueda de autores por nombre |
-| `GET /authors/{id}.json` | Detalle de autor (bio, fechas, fotos) |
-| `GET /authors/{id}/works.json` | Lista de obras del autor |
+| Método Open Library                  | Descripción                           |
+| ------------------------------------ | ------------------------------------- |
+| `GET /search/authors.json?q={query}` | Búsqueda de autores por nombre        |
+| `GET /authors/{id}.json`             | Detalle de autor (bio, fechas, fotos) |
+| `GET /authors/{id}/works.json`       | Lista de obras del autor              |
 
 La API no requiere key pero rate-limita a ~3 req/s; se identifica con `User-Agent: booksocial/1.0`.
 
@@ -3967,22 +3992,22 @@ public class OpenLibraryMapper {
 Los autores buscados en Open Library se cachean en dos lados:
 
 - **Postgres** `authors`: entidad JPA con `openLibraryId` único (fuente de verdad).
-- **Mongo** `author_read_models`: read model con `_id` = `openLibraryId` (para lecturas).
+- **Mongo** `authors`: read model con `_id` = `openLibraryId` (para lecturas).
 
 El flujo de cache es: primera búsqueda → Open Library API → guardar en Postgres + Mongo; búsquedas siguientes → leer de Mongo directamente.
 
 #### Endpoints modificados
 
-| Método | Ruta | Auth | Descripción |
-| ------ | ---- | ---- | ----------- |
-| `GET` | `/books/search?q=` | Público | Búsqueda solo en BD local |
-| `GET` | `/books/search/full?q=` | Público | Búsqueda BD + Google Books |
-| `GET` | `/books/{isbn}` | Público | Auto-importa si no existe en BD |
-| `POST` | `/books` | ADMIN | Crear libro manualmente |
-| `GET` | `/authors/search?q=` | Público | Buscar autores (BD local + Open Library) |
-| `GET` | `/authors/{olId}` | Público | Detalle de autor (Open Library) |
-| `GET` | `/authors/{olId}/works` | Público | Obras de un autor (Open Library) |
-| `POST` | `/authors` | ADMIN | Crear autor manualmente |
+| Método | Ruta                    | Auth    | Descripción                              |
+| ------ | ----------------------- | ------- | ---------------------------------------- |
+| `GET`  | `/books/search?q=`      | Público | Búsqueda solo en BD local                |
+| `GET`  | `/books/search/full?q=` | Público | Búsqueda BD + Google Books               |
+| `GET`  | `/books/{isbn}`         | Público | Auto-importa si no existe en BD          |
+| `POST` | `/books`                | ADMIN   | Crear libro manualmente                  |
+| `GET`  | `/authors/search?q=`    | Público | Buscar autores (BD local + Open Library) |
+| `GET`  | `/authors/{olId}`       | Público | Detalle de autor (Open Library)          |
+| `GET`  | `/authors/{olId}/works` | Público | Obras de un autor (Open Library)         |
+| `POST` | `/authors`              | ADMIN   | Crear autor manualmente                  |
 
 `GET /books/{isbn}` ahora **auto-importa**: si el ISBN no existe en la BD local, lo busca en Google Books API (que a su vez crea el `Author` via `GoogleBooksMapper`), lo guarda en Postgres + Mongo y lo devuelve. La segunda llamada ya lo retorna de la BD local.
 
@@ -4003,7 +4028,7 @@ Los GETs son públicos (sin auth). Solo `POST /books` y `POST /authors` requiere
 
 ### Decisiones de diseño de la Fase 3 (resumen)
 
-- **Author como entidad independiente**: `Author` vive en Postgres (`authors`) y Mongo (`author_read_models`), con `openLibraryId` como clave de cache. Se crea bajo demanda (auto-import desde Google Books, búsqueda en Open Library, o manual via `POST /authors`).
+- **Author como entidad independiente**: `Author` vive en Postgres (`authors`) y Mongo (`authors`), con `openLibraryId` como clave de cache. Se crea bajo demanda (auto-import desde Google Books, búsqueda en Open Library, o manual via `POST /authors`).
 - **Book con FK a Author**: `Book.authorId` (Long) es la FK lógica a `authors.id`. No se usa `@ManyToOne` porque la relación es ligera y se resuelve por código.
 - **Dual APIs externas**: Google Books para libros (búsqueda + auto-import por ISBN), Open Library para autores (búsqueda + datos biográficos + obras). Cada una cubre un dominio distinto.
 - **Cache de autores en Open Library**: la primera búsqueda cachea en Postgres+Mongo; las siguientes leen de Mongo. Rate limit ~3 req/s identificado con `User-Agent`.
@@ -4337,8 +4362,8 @@ public class ReviewController {
 }
 ```
 
-| Método | Ruta                                | Auth | Descripción                        |
-| ------ | ----------------------------------- | ---- | ---------------------------------- |
+| Método | Ruta                                | Auth  | Descripción                        |
+| ------ | ----------------------------------- | ----- | ---------------------------------- |
 | `POST` | `/reviews/{bookIsbn}`               | Token | Crear reseña (201 / 409 / 422)     |
 | `PUT`  | `/reviews/{bookIsbn}`               | Token | Actualizar reseña (200)            |
 | `GET`  | `/reviews/books/{bookIsbn}`         | Token | Lista de reseñas por libro (Mongo) |
@@ -4683,14 +4708,14 @@ public class ShelfController {
 
 #### Endpoints
 
-| Método   | Ruta                    | Auth | Descripción                         | Headers                      |
-| -------- | ----------------------- | ---- | ----------------------------------- | ---------------------------- |
-| `POST`   | `/shelves`              | Token | Añadir libro al estante             | `X-User-Id`, `Authorization` |
-| `PUT`    | `/shelves/{isbn}`       | Token | Cambiar estado (wants/reading/read) | `X-User-Id`, `Authorization` |
-| `DELETE` | `/shelves/{isbn}`       | Token | Eliminar del estante                | `X-User-Id`, `Authorization` |
-| `GET`    | `/shelves`              | Token | Listar estante del usuario          | `X-User-Id`, `Authorization` |
-| `GET`    | `/shelves/users/{userId}` | Público | Estanterías de un usuario       | —                            |
-| `GET`    | `/shelves/{isbn}`       | Público | Usuarios con este libro en estantería | —                          |
+| Método   | Ruta                      | Auth    | Descripción                           | Headers                      |
+| -------- | ------------------------- | ------- | ------------------------------------- | ---------------------------- |
+| `POST`   | `/shelves`                | Token   | Añadir libro al estante               | `X-User-Id`, `Authorization` |
+| `PUT`    | `/shelves/{isbn}`         | Token   | Cambiar estado (wants/reading/read)   | `X-User-Id`, `Authorization` |
+| `DELETE` | `/shelves/{isbn}`         | Token   | Eliminar del estante                  | `X-User-Id`, `Authorization` |
+| `GET`    | `/shelves`                | Token   | Listar estante del usuario            | `X-User-Id`, `Authorization` |
+| `GET`    | `/shelves/users/{userId}` | Público | Estanterías de un usuario             | —                            |
+| `GET`    | `/shelves/{isbn}`         | Público | Usuarios con este libro en estantería | —                            |
 
 > **GETs públicos**: `GET /shelves/users/{userId}` y `GET /shelves/{isbn}` no requieren autenticación. El gateway y el SecurityConfig del shelf-service permiten `GET /shelves/**` sin token. Esto permite al frontend mostrar estanterías de usuarios y popularity de libros sin login.
 

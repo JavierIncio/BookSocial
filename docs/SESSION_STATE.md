@@ -24,8 +24,8 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-7 están completadas** (iden
 - Frontend (convención): signals + `inject()` (standalone, sin constructor).
 - **Angular 21 zoneless**: NO usa zone.js. Todos los componentes deben usar **signals** para estado reactivo (`signal()`, `.set()`, `.asReadonly()`). Las propiedades normales mutadas en `.subscribe()` NO disparan change detection. Templates usan `signal()` como funciones: `@if (loading())`, `{{ user()?.name }}`.
 - **Google Books API**: `https://www.googleapis.com/books/v1/`, API key en `book-service/.env` (`GOOGLE_BOOKS_API_KEY`). Solo se guardan libros con ISBN válido.
-- **Open Library API** (sin API key): `https://openlibrary.org`, rate limit ~3 req/s con User-Agent. Endpoints: `/search/authors.json?q=`, `/authors/{id}.json`, `/authors/{id}/works.json`. Cache local en Postgres `authors` + Mongo `author_read_models`.
-- **Author entity**: `Author` en Postgres (`authors`) + Mongo (`author_read_models`), con `openLibraryId` como clave de cache. Se crea bajo demanda desde Google Books, Open Library o manualmente.
+- **Open Library API** (sin API key): `https://openlibrary.org`, rate limit ~3 req/s con User-Agent. Endpoints: `/search/authors.json?q=`, `/authors/{id}.json`, `/authors/{id}/works.json`. Cache local en Postgres `authors` + Mongo `authors`.
+- **Author entity**: `Author` en Postgres (`authors`) + Mongo (`authors`), con `openLibraryId` como clave de cache. Se crea bajo demanda desde Google Books, Open Library o manualmente.
 - **`Book.authorId`** (Long FK → `authors.id`): campo `author` (String) eliminado, migrado a `authorId`+`authorName` en todos los servicios.
 
 ## Resumen de APIs disponibles (vía gateway :8080)

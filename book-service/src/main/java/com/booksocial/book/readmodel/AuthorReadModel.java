@@ -6,7 +6,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.util.List;
 
-@Document(collection = "author_read_models")
+@Document(collection = "authors")
 public class AuthorReadModel {
     @Id
     private String openLibraryId;
