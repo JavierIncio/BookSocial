@@ -3499,8 +3499,12 @@ public class Author {
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
+
+    public Author() {}  // JPA requiere constructor vacío
 }
 ```
+
+> **Por qué no getters/setters**: el GUIDE muestra los campos relevantes. El código real incluye getters/setters completos (JavaBean convention). Se omiten aquí por brevedad, igual que en `Book`.
 
 `Author` es una entidad independiente con datos biográficos procedentes de Open Library. `openLibraryId` es único y se usa como clave de cache. Los autores se crean bajo demanda cuando se importa un libro desde Google Books o cuando se busca un autor en Open Library.
 
@@ -3571,18 +3575,20 @@ public class BookReadModel {
 #### Query side — `readmodel/AuthorReadModel` (Mongo)
 
 ```java
-@Document(collection = "books")
-public class BookReadModel {
+@Document(collection = "authors")
+public class AuthorReadModel {
     @Id
-    private String isbn;     // ISBN como _id de Mongo
-    private String title;
-    private String authorName;
-    private String authorId;  // String.valueOf(author.id)
-    private String description;
-    private String coverUrl;
-    private Integer publishedYear;
-    private String category;
-    private Instant createdAt;
+    private String openLibraryId;     // Id de OpenLibrary como _id de Mongo
+    private String name;
+    private String bio;
+    private String birthDate;
+    private String deathDate;
+    private String photoUrl;
+    private List<String> topSubjects;
+    private Integer workCount;
+    private Instant cachedAt;
+
+    public AuthorReadModel() {}  // Mongo requiere constructor vacío
 }
 ```
 
