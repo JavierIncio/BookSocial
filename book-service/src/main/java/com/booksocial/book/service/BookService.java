@@ -75,7 +75,7 @@ public class BookService {
                 if (volume == null)
                     throw new BookNotFoundException(isbn);
 
-                Book book = googleBooksMapper.mapToBook(volume);
+                Book book = googleBooksMapper.toBook(volume);
                 BookResponse response = toResponse(upsertReadModel(book));
 
                 Author author = resolveAuthor(book.getAuthorId());

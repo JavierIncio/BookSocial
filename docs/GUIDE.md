@@ -5012,18 +5012,21 @@ Resumen de las decisiones arquitectónicas clave del proyecto:
 
 La búsqueda actual usa `findByTitleContainingIgnoreCaseOrAuthorNameContainingIgnoreCase`, que genera un regex (`{title: {$regex: "query", $options: "i"}}`). Funciona para la escala actual pero tiene limitaciones:
 
-| Limitación      | Regex actual                          | Índice `text`                              |
-| --------------- | ------------------------------------- | ------------------------------------------ |
-| Ranking         | Sin orden por relevancia              | BM25 por defecto                           |
-| Tolerancia      | Sin tolerancia a errores ("Graam" ≠ "Gram") | stemming + synonyms configurables          |
-| Rendimiento     | Full scan de la colección             | Índice invertido, mucho más rápido         |
-| Combinación     | OR manual en la query                 | `$text: {$search: "query word1 word2"}`    |
+| Limitación  | Regex actual                                | Índice `text`                           |
+| ----------- | ------------------------------------------- | --------------------------------------- |
+| Ranking     | Sin orden por relevancia                    | BM25 por defecto                        |
+| Tolerancia  | Sin tolerancia a errores ("Graam" ≠ "Gram") | stemming + synonyms configurables       |
+| Rendimiento | Full scan de la colección                   | Índice invertido, mucho más rápido      |
+| Combinación | OR manual en la query                       | `$text: {$search: "query word1 word2"}` |
 
 Migración futura si se necesita:
 
 ```javascript
 // Crear índice compuesto
-db.books.createIndex({ title: "text", authorName: "text" }, { weights: { title: 3, authorName: 1 } });
+db.books.createIndex(
+  { title: "text", authorName: "text" },
+  { weights: { title: 3, authorName: 1 } },
+);
 ```
 
 ```java

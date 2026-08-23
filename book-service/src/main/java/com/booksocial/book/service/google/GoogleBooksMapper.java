@@ -19,7 +19,7 @@ public class GoogleBooksMapper {
         this.authorRepository = authorRepository;
     }
 
-    public Book mapToBook(Volume volume) {
+    public Book toBook(Volume volume) {
         VolumeInfo info = volume.volumeInfo();
         Author author = findOrCreateAuthor(extractAuthorName(info));
         return new Book(extractIsbn(info), info.title(), author.getId(),
