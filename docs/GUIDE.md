@@ -3999,7 +3999,12 @@ public class GoogleBooksClient {
 }
 ```
 
-Usa `RestClient` (nuevo en Spring Boot 3.2+) contra la API de Google. `findByIsbn` busca con query `isbn:{isbn}` y devuelve el primer resultado.
+Usa `RestClient` (nuevo en Spring Boot 3.2+) contra la API de Google. Los endpoints son:
+
+| Método Google Books          | Descripción                  |
+| ---------------------------- | ---------------------------- |
+| `GET /volumes?q={query}`     | Búsqueda de libros por query |
+| `GET /volumes?q=isbn:{isbn}` | Busca un libro por su isbn   |
 
 #### `GoogleBooksMapper`
 
@@ -4018,8 +4023,8 @@ public class GoogleBooksMapper {
 
     public Author findOrCreateAuthor(String name) { ... }
 
-    public String extractIsbn(VolumeInfo info) { ... }        // ISBN_13 preferido, fallback ISBN_10
-    public Integer extractYear(String date) { ... }            // Extrae año de publishedDate
+    public String extractIsbn(VolumeInfo info) { ... }         // ISBN_13 preferido, fallback ISBN_10
+    public Integer extractYear(String date) { ... }            // Extrae año de publishedDate en formato: [YYYY-MM-DD], [YYYY-MM] o [YYYY]
     public String extractAuthorName(VolumeInfo info) { ... }   // info.authors().getFirst() o "Unknown"
     public String extractCategory(VolumeInfo info) { ... }     // info.categories().getFirst()
     public String extractCoverUrl(VolumeInfo info) { ... }     // info.imageLinks().thumbnail()
@@ -4051,7 +4056,7 @@ Usa `RestClient` contra la API de Open Library. Los endpoints son:
 | `GET /authors/{id}.json`             | Detalle de autor (bio, fechas, fotos) |
 | `GET /authors/{id}/works.json`       | Lista de obras del autor              |
 
-La API no requiere key pero rate-limita a ~3 req/s; se identifica con `User-Agent: booksocial/1.0`.
+La API no requiere key pero limita a ~3 req/s; se identifica con `User-Agent: booksocial/1.0 (booksocial@email.com)`.
 
 #### `OpenLibraryMapper`
 
@@ -4059,9 +4064,9 @@ La API no requiere key pero rate-limita a ~3 req/s; se identifica con `User-Agen
 @Component
 public class OpenLibraryMapper {
     public AuthorReadModel toReadModel(AuthorDoc doc) {
-        String openLibraryId = extractKey(doc.key());  // "/authors/OL123A" → "OL123A"
-        String photoUrl = coverUrl(openLibraryId);     // https://covers.openlibrary.org/a/olid/OL123A-L.jpg
-        return new AuthorReadModel(openLibraryId, doc.name(), ...);
+        String openLibraryId = extractKey(doc.key());                // "/authors/OL123A" → "OL123A"
+        String photoUrl = coverUrl(openLibraryId);                   // https://covers.openlibrary.org/a/olid/OL123A-L.jpg
+        return new AuthorReadModel(openLibraryId, doc.name(), ...);  // La API no devuelve bio (null)
     }
 }
 ```
@@ -4075,25 +4080,6 @@ Los autores buscados en Open Library se cachean en dos lados:
 
 El flujo de cache es: primera búsqueda → Open Library API → guardar en Postgres + Mongo; búsquedas siguientes → leer de Mongo directamente.
 
-#### Endpoints modificados
-
-| Método | Ruta                    | Auth    | Descripción                              |
-| ------ | ----------------------- | ------- | ---------------------------------------- |
-| `GET`  | `/books/search?q=`      | Público | Búsqueda solo en BD local                |
-| `GET`  | `/books/search/full?q=` | Público | Búsqueda BD + Google Books               |
-| `GET`  | `/books/{isbn}`         | Público | Auto-importa si no existe en BD          |
-| `POST` | `/books`                | ADMIN   | Crear libro manualmente                  |
-| `GET`  | `/authors/search?q=`    | Público | Buscar autores (BD local + Open Library) |
-| `GET`  | `/authors/{olId}`       | Público | Detalle de autor (Open Library)          |
-| `GET`  | `/authors/{olId}/works` | Público | Obras de un autor (Open Library)         |
-| `POST` | `/authors`              | ADMIN   | Crear autor manualmente                  |
-
-`GET /books/{isbn}` ahora **auto-importa**: si el ISBN no existe en la BD local, lo busca en Google Books API (que a su vez crea el `Author` via `GoogleBooksMapper`), lo guarda en Postgres + Mongo y lo devuelve. La segunda llamada ya lo retorna de la BD local.
-
-`GET /books/search/full` combina resultados de la BD local con resultados de Google Books (sin persistir los externos).
-
-`GET /authors/search` busca primero en el cache local (Mongo); si no encuentra, consulta Open Library API y cachea los resultados.
-
 #### SecurityConfig del book-service
 
 ```java
@@ -4103,15 +4089,15 @@ El flujo de cache es: primera búsqueda → Open Library API → guardar en Post
 .anyRequest().authenticated()
 ```
 
-Los GETs son públicos (sin auth). Solo `POST /books` y `POST /authors` requieren autenticación y rol ADMIN.
+Los GETs son públicos (sin auth). Solo `POST /books` y `POST /authors` requieren **autenticación** y **rol ADMIN**.
 
 ### Decisiones de diseño de la Fase 3 (resumen)
 
-- **Author como entidad independiente**: `Author` vive en Postgres (`authors`) y Mongo (`authors`), con `openLibraryId` como clave de cache. Se crea bajo demanda (auto-import desde Google Books, búsqueda en Open Library, o manual via `POST /authors`).
+- **Author como entidad independiente**: `Author` vive en Postgres (`authors`) y Mongo (`authors`), con `openLibraryId` como clave de cache. Se crea bajo demanda (auto-import mínimo desde Google Books (`name` + `createdAt`), búsqueda en Open Library, o manual via `POST /authors`).
 - **Book con FK a Author**: `Book.authorId` (Long) es la FK lógica a `authors.id`. No se usa `@ManyToOne` porque la relación es ligera y se resuelve por código.
 - **Dual APIs externas**: Google Books para libros (búsqueda + auto-import por ISBN), Open Library para autores (búsqueda + datos biográficos + obras). Cada una cubre un dominio distinto.
 - **Cache de autores en Open Library**: la primera búsqueda cachea en Postgres+Mongo; las siguientes leen de Mongo. Rate limit ~3 req/s identificado con `User-Agent`.
-- **Búsqueda derivada en Mongo**: una única consulta derivada sobre título/autorName es suficiente para esta fase; si hiciera falta ranking o tolerancia a errores, se migraría a un índice `text` de Mongo.
+- **Búsqueda derivada en Mongo**: una única consulta derivada sobre título/autor es suficiente para esta fase; si hiciera falta ranking o tolerancia a errores, se migraría a un índice `text` de Mongo.
 - **Réplica del esqueleto**: el coste de crear un microservicio nuevo bajó respecto a la Fase 2: copiar la seguridad parse-only y el patrón de compose ya está estandarizado.
 
 ---
@@ -5021,6 +5007,32 @@ Resumen de las decisiones arquitectónicas clave del proyecto:
 - **Author como entidad independiente**: `Author` en Postgres + Mongo, con `openLibraryId` como clave de cache. Se crea bajo demanda desde Google Books, Open Library o manualmente.
 - **Dual APIs externas**: Google Books para libros (búsqueda + auto-import por ISBN), Open Library para autores (búsqueda + datos biográficos + obras). Cache de autores en Postgres+Mongo.
 - **`ddl-auto: update` solo en desarrollo**; para producción se usarían migraciones (Flyway/Liquibase).
+
+#### Índices `text` de Mongo (futuro)
+
+La búsqueda actual usa `findByTitleContainingIgnoreCaseOrAuthorNameContainingIgnoreCase`, que genera un regex (`{title: {$regex: "query", $options: "i"}}`). Funciona para la escala actual pero tiene limitaciones:
+
+| Limitación      | Regex actual                          | Índice `text`                              |
+| --------------- | ------------------------------------- | ------------------------------------------ |
+| Ranking         | Sin orden por relevancia              | BM25 por defecto                           |
+| Tolerancia      | Sin tolerancia a errores ("Graam" ≠ "Gram") | stemming + synonyms configurables          |
+| Rendimiento     | Full scan de la colección             | Índice invertido, mucho más rápido         |
+| Combinación     | OR manual en la query                 | `$text: {$search: "query word1 word2"}`    |
+
+Migración futura si se necesita:
+
+```javascript
+// Crear índice compuesto
+db.books.createIndex({ title: "text", authorName: "text" }, { weights: { title: 3, authorName: 1 } });
+```
+
+```java
+// Query con Spring Data
+@Query("{ $text: { $search: ?0 } }")
+List<BookReadModel> searchText(String query);
+```
+
+Se reconsideraría si: >10k libros en catálogo, se necesita ranking por relevancia, o se requiere búsqueda multilingüe con stemming.
 
 ### Infraestructura
 
