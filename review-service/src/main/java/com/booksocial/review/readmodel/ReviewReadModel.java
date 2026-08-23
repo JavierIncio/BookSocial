@@ -19,16 +19,6 @@ public class ReviewReadModel {
 
     public ReviewReadModel() {}
 
-    public ReviewReadModel(String id, String bookIsbn, Long userId, int rating, String comment, Instant createdAt, Instant updatedAt) {
-        this.id = id;
-        this.bookIsbn = bookIsbn;
-        this.userId = userId;
-        this.rating = rating;
-        this.comment = comment;
-        this.createdAt = createdAt;
-        this.updatedAt = updatedAt;
-    }
-
     public ReviewReadModel(Review review) {
         this.id = review.getBookIsbn() + ":" + review.getUserId();
         this.bookIsbn = review.getBookIsbn();
