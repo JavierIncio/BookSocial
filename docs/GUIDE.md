@@ -4379,7 +4379,7 @@ public class ReviewService {
 
 - **Control de catálogo local**: `create` verifica `bookRefRepo.existsById(isbn)` → 422 (`BookNotInCatalogException`) si el libro no existe en el catálogo local. El frontend debe llamar `GET /books/{isbn}` antes de permitir una review — esto auto-importa el libro y publica el evento que llena `book_refs` en review-service.
 - **`syncStats`**: recalcula media y conteo con `mapToInt(...).average()` sobre las reseñas de Mongo. Idempotente ante re-escrituras.
-- `update`: solo actualiza campos no nulos (patch parcial).
+- `update`: solo actualiza si los valores recibidos difieren de los actuales (patch parcial). Si no hay cambios reales, no toca `updatedAt` ni hace `save`.
 
 #### `ReviewController`
 
