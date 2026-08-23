@@ -4798,8 +4798,6 @@ public class ShelfController {
 
 > **GETs públicos**: `GET /shelves/users/{userId}` y `GET /shelves/{isbn}` no requieren autenticación. El gateway y el SecurityConfig del shelf-service permiten `GET /shelves/**` sin token. Esto permite al frontend mostrar estanterías de usuarios y popularity de libros sin login.
 
-> **Path ordering**: `GET /shelves/users/{userId}` se declara **antes** de `GET /shelves/{isbn}` para evitar que Spring confunda `/shelves/users` con un ISBN. Spring MVC resuelve por especificidad de patrón.
-
 > **Identidad del usuario**: a diferencia de los demás servicios que usan `X-User-Email`, shelf-service usa **`X-User-Id`** (el ID numérico del usuario). Esto simplifica las queries en PostgreSQL y MongoDB.
 
 ### 9.7 — DTOs
