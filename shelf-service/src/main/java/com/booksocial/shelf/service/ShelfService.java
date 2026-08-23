@@ -56,6 +56,10 @@ public class ShelfService {
         Shelf shelf = shelfRepository.findByUserIdAndBookIsbn(userId, isbn)
                 .orElseThrow(() -> new ShelfNotFoundException(isbn,  userId));
 
+        if (shelf.getStatus() == req.status()) {
+            return toResponse(readModelRepository.save(new ShelfReadModel(shelf, bookRef)));
+        }
+
         shelf.setStatus(req.status());
         shelf.setUpdatedAt(Instant.now());
         shelfRepository.save(shelf);

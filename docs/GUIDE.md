@@ -4344,10 +4344,19 @@ public class ReviewService {
     public ReviewResponse update(Long userId, String bookIsbn, UpdateReviewRequest req) {
         Review review = reviewRepo.findByBookIsbnAndUserId(bookIsbn, userId)
                 .orElseThrow(() -> new ReviewNotFoundException(bookIsbn, userId));
-        if (req.rating() != null) review.setRating(req.rating());
-        if (req.comment() != null) review.setComment(req.comment());
+        boolean changed = false;
+        if (req.rating() != null && req.rating() != review.getRating()) {
+            review.setRating(req.rating());
+            changed = true;
+        }
+        if (req.comment() != null && !req.comment().equals(review.getComment())) {
+            review.setComment(req.comment());
+            changed = true;
+        }
+        if (!changed) return toResponse(review);
         review.setUpdatedAt(Instant.now());
-        readModelRepo.save(new ReviewReadModel(reviewRepo.save(review)));
+        reviewRepo.save(review);
+        readModelRepo.save(new ReviewReadModel(review));
         syncStats(bookIsbn);
         return toResponse(review);
     }
@@ -4649,7 +4658,7 @@ public class RabbitConfig {
 }
 ```
 
-**La cola se llama `shelf-service.books.created`**: cada consumidor declara su propia cola duraderia. El routing key es el mismo `book.created`.
+**La cola se llama `shelf-service.books.created`**: cada consumidor declara su propia cola duradera. El routing key es el mismo `book.created`.
 
 ### 9.5 — Servicio: operaciones CRUD
 
@@ -4685,6 +4694,10 @@ public class ShelfService {
         Shelf shelf = shelfRepository.findByUserIdAndBookIsbn(userId, isbn)
                 .orElseThrow(() -> new ShelfNotFoundException(isbn, userId));
 
+        if (shelf.getStatus() == req.status()) {
+            return toResponse(readModelRepository.save(new ShelfReadModel(shelf, bookRef)));
+        }
+
         shelf.setStatus(req.status());
         shelf.setUpdatedAt(Instant.now());
         shelfRepository.save(shelf);
@@ -4717,8 +4730,9 @@ public class ShelfService {
 
 1. Validar que el libro existe en `book_refs` (catálogo local vía RabbitMQ).
 2. Verificar unicidad (solo en `create`).
-3. Escribir en PostgreSQL (`shelves`).
-4. Escribir en MongoDB (`shelves` read model).
+3. **`updateStatus`**: solo guarda si el status recibido difiere del actual. Si no cambia, retorna sin tocar `updatedAt`.
+4. Escribir en PostgreSQL (`shelves`).
+5. Escribir en MongoDB (`shelves` read model).
 
 ### 9.6 — Controlador
 
