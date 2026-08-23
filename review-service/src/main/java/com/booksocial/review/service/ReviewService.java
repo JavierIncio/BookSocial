@@ -46,8 +46,16 @@ public class ReviewService {
     public ReviewResponse update(Long userId, String bookIsbn, UpdateReviewRequest req) {
         Review review = reviewRepo.findByBookIsbnAndUserId(bookIsbn, userId)
                 .orElseThrow(() -> new ReviewNotFoundException(bookIsbn, userId));
-        if (req.rating() != null) review.setRating(req.rating());
-        if (req.comment() != null) review.setComment(req.comment());
+        boolean changed = false;
+        if (req.rating() != null && req.rating() != review.getRating()) {
+            review.setRating(req.rating());
+            changed = true;
+        }
+        if (req.comment() != null && !req.comment().equals(review.getComment())) {
+            review.setComment(req.comment());
+            changed = true;
+        }
+        if (!changed) return toResponse(review);
         review.setUpdatedAt(Instant.now());
         reviewRepo.save(review);
         readModelRepo.save(new ReviewReadModel(review));
