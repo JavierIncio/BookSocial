@@ -6,8 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @Component
 public class GoogleBooksClient {
@@ -21,23 +20,38 @@ public class GoogleBooksClient {
     }
 
     public List<GoogleBooksResponse.Volume> search(String query) {
-        try {
-            GoogleBooksResponse response = restClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .path("/volumes")
-                            .queryParam("q", query)
-                            .queryParam("maxResults", 10)
-                            .queryParamIfPresent("key", Optional.ofNullable(props.apiKey()))
-                            .build())
-                    .retrieve()
-                    .body(GoogleBooksResponse.class);
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                GoogleBooksResponse response = restClient.get()
+                        .uri(uriBuilder -> uriBuilder
+                                .path("/volumes")
+                                .queryParam("q", query)
+                                .queryParam("maxResults", 10)
+                                .queryParamIfPresent("key", Optional.ofNullable(props.apiKey()))
+                                .build())
+                        .retrieve()
+                        .body(GoogleBooksResponse.class);
 
-            if (response == null || response.items() == null) return List.of();
-            return response.items();
-        } catch (Exception e) {
-            log.error("Error searching for books with query: {}", query, e);
-            return List.of();
+                if (response != null && response.items() != null) 
+                    return response.items();
+
+            } catch (Exception e) {
+                log.warn("Google Books search attempt {} failed for query: {}", attempt, query, e);
+            }
+
+            if (attempt < 2) {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.error("Thread interrupted while waiting to retry search for books with query: {}", query, e);
+                    return List.of();
+                }
+            } 
         }
+
+        log.error("Google Books search failed after 2 attempts for query: {}", query);
+        return List.of();
     }
 
     public GoogleBooksResponse.Volume findByIsbn(String isbn) {

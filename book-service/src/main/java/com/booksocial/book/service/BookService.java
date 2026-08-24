@@ -18,6 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Service
@@ -92,8 +94,12 @@ public class BookService {
 
     public List<BookResponse> searchExternal(String q) {
         List<BookResponse> dbResults = this.search(q);
-
+        Set<String> dbIsbns = dbResults.stream()
+                .map(BookResponse::isbn)
+                .collect(Collectors.toSet());
         List<BookResponse> googleResults = googleBooksClient.search(q).stream()
+                .filter(v -> googleBooksMapper.extractIsbn(v.volumeInfo()) != null)
+                .filter(v -> !dbIsbns.contains(googleBooksMapper.extractIsbn(v.volumeInfo())))
                 .map(googleBooksMapper::toReadModel)
                 .map(this::toResponse)
                 .toList();
@@ -118,11 +124,13 @@ public class BookService {
     }
 
     private BookResponse toResponse(BookReadModel readModel) {
-        Author author = resolveAuthor(Long.valueOf(readModel.getAuthorId()));
+        String authorName = readModel.getAuthorId() != null 
+            ? resolveAuthor(Long.valueOf(readModel.getAuthorId())).getName()
+            : readModel.getAuthorName();
         return new BookResponse(
                 readModel.getIsbn(),
                 readModel.getTitle(),
-                author.getName(),
+                authorName,
                 readModel.getAuthorId(),
                 readModel.getDescription(),
                 readModel.getCoverUrl(),

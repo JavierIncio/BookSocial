@@ -3711,9 +3711,11 @@ public class BookService {
     }
 
     private BookResponse toResponse(BookReadModel readModel) {
-        Author author = resolveAuthor(Long.valueOf(readModel.getAuthorId()));
+        String authorName = readModel.getAuthorId() != null
+            ? resolveAuthor(Long.valueOf(readModel.getAuthorId())).getName()
+            : readModel.getAuthorName();
         return new BookResponse(
-            readModel.getIsbn(), readModel.getTitle(), author.getName(),
+            readModel.getIsbn(), readModel.getTitle(), authorName,
             readModel.getAuthorId(), readModel.getDescription(),
             readModel.getCoverUrl(), readModel.getPublishedYear(),
             readModel.getCategory(), readModel.getCreatedAt());
@@ -3729,8 +3731,9 @@ public class BookService {
 - `create()`: verifica unicidad por ISBN en Postgres, resuelve el `Author` por `authorId`, guarda, hace upsert del _read model_ con `authorName`+`authorId` y publica evento `BookCreatedEvent` con los 4 campos.
 - `findByIsbn()`: primero intenta Mongo; si no existe, auto-importa desde Google Books (que a su vez crea el Author via `GoogleBooksMapper`).
 - `search()`: búsqueda en Mongo por título o nombre de autor.
-- `searchExternal()`: combina `search()` (BD local) con `googleBooksMapper::toReadModel` (sin persistencia) para mostrar resultados de Google Books sin crear autores en Postgres.
-- `upsertReadModel()` y `toResponse()`: utilizan `resolveAuthor()` para resolver el `Author` por FK para enriquecer el read model y la respuesta.
+- `searchExternal()`: combina `search()` (BD local) con resultados de Google Books **sin persistencia**. Antes de mapear, filtra los volúmenes de Google sin ISBN (evita `isbn: null` en el cliente) y descarta los que ya salieron en los resultados de la BD (dedupe por ISBN).
+- `upsertReadModel()`: resuelve el `Author` por FK para enriquecer el read model.
+- `toResponse()`: **null-safe** — solo llama a `resolveAuthor()` cuando el read model tiene `authorId`; si es `null` (resultados efímeros de Google Books) usa directamente el `authorName` del read model. Ver error registrado en 7.4.
 
 #### `AuthorService`
 
@@ -4005,7 +4008,9 @@ public class GoogleBooksClient {
     private final RestClient restClient;
     private final GoogleBooksProperties props;
 
-    public GoogleBooksResponse.Volume search(String query) { ... }
+    // search(query): bucle de 2 intentos — si la petición falla (p.ej. 503),
+    // espera 500ms y reintenta una vez antes de devolver List.of()
+    public List<GoogleBooksResponse.Volume> search(String query) { ... }
     public GoogleBooksResponse.Volume findByIsbn(String isbn) { ... }
 }
 ```
@@ -4016,6 +4021,10 @@ Usa `RestClient` (nuevo en Spring Boot 3.2+) contra la API de Google. Los endpoi
 | ---------------------------- | ---------------------------- |
 | `GET /volumes?q={query}`     | Búsqueda de libros por query |
 | `GET /volumes?q=isbn:{isbn}` | Busca un libro por su isbn   |
+
+**¿Por qué el retry solo en `search`?** La Google Books API devuelve de forma intermitente `503 Service Unavailable (backendFailed)` — un fallo transitorio del lado de Google (se ha observado que ~60-70% de las peticiones fallan durante episodios de degradación, tanto con key como sin ella). Como `search` alimenta la búsqueda en vivo del catálogo (`GET /books/search/full`), un único intento haría que las búsquedas devolvieran "sin resultados" la mayoría de las veces. Con 2 intentos separados por 500ms, la probabilidad de obtener resultados sube de ~35% a ~60% por búsqueda. En cambio, `findByIsbn` no lo necesita: se invoca una sola vez por ISBN (auto-import bajo demanda, no en tiempo real ante el usuario) y su fallo es recuperable con un simple reintento de la petición HTTP original.
+
+Los errores se registran con `log.warn`/`log.error` y se degradan a lista vacía o `null`: un fallo de Google **nunca** debe romper el endpoint del catálogo local, que siempre funciona aunque Google esté caído.
 
 #### `GoogleBooksMapper`
 
@@ -4101,6 +4110,23 @@ El flujo de cache es: primera búsqueda → Open Library API → guardar en Post
 ```
 
 Los GETs son públicos (sin auth). Solo `POST /books` y `POST /authors` requieren **autenticación** y **rol ADMIN**.
+
+### 7.4 — Errores encontrados en la Fase 3 (con solución directa)
+
+1. **`NumberFormatException: Cannot parse null string` (HTTP 500) en `GET /books/search/full`**
+   - Síntoma: cada vez que Google Books devolvía resultados, `searchExternal` terminaba en 500 y el frontend mostraba "búsqueda fallida"; cuando Google fallaba (503), la búsqueda devolvía vacío. Parecía un fallo aleatorio.
+   - Causa: `GoogleBooksMapper.toReadModel()` construye read models efímeros con `authorId = null` (los resultados de Google no se persisten), pero `BookService.toResponse()` hacía `resolveAuthor(Long.valueOf(readModel.getAuthorId()))` sin condición → `Long.valueOf(null)` lanza `NumberFormatException`.
+   - Solución: hacer `toResponse` **null-safe** — solo resolver el `Author` en BD cuando hay `authorId`; si es `null`, usar directamente el `authorName` que ya trae el read model.
+   - Lección: cuando una misma clase (`toResponse`) sirve a datos persistentes y a datos efímeros de una API externa, todos los campos derivados de FK deben tratarse como opcionales.
+
+2. **Búsquedas "sin resultados" aleatorias: `503 backendFailed` intermitente de Google Books**
+   - Síntoma: `googleBooksClient.search()` fallaba ~60-70% de las veces con `HttpServerErrorException$ServiceUnavailable: 503 ... "reason": "backendFailed"`, tanto con API key como sin ella y desde host y contenedor por igual. Verificado con wget dentro del contenedor: mismo endpoint alternaba 200/503 en segundos.
+   - Causa: degradación transitoria del lado de Google (no de la app). El cliente original tragaba la excepción y devolvía lista vacía → UX de "no encuentra nada".
+   - Solución: bucle de **retry con 1 reintento tras 500ms** en `search()` (ver sección 7.3 para el porqué). Adicionalmente se filtraron los volúmenes sin ISBN y se deduplicó contra los resultados locales para no mostrar basura al usuario.
+
+3. **Doble barra potencial en la URL de Google Books**
+   - Causa: `api-url: https://www.googleapis.com/books/v1/` (barra final) combinado con `.path("/volumes")` (barra inicial) puede producir `/books/v1//volumes`.
+   - Solución: normalizar la base sin barra final en `application.yaml`.
 
 ### Decisiones de diseño de la Fase 3 (resumen)
 
