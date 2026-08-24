@@ -32,6 +32,7 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 | [9. shelf-service](#bloque-9--shelf-service-estantería-personal-del-usuario)          | Estantería, dual-write, evento cruzado | Fase 5     |
 | [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable)            | JwtService, filtros, config            | Referencia |
 | [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño)                          | Resumen arquitectónico                 | Referencia |
+| [C. Operación](#apéndice-c--operación-despliegue-logs-y-depuración)                   | Despliegue, logs, depuración           | Referencia |
 
 ---
 
@@ -3692,13 +3693,18 @@ public class BookService {
 
     public List<BookResponse> searchExternal(String q) {
         List<BookResponse> dbResults = this.search(q);
-
+        Set<String> dbIsbns = dbResults.stream()
+                .map(BookResponse::isbn)
+                .collect(Collectors.toSet());
         List<BookResponse> googleResults = googleBooksClient.search(q).stream()
-            .map(googleBooksMapper::toReadModel)
-            .map(this::toResponse)
-            .toList();
+                .filter(v -> googleBooksMapper.extractIsbn(v.volumeInfo()) != null)
+                .filter(v -> !dbIsbns.contains(googleBooksMapper.extractIsbn(v.volumeInfo())))
+                .map(googleBooksMapper::toReadModel)
+                .map(this::toResponse)
+                .toList();
 
-        return Stream.concat(dbResults.stream(), googleResults.stream()).toList();
+        return Stream.concat(dbResults.stream(), googleResults.stream())
+                .toList();
     }
 
     private BookReadModel upsertReadModel(Book book) {
@@ -4008,8 +4014,8 @@ public class GoogleBooksClient {
     private final RestClient restClient;
     private final GoogleBooksProperties props;
 
-    // search(query): bucle de 2 intentos — si la petición falla (p.ej. 503),
-    // espera 500ms y reintenta una vez antes de devolver List.of()
+    // search(query): bucle de 3 intentos — si la petición falla (p.ej. 503),
+    // espera 500ms y reintenta (hasta 2 reintentos) antes de devolver List.of()
     public List<GoogleBooksResponse.Volume> search(String query) { ... }
     public GoogleBooksResponse.Volume findByIsbn(String isbn) { ... }
 }
@@ -4022,7 +4028,8 @@ Usa `RestClient` (nuevo en Spring Boot 3.2+) contra la API de Google. Los endpoi
 | `GET /volumes?q={query}`     | Búsqueda de libros por query |
 | `GET /volumes?q=isbn:{isbn}` | Busca un libro por su isbn   |
 
-**¿Por qué el retry solo en `search`?** La Google Books API devuelve de forma intermitente `503 Service Unavailable (backendFailed)` — un fallo transitorio del lado de Google (se ha observado que ~60-70% de las peticiones fallan durante episodios de degradación, tanto con key como sin ella). Como `search` alimenta la búsqueda en vivo del catálogo (`GET /books/search/full`), un único intento haría que las búsquedas devolvieran "sin resultados" la mayoría de las veces. Con 2 intentos separados por 500ms, la probabilidad de obtener resultados sube de ~35% a ~60% por búsqueda. En cambio, `findByIsbn` no lo necesita: se invoca una sola vez por ISBN (auto-import bajo demanda, no en tiempo real ante el usuario) y su fallo es recuperable con un simple reintento de la petición HTTP original.
+**¿Por qué el retry solo en `search`?**
+La Google Books API devuelve de forma intermitente `503 Service Unavailable (backendFailed)` — un fallo transitorio del lado de Google (se ha observado que ~60-70% de las peticiones fallan durante episodios de degradación, tanto con key como sin ella). Como `search` alimenta la búsqueda en vivo del catálogo (`GET /books/search/full`), un único intento haría que las búsquedas devolvieran "sin resultados" la mayoría de las veces. Con **3 intentos separados por 500ms**, la probabilidad de obtener resultados aumenta significativamente por búsqueda. En cambio, `findByIsbn` no lo necesita: se invoca una sola vez por ISBN (auto-import bajo demanda, no en tiempo real ante el usuario) y su fallo es recuperable con un simple reintento de la petición HTTP original.
 
 Los errores se registran con `log.warn`/`log.error` y se degradan a lista vacía o `null`: un fallo de Google **nunca** debe romper el endpoint del catálogo local, que siempre funciona aunque Google esté caído.
 
@@ -4122,7 +4129,7 @@ Los GETs son públicos (sin auth). Solo `POST /books` y `POST /authors` requiere
 2. **Búsquedas "sin resultados" aleatorias: `503 backendFailed` intermitente de Google Books**
    - Síntoma: `googleBooksClient.search()` fallaba ~60-70% de las veces con `HttpServerErrorException$ServiceUnavailable: 503 ... "reason": "backendFailed"`, tanto con API key como sin ella y desde host y contenedor por igual. Verificado con wget dentro del contenedor: mismo endpoint alternaba 200/503 en segundos.
    - Causa: degradación transitoria del lado de Google (no de la app). El cliente original tragaba la excepción y devolvía lista vacía → UX de "no encuentra nada".
-   - Solución: bucle de **retry con 1 reintento tras 500ms** en `search()` (ver sección 7.3 para el porqué). Adicionalmente se filtraron los volúmenes sin ISBN y se deduplicó contra los resultados locales para no mostrar basura al usuario.
+   - Solución: bucle de **retry con 2 reintentos tras 500ms** en `search()` (ver sección 7.3 para el porqué). Adicionalmente se filtraron los volúmenes sin ISBN y se deduplicó contra los resultados locales para no mostrar basura al usuario.
 
 3. **Doble barra potencial en la URL de Google Books**
    - Causa: `api-url: https://www.googleapis.com/books/v1/` (barra final) combinado con `.path("/volumes")` (barra inicial) puede producir `/books/v1//volumes`.
@@ -5134,3 +5141,98 @@ El patrón Outbox resuelve esto escribiendo el evento en una tabla `outbox` **de
 - **Complejidad añadida**: tabla `outbox`, polling o CDC (Debezium), limpieza de registros publicados. Injustificado para la escala actual.
 
 Se reconsideraría si el proyecto creciera a >100 eventos/minuto, se añadieran eventos críticos (pagos, notificaciones), o los consumidores dejaran de ser idempotentes.
+
+---
+
+## Apéndice C — Operación: despliegue, logs y depuración
+
+Referencia rápida del día a día con la app ya construida. Todos los comandos se ejecutan desde la **raíz del monorepo** y usan el compose de `infrastructure/docker-compose.yml`.
+
+### El stack
+
+| Contenedor            | Servicio         | Puerto          |
+| --------------------- | ---------------- | --------------- |
+| `booksocial-postgres` | PostgreSQL 16    | 5432            |
+| `booksocial-mongodb`  | MongoDB 8.0      | 27017           |
+| `booksocial-rabbitmq` | RabbitMQ 4       | 5672 / UI 15672 |
+| `booksocial-gateway`  | gateway          | 8080            |
+| `booksocial-identity` | identity-service | 8081            |
+| `booksocial-user`     | user-service     | 8082            |
+| `booksocial-book`     | book-service     | 8083            |
+| `booksocial-review`   | review-service   | 8084            |
+| `booksocial-shelf`    | shelf-service    | 8085            |
+
+### Arrancar, parar y estado
+
+```powershell
+docker compose -f infrastructure/docker-compose.yml up -d          # arrancar todo (respeta depends_on + healthchecks)
+docker compose -f infrastructure/docker-compose.yml down           # parar todo (conserva volúmenes)
+docker compose -f infrastructure/docker-compose.yml ps             # estado + health de cada contenedor
+```
+
+### Redesplegar un servicio tras cambiar su código
+
+```powershell
+docker compose -f infrastructure/docker-compose.yml build book-service   # reconstruye la imagen
+docker compose -f infrastructure/docker-compose.yml up -d book-service   # recrea el contenedor con la imagen nueva
+```
+
+Sustituye `book-service` por el servicio modificado (`gateway`, `identity-service`, `user-service`, `review-service`, `shelf-service`). Solo ese servicio se reconstruye; bases de datos y RabbitMQ no se tocan.
+
+- El build es incremental por capas: al cambiar código fuente, Docker invalida la capa `COPY` y recompila solo lo necesario.
+- Si sospechas que el contenedor está sirviendo **código antiguo** (síntoma: un bug corregido sigue apareciendo), fuerza rebuild completo con `build --no-cache <servicio>`.
+
+### Desarrollo local sin reconstruir imágenes
+
+Para iterar rápido en un microservicio puedes ejecutarlo directamente en tu máquina, sin Docker: los puertos de las bases están publicados en localhost y las credenciales están en el `.env` del módulo.
+
+```powershell
+cd book-service
+./mvnw spring-boot:run        # arranca en :8083 conectando a localhost:5432/27017/5672
+```
+
+Mientras tanto el resto del stack sigue en sus contenedores. Recuerda que el gateway enruta a los contenedores (`BOOK_SERVICE_URI=http://book-service:8083`), así que para probar tu instancia local llama a `:8083` directamente.
+
+### Logs
+
+Todo el stdout de Spring va al log del contenedor. Los endpoints devuelven errores breves vía `GlobalExceptionHandler`, pero el stack trace completo está aquí.
+
+```powershell
+docker logs booksocial-book --tail 100          # últimas 100 líneas
+docker logs booksocial-book -f                  # seguir en vivo
+docker logs booksocial-book --since 10m         # últimos 10 minutos
+docker logs booksocial-gateway 2>&1 | Select-String ERROR   # filtrar errores
+```
+
+Qué buscar según el síntoma:
+
+| Síntoma                         | Dónde mirar                                     |
+| ------------------------------- | ----------------------------------------------- |
+| HTTP 500 en un endpoint         | log del servicio dueño (stack trace completa)   |
+| 401/403 inesperado              | log del gateway (filter JWT) y del servicio     |
+| Servicio no arranca / unhealthy | `docker logs <contenedor>` al completo          |
+| Read model desactualizado       | log del consumidor (review/shelf) + UI RabbitMQ |
+
+### Herramientas de inspección
+
+```powershell
+# RabbitMQ: colas, exchanges, mensajes
+# http://localhost:15672  (guest / guest)
+
+# Mongo: read models
+docker exec booksocial-mongodb mongosh -u booksocial -p booksocial --authenticationDatabase admin booksocial --eval "db.books.find().limit(3)"
+docker exec booksocial-mongodb mongosh -u booksocial -p booksocial --authenticationDatabase admin booksocial --eval "db.shelves.find().limit(3)"
+
+# Postgres: tablas de comandos
+docker exec booksocial-postgres psql -U booksocial -d booksocial -c "SELECT isbn, title, author_id FROM books LIMIT 5;"
+```
+
+### Frontend
+
+```powershell
+cd frontend
+npm start                # ng serve en :4200 con proxy a :8080 (proxy.conf.json)
+npm run build            # verificación de compilación
+```
+
+Ojo: si editas `proxy.conf.json` hay que **reiniciar** `ng serve` — el proxy solo se lee al arrancar, el hot-reload no lo recoge.

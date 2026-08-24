@@ -20,7 +20,7 @@ public class GoogleBooksClient {
     }
 
     public List<GoogleBooksResponse.Volume> search(String query) {
-        for (int attempt = 1; attempt <= 2; attempt++) {
+        for (int attempt = 1; attempt <= 3; attempt++) {
             try {
                 GoogleBooksResponse response = restClient.get()
                         .uri(uriBuilder -> uriBuilder
@@ -39,7 +39,7 @@ public class GoogleBooksClient {
                 log.warn("Google Books search attempt {} failed for query: {}", attempt, query, e);
             }
 
-            if (attempt < 2) {
+            if (attempt < 3) {
                 try {
                     Thread.sleep(500);
                 } catch (InterruptedException e) {
@@ -50,7 +50,7 @@ public class GoogleBooksClient {
             } 
         }
 
-        log.error("Google Books search failed after 2 attempts for query: {}", query);
+        log.error("Google Books search failed after 3 attempts for query: {}", query);
         return List.of();
     }
 
