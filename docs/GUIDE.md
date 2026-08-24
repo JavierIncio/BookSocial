@@ -3430,8 +3430,9 @@ book-service/
         ├── AuthorController.java
         ├── GlobalExceptionHandler.java
         └── dto/
-            ├── CreateBookRequest.java
-            └── BookResponse.java
+            ├── AuthorResponse.java
+            ├── BookResponse.java
+            └── CreateBookRequest.java
 ```
 
 #### Configuración
@@ -3751,9 +3752,9 @@ public class AuthorService {
         this.mapper = mapper;
     }
 
-    public List<AuthorReadModel> searchAuthors(String query) {
+    public List<AuthorResponse> searchAuthors(String query) {
         List<AuthorReadModel> localAuthors = readModelRepository.findByNameContainingIgnoreCase(query);
-        if (!localAuthors.isEmpty()) return localAuthors;
+        if (!localAuthors.isEmpty()) return localAuthors.stream().map(this::toResponse).toList();
 
         List<AuthorReadModel> openLibraryAuthors = openLibraryClient.searchAuthors(query)
                     .docs()
@@ -3761,12 +3762,12 @@ public class AuthorService {
                     .map(mapper::toReadModel)
                     .toList();
 
-        return readModelRepository.saveAll(openLibraryAuthors);
+        return readModelRepository.saveAll(openLibraryAuthors).stream().map(this::toResponse).toList();
     }
 
-    public AuthorReadModel getAuthor(String openLibraryId) {
+    public AuthorResponse getAuthor(String openLibraryId) {
         AuthorReadModel existingAuthor = readModelRepository.findById(openLibraryId).orElse(null);
-        if (existingAuthor != null) return existingAuthor;
+        if (existingAuthor != null) return toResponse(existingAuthor);
 
         AuthorDetailResponse olAuthor = openLibraryClient.getAuthor(openLibraryId);
         if (olAuthor == null) return null;
@@ -3779,27 +3780,39 @@ public class AuthorService {
                         photoUrl, null, null)
         );
 
-        return readModelRepository.save(
+        AuthorReadModel saved = readModelRepository.save(
                 new AuthorReadModel(openLibraryId, olAuthor.name(), olAuthor.bio(),
                         olAuthor.birthDate(), olAuthor.deathDate(),
                         photoUrl, null, null)
         );
+        return toResponse(saved);
     }
 
     public WorksResponse getAuthorWorks(String openLibraryId) {
         return openLibraryClient.getWorks(openLibraryId);
     }
 
-    public Author createAuthor(String name) {
-        return authorRepository.save(new Author(name));
+    public AuthorResponse createAuthor(String name) {
+        Author author = authorRepository.save(new Author(name));
+        AuthorReadModel readModel = readModelRepository.save(
+                new AuthorReadModel(null, author.getName(), null, null, null, null, null, null));
+        return toResponse(readModel);
+    }
+
+    private AuthorResponse toResponse(AuthorReadModel rm) {
+        return new AuthorResponse(
+                rm.getOpenLibraryId(), rm.getName(), rm.getBio(),
+                rm.getBirthDate(), rm.getDeathDate(), rm.getPhotoUrl(),
+                rm.getTopSubjects(), rm.getWorkCount());
     }
 }
 ```
 
-- `searchAuthors()`: busca en Mongo por nombre; si no hay resultados locales, consulta Open Library, mapea con `OpenLibraryMapper` y guarda en Mongo (Postgres + Mongo).
-- `getAuthor()`: busca en Mongo por `openLibraryId`; si no existe, consulta Open Library, guarda en ambas BD y devuelve el `AuthorReadModel`.
+- `searchAuthors()`: busca en Mongo por nombre; si no hay resultados locales, consulta Open Library, mapea con `OpenLibraryMapper` y guarda en Mongo. Devuelve `AuthorResponse` (DTO) en vez de `AuthorReadModel`.
+- `getAuthor()`: busca en Mongo por `openLibraryId`; si no existe, consulta Open Library, guarda en ambas BD y devuelve `AuthorResponse`.
 - `getAuthorWorks()`: proxy directo a Open Library `/authors/{id}/works.json`.
-- `createAuthor()`: crea un `Author` directamente en Postgres (usado por `GoogleBooksMapper`).
+- `createAuthor()`: crea `Author` en Postgres + `AuthorReadModel` en Mongo, devuelve `AuthorResponse`.
+- `toResponse()`: convierte `AuthorReadModel` → `AuthorResponse` (DTO público). El controller nunca expone `AuthorReadModel` ni `Author` entity.
 
 #### `BookController` y `AuthorController`
 
@@ -3845,12 +3858,12 @@ public class AuthorController {
     private final AuthorService authorService;
 
     @GetMapping("/search")
-    public List<AuthorReadModel> searchAuthors(@RequestParam String q) {
+    public List<AuthorResponse> searchAuthors(@RequestParam String q) {
         return authorService.searchAuthors(q);
     }
 
     @GetMapping("/{openLibraryId}")
-    public AuthorReadModel getAuthor(@PathVariable String openLibraryId) {
+    public AuthorResponse getAuthor(@PathVariable String openLibraryId) {
         return authorService.getAuthor(openLibraryId);
     }
 
@@ -3861,7 +3874,7 @@ public class AuthorController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Author createAuthor(
+    public AuthorResponse createAuthor(
             @RequestHeader(value = "X-User-Roles", required = false) String roles,
             @RequestBody String name) {
         if (!isAdmin(roles)) throw new ForbiddenException("ADMIN required");
