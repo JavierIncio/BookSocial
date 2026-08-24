@@ -1,8 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { ShelfResponse } from '@core/models/shelf.models';
-import type { ShelfStatus } from '@core/models/shelf.models';
+import { ShelfResponse, ShelfStatus } from '@core/models/shelf.models';
 
 @Injectable({ providedIn: 'root' })
 export class ShelfService {

@@ -1,0 +1,54 @@
+<header class="topbar">
+  <h1>Catalog</h1>
+</header>
+
+<main>
+  <form class="search" [formGroup]="searchForm" (ngSubmit)="doSearch()">
+    <input
+      type="text"
+      formControlName="q"
+      placeholder="Search by title or author…"
+      aria-label="Search books"
+    />
+    <button type="submit" [disabled]="searching()">
+      {{ searching() ? 'Searching…' : 'Search' }}
+    </button>
+    @if (searched()) {
+    <button type="button" class="ghost" (click)="loadCatalog()">Clear</button>
+    }
+  </form>
+
+  @if (loading()) {
+  <p>Loading catalog…</p>
+  } @else if (error()) {
+  <p class="error">{{ error() }}</p>
+  } @else if (books().length === 0) {
+  <p class="empty">
+    @if (searched()) { No results found. } @else { The catalog is empty. }
+  </p>
+  } @else {
+  <section class="grid">
+    @for (book of books(); track book.isbn) {
+    <a class="card" [routerLink]="['/book', book.isbn]">
+      <div class="cover">
+        @if (book.coverUrl) {
+        <img [src]="book.coverUrl" [alt]="book.title" loading="lazy" />
+        } @else {
+        <span class="cover-placeholder">{{ book.title }}</span>
+        }
+      </div>
+      <h2 class="title">{{ book.title }}</h2>
+      <p class="author">{{ book.authorName }}</p>
+      <p class="meta">
+        @if (book.publishedYear) {
+        <span>{{ book.publishedYear }}</span>
+        }
+        @if (book.category) {
+        <span class="category">{{ book.category }}</span>
+        }
+      </p>
+    </a>
+    }
+  </section>
+  }
+</main>

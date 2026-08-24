@@ -8,5 +8,35 @@
     "target": "http://localhost:8080",
     "changeOrigin": true,
     "secure": false
+  },
+  "/profiles": {
+    "target": "http://localhost:8080",
+    "changeOrigin": true,
+    "secure": false
+  },
+  "/follows": {
+    "target": "http://localhost:8080",
+    "changeOrigin": true,
+    "secure": false
+  },
+  "/books": {
+    "target": "http://localhost:8080",
+    "changeOrigin": true,
+    "secure": false
+  },
+  "/authors": {
+    "target": "http://localhost:8080",
+    "changeOrigin": true,
+    "secure": false
+  },
+  "/reviews": {
+    "target": "http://localhost:8080",
+    "changeOrigin": true,
+    "secure": false
+  },
+  "/shelves": {
+    "target": "http://localhost:8080",
+    "changeOrigin": true,
+    "secure": false
   }
 }

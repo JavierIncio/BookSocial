@@ -1,5 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
 import { UserService } from '@core/services/user.service';
 import { UserResponse } from '@core/models/user.models';
@@ -8,7 +8,7 @@ import { CapitalizePipe } from '@shared/pipes/capitalize.pipe';
 
 @Component({
   selector: 'app-home',
-  imports: [InitialsPipe, CapitalizePipe],
+  imports: [InitialsPipe, CapitalizePipe, RouterLink],
   templateUrl: './home.html',
   styleUrl: './home.scss',
 })
