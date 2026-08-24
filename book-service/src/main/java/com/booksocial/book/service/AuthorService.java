@@ -74,9 +74,7 @@ public class AuthorService {
 
     public AuthorResponse createAuthor(String name) {
         Author author = authorRepository.save(new Author(name));
-        AuthorReadModel readModel = readModelRepository.save(
-                new AuthorReadModel(null, author.getName(), null, null, null, null, null, null));
-        return toResponse(readModel);
+        return new AuthorResponse(null, author.getName(), null, null, null, null, null, null);
     }
 
     private AuthorResponse toResponse(AuthorReadModel rm) {
