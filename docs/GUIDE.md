@@ -3794,9 +3794,7 @@ public class AuthorService {
 
     public AuthorResponse createAuthor(String name) {
         Author author = authorRepository.save(new Author(name));
-        AuthorReadModel readModel = readModelRepository.save(
-                new AuthorReadModel(null, author.getName(), null, null, null, null, null, null));
-        return toResponse(readModel);
+        return new AuthorResponse(null, author.getName(), null, null, null, null, null, null);
     }
 
     private AuthorResponse toResponse(AuthorReadModel rm) {
@@ -3811,7 +3809,7 @@ public class AuthorService {
 - `searchAuthors()`: busca en Mongo por nombre; si no hay resultados locales, consulta Open Library, mapea con `OpenLibraryMapper` y guarda en Mongo. Devuelve `AuthorResponse` (DTO) en vez de `AuthorReadModel`.
 - `getAuthor()`: busca en Mongo por `openLibraryId`; si no existe, consulta Open Library, guarda en ambas BD y devuelve `AuthorResponse`.
 - `getAuthorWorks()`: proxy directo a Open Library `/authors/{id}/works.json`.
-- `createAuthor()`: crea `Author` en Postgres + `AuthorReadModel` en Mongo, devuelve `AuthorResponse`.
+- `createAuthor()`: crea `Author` solo en Postgres (usado por `GoogleBooksMapper`). No escribe en Mongo — no tiene `openLibraryId` ni datos biográficos.
 - `toResponse()`: convierte `AuthorReadModel` → `AuthorResponse` (DTO público). El controller nunca expone `AuthorReadModel` ni `Author` entity.
 
 #### `BookController` y `AuthorController`
