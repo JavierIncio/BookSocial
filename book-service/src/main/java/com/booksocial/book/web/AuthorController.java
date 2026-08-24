@@ -1,10 +1,9 @@
 package com.booksocial.book.web;
 
-import com.booksocial.book.domain.Author;
 import com.booksocial.book.domain.ForbiddenException;
-import com.booksocial.book.readmodel.AuthorReadModel;
 import com.booksocial.book.service.AuthorService;
 import com.booksocial.book.service.openlibrary.WorksResponse;
+import com.booksocial.book.web.dto.AuthorResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,12 +21,12 @@ public class AuthorController {
     }
 
     @GetMapping("/search")
-    public List<AuthorReadModel> searchAuthors(@RequestParam String q) {
+    public List<AuthorResponse> searchAuthors(@RequestParam String q) {
         return authorService.searchAuthors(q);
     }
 
     @GetMapping("/{openLibraryId}")
-    public AuthorReadModel getAuthor(@PathVariable String openLibraryId) {
+    public AuthorResponse getAuthor(@PathVariable String openLibraryId) {
         return authorService.getAuthor(openLibraryId);
     }
 
@@ -38,7 +37,7 @@ public class AuthorController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Author createAuthor(
+    public AuthorResponse createAuthor(
             @RequestHeader(value = "X-User-Roles", required = false) String roles,
             @RequestBody String name
     ) {

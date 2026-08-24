@@ -8,6 +8,7 @@ import com.booksocial.book.service.openlibrary.AuthorDetailResponse;
 import com.booksocial.book.service.openlibrary.OpenLibraryClient;
 import com.booksocial.book.service.openlibrary.OpenLibraryMapper;
 import com.booksocial.book.service.openlibrary.WorksResponse;
+import com.booksocial.book.web.dto.AuthorResponse;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,9 +32,9 @@ public class AuthorService {
         this.mapper = mapper;
     }
 
-    public List<AuthorReadModel> searchAuthors(String query) {
+    public List<AuthorResponse> searchAuthors(String query) {
         List<AuthorReadModel> localAuthors = readModelRepository.findByNameContainingIgnoreCase(query);
-        if (!localAuthors.isEmpty()) return localAuthors;
+        if (!localAuthors.isEmpty()) return localAuthors.stream().map(this::toResponse).toList();
 
         List<AuthorReadModel> openLibraryAuthors = openLibraryClient.searchAuthors(query)
                     .docs()
@@ -41,12 +42,12 @@ public class AuthorService {
                     .map(mapper::toReadModel)
                     .toList();
 
-        return readModelRepository.saveAll(openLibraryAuthors);
+        return readModelRepository.saveAll(openLibraryAuthors).stream().map(this::toResponse).toList();
     }
 
-    public AuthorReadModel getAuthor(String openLibraryId) {
+    public AuthorResponse getAuthor(String openLibraryId) {
         AuthorReadModel existingAuthor = readModelRepository.findById(openLibraryId).orElse(null);
-        if (existingAuthor != null) return existingAuthor;
+        if (existingAuthor != null) return toResponse(existingAuthor);
 
         AuthorDetailResponse olAuthor = openLibraryClient.getAuthor(openLibraryId);
         if (olAuthor == null) return null;
@@ -59,18 +60,29 @@ public class AuthorService {
                         photoUrl, null, null)
         );
 
-        return readModelRepository.save(
+        AuthorReadModel saved = readModelRepository.save(
                 new AuthorReadModel(openLibraryId, olAuthor.name(), olAuthor.bio(),
                         olAuthor.birthDate(), olAuthor.deathDate(),
                         photoUrl, null, null)
         );
+        return toResponse(saved);
     }
 
     public WorksResponse getAuthorWorks(String openLibraryId) {
         return openLibraryClient.getWorks(openLibraryId);
     }
 
-    public Author createAuthor(String name) {
-        return authorRepository.save(new Author(name));
+    public AuthorResponse createAuthor(String name) {
+        Author author = authorRepository.save(new Author(name));
+        AuthorReadModel readModel = readModelRepository.save(
+                new AuthorReadModel(null, author.getName(), null, null, null, null, null, null));
+        return toResponse(readModel);
+    }
+
+    private AuthorResponse toResponse(AuthorReadModel rm) {
+        return new AuthorResponse(
+                rm.getOpenLibraryId(), rm.getName(), rm.getBio(),
+                rm.getBirthDate(), rm.getDeathDate(), rm.getPhotoUrl(),
+                rm.getTopSubjects(), rm.getWorkCount());
     }
 }
