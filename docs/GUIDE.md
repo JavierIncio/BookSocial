@@ -543,6 +543,16 @@ El **Identity Service** es el microservicio responsable de todo lo relacionado c
 
 **Puertos**: Identity Service `8081`, Gateway `8080`. Flujo típico: `Angular → Gateway :8080 → Identity Service :8081`.
 
+**Ficha del servicio**
+
+| | |
+|---|---|
+| Puerto | `8081` |
+| Persistencia | PostgreSQL (`users`, `refresh_tokens`, roles) |
+| Responsabilidad | Identidad y autenticación: registro, login email+password, login Google OAuth2, emisión/rotación de JWT, gestión de roles |
+| Endpoints clave | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, callback OAuth2 |
+| Consumidores | Todos los servicios (confían en los headers `X-User-*` que valida el gateway) |
+
 ### 1.0 — Creación del servicio y dependencias
 
 El servicio se generó con **Spring Initializr** (start.spring.io) con Java 21 y Spring Boot 4.1.0, y su POM hereda del parent `booksocial-parent`. Por eso **no repite versiones**: las hereda del parent POM y del BOM de Spring Cloud (sección 0.2). Dependencias del `identity-service/pom.xml` y para qué sirve cada una:
@@ -1770,6 +1780,16 @@ El **API Gateway** es el punto único de entrada del sistema. Después de constr
 
 **Patrón clave**: _strip-then-assert_ — el gateway elimina cualquier header `X-User-*` que el cliente envíe y los reconstruye a partir del JWT validado. Los servicios downstream confían en estos headers.
 
+**Ficha del servicio**
+
+| | |
+|---|---|
+| Puerto | `8080` |
+| Persistencia | Ninguna (stateless, valida el JWT con su clave compartida) |
+| Responsabilidad | Punto único de entrada: enrutamiento por ruta a cada microservicio, validación JWT centralizada, inyección de headers de confianza |
+| Rutas | `/auth/**` → identity · `/users,/profiles,/follows/**` → user · `/books,/authors/**` → book · `/reviews/**` → review · `/shelves/**` → shelf |
+| Seguridad | GETs públicos en `/books`, `/authors`, `/shelves`; resto requiere token; entry point devuelve 401 JSON |
+
 ### 2.1 — Qué es un API Gateway y por qué aquí
 
 Un **API Gateway** es el **punto único de entrada** del sistema. El cliente (Angular) solo conoce una dirección (`:8080`) y nunca habla directamente con los microservicios internos. El gateway se encarga de:
@@ -2021,6 +2041,16 @@ Con el backend (Identity Service + Gateway) funcionando, el siguiente paso es co
 
 **Por qué Angular signals**: reemplazan a `BehaviorSubject` para el estado de sesión (`isAuthenticated`, `accessToken`). Un signal se lee como función (`auth.isAuthenticated()`) tanto en TypeScript como en plantillas, sin necesidad de suscripciones.
 
+**Ficha de la aplicación**
+
+| | |
+|---|---|
+| Puerto | `4200` (`ng serve` con proxy a `:8080`) |
+| Stack | Angular 21, standalone components, zoneless + signals, Reactive Forms |
+| Responsabilidad | SPA: sesión (login/registro/Google), interceptor JWT con refresh, guardas de ruta y páginas del dominio (catálogo, libros, autores, reseñas, estanterías — Fase 8) |
+| Estructura | `core/` (services, models, guards), `features/<nombre>/` lazy-loaded, `shared/components/nav` |
+| Convención | Cada feature exporta `routes.ts` con `loadComponent`; UI en inglés (i18n planeado) |
+
 ### 3.1 — Creación del proyecto y estructura
 
 El frontend se genera con la CLI de Angular 21:
@@ -2088,12 +2118,12 @@ Durante `ng serve`, el frontend está en `:4200` y el backend en `:8080`. Para n
 
 ```json
 {
-  "/auth": {
+  "^/auth(/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
     "secure": false
   },
-  "/users": {
+  "^/users(/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
     "secure": false
@@ -2102,6 +2132,8 @@ Durante `ng serve`, el frontend está en `:4200` y el backend en `:8080`. Para n
 ```
 
 El código Angular llama a `/auth/login` (ruta relativa) y el proxy lo redirige a `http://localhost:8080/auth/login`. En producción, el frontend se serviría bajo el mismo dominio del gateway y no haría falta proxy.
+
+> **Las claves llevan frontera de ruta** (`^/auth(/|$)`) porque el matching del proxy es por prefijo: `/author/5` (página de autor de la Fase 8) empieza por `/auth`, y con la clave plana el dev server habría enviado esa navegación al gateway → 401 al refrescar (error 5 en la sección 7.4). La misma técnica se aplica a todas las claves (`/books`, `/authors`, `/reviews`, ...). Si añades un prefijo nuevo al proxy, usa siempre esta forma.
 
 #### `googleAuthUrl`: la excepción del gateway
 
@@ -2672,6 +2704,16 @@ Este bloque consolida las lecciones aprendidas durante la Fase 1 (Bloques 0-4). 
 ## Bloque 6 — Fase 2: user-service (perfil con CQRS dual-write)
 
 **Objetivo**: construir `user-service` (puerto `8082`), propietario del perfil de usuario y las amistades. Arquitectura **CQRS**: PostgreSQL como _command side_ (escrituras) y MongoDB como _query side_ (lecturas). En esta fase la sincronización es **dual-write** (ambas escrituras en la misma operación) y se migrará a eventos con RabbitMQ en la sub-fase 2.4.
+
+**Ficha del servicio**
+
+| | |
+|---|---|
+| Puerto | `8082` |
+| Persistencia | PostgreSQL (`profiles`, `follows`) + MongoDB (lecturas: `profiles`, `user_links`) |
+| Responsabilidad | Perfil de usuario (bio, avatar, preferencias) y grafo social de amistades (seguir/dejar de seguir, listas y contadores) |
+| Endpoints clave | `GET /users/me`, `/profiles/**`, `POST/DELETE /follows/{username}`, `GET /follows/**` |
+| Mensajería | Publica y consume eventos de amistad por RabbitMQ (sincronización de contadores) |
 
 ### 6.1 — Esqueleto del user-service
 
@@ -3369,6 +3411,16 @@ Y en los logs del servicio: `Processed FollowedEvent: 10 -> 19` / `Processed Unf
 
 La Fase 3 replica el patrón de la Fase 2 en un nuevo microservicio: **Postgres para comandos, Mongo para lecturas/búsquedas**, con una entidad `Author` independiente integrada con **Open Library API** para enriquecer el catálogo con datos biográficos de autores. El servicio también integra **Google Books API** para auto-import de libros por ISBN.
 
+**Ficha del servicio**
+
+| | |
+|---|---|
+| Puerto | `8083` |
+| Persistencia | PostgreSQL (`books`, `authors`) + MongoDB (lecturas: `books`, `authors`) |
+| Responsabilidad | Catálogo CQRS: búsqueda local y externa, alta ADMIN, auto-import por ISBN desde Google Books; fichas y obras de autores vía Open Library con cache en Mongo |
+| Endpoints clave | `GET /books/search`, `GET /books/search/full`, `GET /books/{isbn}`, `/authors/**` (search, `id/{authorId}`, detalle, works), `POST /books` |
+| Mensajería | Publica `BookCreatedEvent` → lo consumen review-service y shelf-service |
+
 ### 7.1 — Esqueleto del book-service
 
 #### Creación y estructura
@@ -3775,26 +3827,63 @@ public class AuthorService {
     }
 
     public AuthorResponse getAuthor(String openLibraryId) {
-        AuthorReadModel existingAuthor = readModelRepository.findById(openLibraryId).orElse(null);
-        if (existingAuthor != null) return toResponse(existingAuthor);
+        AuthorReadModel cached = readModelRepository.findById(openLibraryId).orElse(null);
+        if (cached != null && cached.getBio() != null && !cached.getBio().isBlank()) {
+            return toResponse(cached);
+        }
 
         AuthorDetailResponse olAuthor = openLibraryClient.getAuthor(openLibraryId);
-        if (olAuthor == null) return null;
+        if (olAuthor == null) {
+            return cached != null ? toResponse(cached) : null;
+        }
 
-        String photoUrl = mapper.coverUrl(openLibraryId);
+        String photoUrl = cached != null && cached.getPhotoUrl() != null
+                ? cached.getPhotoUrl()
+                : mapper.coverUrl(openLibraryId);
+        AuthorReadModel merged = new AuthorReadModel(openLibraryId, olAuthor.name(), olAuthor.bioText(),
+                olAuthor.birthDate(), olAuthor.deathDate(), photoUrl,
+                cached != null ? cached.getTopSubjects() : null,
+                cached != null ? cached.getWorkCount() : null);
+        readModelRepository.save(merged);
+        return toResponse(merged);
+    }
 
-        authorRepository.save(
-                new Author(openLibraryId, olAuthor.name(), olAuthor.bio(),
-                        olAuthor.birthDate(), olAuthor.deathDate(),
-                        photoUrl, null, null)
-        );
+    public AuthorResponse getAuthorById(Long authorId) {
+        Author author = authorRepository.findById(authorId).orElse(null);
+        if (author == null) return null;
 
-        AuthorReadModel saved = readModelRepository.save(
-                new AuthorReadModel(openLibraryId, olAuthor.name(), olAuthor.bio(),
-                        olAuthor.birthDate(), olAuthor.deathDate(),
-                        photoUrl, null, null)
-        );
-        return toResponse(saved);
+        String openLibraryId = author.getOpenLibraryId();
+        if (openLibraryId == null || openLibraryId.isBlank()) {
+            openLibraryId = resolveOpenLibraryIdByName(author.getName());
+        }
+        if (openLibraryId == null) {
+            return new AuthorResponse(null, author.getName(), author.getBio(),
+                    author.getBirthDate(), author.getDeathDate(), author.getPhotoUrl(),
+                    null, author.getWorkCount());
+        }
+        return getAuthor(openLibraryId);
+    }
+
+    private String resolveOpenLibraryIdByName(String name) {
+        List<AuthorReadModel> cached = readModelRepository.findByNameContainingIgnoreCase(name);
+        String fromCache = cached.stream()
+                .filter(rm -> rm.getName() != null && rm.getName().equalsIgnoreCase(name))
+                .map(AuthorReadModel::getOpenLibraryId)
+                .findFirst()
+                .orElse(null);
+        if (fromCache != null) return fromCache;
+
+        List<AuthorReadModel> fetched = openLibraryClient.searchAuthors(name)
+                .docs()
+                .stream()
+                .map(mapper::toReadModel)
+                .toList();
+        readModelRepository.saveAll(fetched);
+        return fetched.stream()
+                .filter(rm -> rm.getName() != null && rm.getName().equalsIgnoreCase(name))
+                .map(AuthorReadModel::getOpenLibraryId)
+                .findFirst()
+                .orElse(null);
     }
 
     public WorksResponse getAuthorWorks(String openLibraryId) {
@@ -3809,14 +3898,18 @@ public class AuthorService {
     private AuthorResponse toResponse(AuthorReadModel rm) {
         return new AuthorResponse(
                 rm.getOpenLibraryId(), rm.getName(), rm.getBio(),
-                rm.getBirthDate(), rm.getDeathDate(), rm.getPhotoUrl(),
+
+                  rm.getBirthDate(), rm.getDeathDate(), rm.getPhotoUrl(),
                 rm.getTopSubjects(), rm.getWorkCount());
     }
 }
 ```
 
 - `searchAuthors()`: busca en Mongo por nombre; si no hay resultados locales, consulta Open Library, mapea con `OpenLibraryMapper` y guarda en Mongo. Devuelve `AuthorResponse` (DTO) en vez de `AuthorReadModel`.
-- `getAuthor()`: busca en Mongo por `openLibraryId`; si no existe, consulta Open Library, guarda en ambas BD y devuelve `AuthorResponse`.
+- `getAuthor()`: **lectura siempre desde Mongo**. Si el cache ya tiene bio, se sirve tal cual; si falta bio (los docs creados por búsqueda no la traen), consulta Open Library, **mergea** conservando subjects/workCount del cache y guarda solo en Mongo.
+- `getAuthorById()`: resuelve un autor por su **PK interna** (`authors.id`, la que exponen los libros como `authorId`). Postgres solo sirve de lookup para obtener el `openLibraryId`; si el autor no lo tiene (autores del seeder), lo resuelve por nombre con `resolveOpenLibraryIdByName()`; la ficha completa sale siempre de Mongo vía `getAuthor()`.
+
+- `resolveOpenLibraryIdByName()`: exact-match por nombre contra el cache Mongo; si no existe, busca en Open Library, cachea los resultados en Mongo y devuelve el id del match exacto. Devuelve `null` si Open Library no conoce al autor (la ficha se degrada a "solo nombre").
 - `getAuthorWorks()`: proxy directo a Open Library `/authors/{id}/works.json`.
 - `createAuthor()`: crea `Author` solo en Postgres (usado por `GoogleBooksMapper`). No escribe en Mongo — no tiene `openLibraryId` ni datos biográficos.
 - `toResponse()`: convierte `AuthorReadModel` → `AuthorResponse` (DTO público). El controller nunca expone `AuthorReadModel` ni `Author` entity.
@@ -3867,6 +3960,11 @@ public class AuthorController {
     @GetMapping("/search")
     public List<AuthorResponse> searchAuthors(@RequestParam String q) {
         return authorService.searchAuthors(q);
+    }
+
+    @GetMapping("/id/{authorId}")
+    public AuthorResponse getAuthorById(@PathVariable Long authorId) {
+        return authorService.getAuthorById(authorId);
     }
 
     @GetMapping("/{openLibraryId}")
@@ -4085,6 +4183,34 @@ Usa `RestClient` contra la API de Open Library. Los endpoints son:
 
 La API no requiere key pero limita a ~3 req/s; se identifica con `User-Agent: booksocial/1.0 (booksocial@email.com)`.
 
+**Ojo con el campo `bio`**: Open Library lo devuelve en dos formas distintas según el autor:
+
+```json
+"bio": "texto plano..."                              // algunos autores
+"bio": {"type": "/type/text", "value": "texto..."}   // otros autores
+```
+
+Por eso `AuthorDetailResponse` declara `bio` como `Object` (no como `String`) y expone un normalizador:
+
+```java
+public record AuthorDetailResponse(
+    @JsonProperty("key") String key,
+    @JsonProperty("name") String name,
+    @JsonProperty("bio") Object bio,     // String o Map {type,value} según el autor
+    ...) {
+
+    public String bioText() {
+        if (bio == null) return null;
+        if (bio instanceof String text) return text.isBlank() ? null : text;
+        if (bio instanceof Map<?, ?> map) {
+            Object value = map.get("value");
+            return value == null || value.toString().isBlank() ? null : value.toString();
+        }
+        return null;
+    }
+}
+```
+
 #### `OpenLibraryMapper`
 
 ```java
@@ -4100,12 +4226,13 @@ public class OpenLibraryMapper {
 
 #### Modelo de cache Open Library
 
-Los autores buscados en Open Library se cachean en dos lados:
+Los autores de Open Library se cachean en **Mongo** (`authors`, read model con `_id` = `openLibraryId`), y ahí viven todas sus lecturas:
 
-- **Postgres** `authors`: entidad JPA con `openLibraryId` único (fuente de verdad).
-- **Mongo** `authors`: read model con `_id` = `openLibraryId` (para lecturas).
+- Búsqueda (`searchAuthors`) → Open Library → guardar en Mongo; búsquedas siguientes → leer de Mongo.
+- Ficha (`getAuthor`) → si el cache ya tiene bio, se sirve de Mongo; si falta bio, una única llamada a Open Library completa el documento (merge conservando subjects/workCount).
+- Resolución por nombre (`resolveOpenLibraryIdByName`, usada por `getAuthorById`) → exact-match contra Mongo; si no está, Open Library + cache.
 
-El flujo de cache es: primera búsqueda → Open Library API → guardar en Postgres + Mongo; búsquedas siguientes → leer de Mongo directamente.
+Postgres `authors` queda reservado a los **autores locales** creados por escritura: seeder, `POST /authors` (ADMIN) y auto-import de Google Books (`findOrCreateAuthor`). Estos autores no tienen `openLibraryId` ni datos biográficos hasta que alguien visita su ficha, momento en el que se enriquecen desde Open Library vía Mongo.
 
 #### SecurityConfig del book-service
 
@@ -4135,12 +4262,24 @@ Los GETs son públicos (sin auth). Solo `POST /books` y `POST /authors` requiere
    - Causa: `api-url: https://www.googleapis.com/books/v1/` (barra final) combinado con `.path("/volumes")` (barra inicial) puede producir `/books/v1//volumes`.
    - Solución: normalizar la base sin barra final en `application.yaml`.
 
+4. **Fichas de autor siempre incompletas: Jackson no parsea la bio polimórfica de Open Library**
+   - Síntoma: `GET /authors/{id}` devolvía fichas sin bio aunque el autor la tuviera en Open Library; en el log aparecía `Error fetching author details` de forma silenciosa.
+   - Causa: Open Library devuelve `"bio"` a veces como string y a veces como objeto `{"type": "/type/text", "value": "..."}`. El record declaraba `String bio`, Jackson lanzaba `MismatchedInputException`, el `catch` del client lo tragaba y devolvía `null`. Además, el cache Mongo creado por búsqueda nunca tiene bio, así que `getAuthor` servía el cache vacío para siempre.
+   - Solución doble: (1) `bio` tipado como `Object` + helper `bioText()` que normaliza ambas formas (ver 7.3); (2) `getAuthor()` ahora detecta cache sin bio, consulta Open Library y **mergea** conservando subjects/workCount.
+   - Lección: ante APIs externas, los campos pueden variar de tipo entre documentos; un `catch(Exception)` que devuelve `null` convierte un error de parseo en datos silenciosamente ausentes.
+
+5. **F5 en una página del frontend devolvía `401 unauthorized`: colisión de prefijos en el proxy de desarrollo**
+   - Síntoma: refrescar `http://localhost:4200/author/5` mostraba `{"error":"unauthorized","message":"Authentication required"}` en vez de la página.
+   - Causa: el matching del proxy es por prefijo. La clave `/auth` matcheaba también `/author/...`, así que el dev server enviaba la navegación del navegador al gateway (:8080), donde esa ruta HTTP no existe y su SecurityConfig respondía 401. Las rutas `/book/:isbn` sobrevivían al F5 porque `/book` no es prefijo de ninguna clave.
+   - Solución: claves del proxy como regex con frontera (`"^/auth(/|$)"`, ver sección 3.1). Verificado: navegación `Accept: text/html` sirve el `index.html` de la SPA; las llamadas API siguen llegando al gateway.
+   - Lección: cuando las rutas de SPA y los prefijos de API comparten servidor de desarrollo, ancla los prefijos del proxy o cualquier ruta futura con ese prefijo romperá el refresh.
+
 ### Decisiones de diseño de la Fase 3 (resumen)
 
 - **Author como entidad independiente**: `Author` vive en Postgres (`authors`) y Mongo (`authors`), con `openLibraryId` como clave de cache. Se crea bajo demanda (auto-import mínimo desde Google Books (`name` + `createdAt`), búsqueda en Open Library, o manual via `POST /authors`).
 - **Book con FK a Author**: `Book.authorId` (Long) es la FK lógica a `authors.id`. No se usa `@ManyToOne` porque la relación es ligera y se resuelve por código.
 - **Dual APIs externas**: Google Books para libros (búsqueda + auto-import por ISBN), Open Library para autores (búsqueda + datos biográficos + obras). Cada una cubre un dominio distinto.
-- **Cache de autores en Open Library**: la primera búsqueda cachea en Postgres+Mongo; las siguientes leen de Mongo. Rate limit ~3 req/s identificado con `User-Agent`.
+- **Cache de autores en Open Library en Mongo**: la búsqueda y la ficha cachean/leen siempre en Mongo (CQRS puro); Postgres queda para autores locales creados por escritura. Los autores sin `openLibraryId` se enriquecen bajo demanda resolviendo su id por nombre. Rate limit ~3 req/s identificado con `User-Agent`.
 - **Búsqueda derivada en Mongo**: una única consulta derivada sobre título/autor es suficiente para esta fase; si hiciera falta ranking o tolerancia a errores, se migraría a un índice `text` de Mongo.
 - **Réplica del esqueleto**: el coste de crear un microservicio nuevo bajó respecto a la Fase 2: copiar la seguridad parse-only y el patrón de compose ya está estandarizado.
 
@@ -4149,6 +4288,16 @@ Los GETs son públicos (sin auth). Solo `POST /books` y `POST /authors` requiere
 ## Bloque 8 — review-service (reseñas + primer evento cruzado)
 
 La Fase 4 introduce dos novedades respecto a las anteriores: (1) un **evento cruzado** entre servicios (`book-service` publica → `review-service` consume) y (2) el primer modelo de lectura con **datos desnormalizados por eventos** en vez de dual-write directo.
+
+**Ficha del servicio**
+
+| | |
+|---|---|
+| Puerto | `8084` |
+| Persistencia | PostgreSQL (`reviews`, comandos) + MongoDB (lecturas: `reviews`, `book_refs` — catálogo local desnormalizado) |
+| Responsabilidad | Reseñas con rating 1-5 y comentario; rating medio + nº de reseñas agregados por libro |
+| Endpoints clave | `GET /reviews/books/{isbn}`, `GET /reviews/books/{isbn}/summary`, `GET /reviews/me`, `GET /reviews/users/{userId}`, `POST/PUT /reviews/{isbn}` |
+| Mensajería | Consume `BookCreatedEvent` para mantener su catálogo local (`book_refs`) sin llamar a book-service |
 
 ### 8.1 — Esqueleto del review-service
 
@@ -4526,6 +4675,16 @@ public record ReviewSummaryResponse(String bookIsbn, long ratingCount, double av
 ## Bloque 9 — shelf-service (estantería personal del usuario)
 
 La Fase 4 continúa con el patrón de eventos cruzados: `shelf-service` consume `BookCreatedEvent` de la misma forma que review-service, pero su dominio es distinto — una **estantería personal** donde cada usuario clasifica libros en tres estados: _wants to read_, _reading_ y _read_. Es el primer servicio que usa `X-User-Id` como identificador principal (en vez de `X-User-Email`).
+
+**Ficha del servicio**
+
+| | |
+|---|---|
+| Puerto | `8085` |
+| Persistencia | PostgreSQL (`shelves`, comandos) + MongoDB (lecturas: `shelves`, `book_refs`) |
+| Responsabilidad | Estantería personal por usuario: alta/cambio/eliminación de libros con estado (`WANTS_TO_READ`, `READING`, `READ`) |
+| Endpoints clave | `GET /shelves`, `POST /shelves`, `PUT/DELETE /shelves/{isbn}`, `GET /shelves/{isbn}`, `GET /shelves/users/{userId}` |
+| Mensajería | Consume `BookCreatedEvent` (mismo patrón que review-service) |
 
 ### 9.1 — Esqueleto del shelf-service
 
@@ -5061,7 +5220,7 @@ Resumen de las decisiones arquitectónicas clave del proyecto:
 
 - **CQRS dual-write**: PostgreSQL para comandos (escrituras), MongoDB para lecturas. Sincronización inicial directa, migrada a eventos RabbitMQ en fases posteriores.
 - **Author como entidad independiente**: `Author` en Postgres + Mongo, con `openLibraryId` como clave de cache. Se crea bajo demanda desde Google Books, Open Library o manualmente.
-- **Dual APIs externas**: Google Books para libros (búsqueda + auto-import por ISBN), Open Library para autores (búsqueda + datos biográficos + obras). Cache de autores en Postgres+Mongo.
+- **Dual APIs externas**: Google Books para libros (búsqueda + auto-import por ISBN), Open Library para autores (búsqueda + datos biográficos + obras). Cache de autores OL en Mongo; Postgres solo para autores locales.
 - **`ddl-auto: update` solo en desarrollo**; para producción se usarían migraciones (Flyway/Liquibase).
 
 #### Índices `text` de Mongo (futuro)

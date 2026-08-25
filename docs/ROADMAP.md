@@ -722,7 +722,7 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 
 **Objetivo**: integrar el frontend Angular con las APIs de catálogo, reseñas, estanterías y autores a través del gateway: páginas de catálogo con búsqueda, detalle de libro con reseñas y estantería, mi estantería con filtros y formulario de reseñas.
 
-**Progreso**: Fase 8 completada — servicios+modelos (8.1), catálogo (8.2), detalle de libro (8.3), mi estantería + nav compartido (8.4), formulario de reseña (8.5). Pendiente 8.6 (página de autor) como extensión.
+**Progreso**: Fase 8 completada — servicios+modelos (8.1), catálogo (8.2), detalle de libro (8.3), mi estantería + nav compartido (8.4), formulario de reseña (8.5), página de autor (8.6).
 
 ### Fase 8.1 — Models + Services ✅ Completada
 
@@ -751,10 +751,22 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - En el detalle de libro: "Write a review" / "Edit your review" con selector de 1–5 estrellas clicables + comentario opcional.
 - Precarga la reseña propia vía `GET /reviews/me`; POST vs PUT según exista; refresca summary y lista al guardar.
 
+### Fase 8.6 — Página de autor ✅ Completada
+
+**Backend:**
+- `GET /authors/id/{authorId}`: resolución por PK interna (la que exponen los libros como `authorId`). Lógica en 3 pasos: (1) Postgres solo para lookup PK → olId; (2) si el autor no tiene olId, `resolveOpenLibraryIdByName()` exact-match contra Mongo, o busca en Open Library + cachea en Mongo; (3) ficha completa desde `getAuthor()` (Mongo-first).
+- `AuthorService.getAuthor()` rediseñado: Mongo-first con merge (conserva subjects/workCount del cache cuando enriquece bio).
+- `AuthorDetailResponse.bio`: `Object` + `bioText()` para manejar la bio polimórfica de Open Library (string vs objeto `{type, value}`).
+
+**Frontend:**
+- `features/author-detail/`: ruta pública `/author/:authorId`, lazy loaded. Foto/iniciales + nombre + fechas + subjects + bio + grid de obras desde Open Library.
+- Enlace en `book-detail`: nombre del autor clickable → `/author/{authorId}`.
+- `proxy.conf.json`: claves convertidas a regex con frontera (`^/auth(/|$)`) para evitar colisión `/author` vs `/auth` al refrescar.
+
 #### Fixes durante la fase
 
-- **Backend**: `toResponse` null-safe (crash con resultados efímeros de Google Books), retry de 3 intentos ante 503 transitorios de Google, filtro/dedupe por ISBN en `searchExternal`, normalización de `api-url`. Documentado en GUIDE 7.3–7.4.
-- **Frontend**: `proxy.conf.json` ampliado con `/books,/authors,/reviews,/shelves,/profiles,/follows` (el dev server solo enrutaba auth/users); entrada errónea `/catalog` eliminada. UI íntegramente en inglés (i18n posterior).
+- **Backend**: `toResponse` null-safe (crash con resultados efímeros de Google Books), retry de 3 intentos ante 503 transitorios de Google, filtro/dedupe por ISBN en `searchExternal`, normalización de `api-url`, parseo de la bio polimórica de Open Library (`Object` + `bioText()`), `getAuthor` Mongo-first con merge. Documentado en GUIDE 7.3–7.4.
+- **Frontend**: `proxy.conf.json` ampliado con claves regex con frontera (`^/auth(/|$)` etc.) para evitar colisión entre rutas de SPA y prefijos de API; entrada errónea `/catalog` eliminada. UI íntegramente en inglés (i18n posterior).
 
 ### Cierre de la Fase 8
 
@@ -763,5 +775,6 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - [x] Fase 8.3 — Detalle de libro con reseñas y estantería.
 - [x] Fase 8.4 — Mi estantería con filtro por estado + nav compartido.
 - [x] Fase 8.5 — Formulario crear/editar reseña.
+- [x] Fase 8.6 — Página de autor con obras.
 - [x] Verificación: build de producción OK; flujos E2E probados contra el stack Docker.
 - [x] Actualizar este documento al cerrar la fase.
