@@ -1,0 +1,100 @@
+<main>
+  <a class="back" routerLink="/catalog">← Back to catalog</a>
+
+  @if (loading()) {
+  <p>Loading book…</p>
+  } @else if (error()) {
+  <p class="error">{{ error() }}</p>
+  } @else if (book(); as b) {
+  <section class="detail">
+    <div class="cover">
+      @if (b.coverUrl) {
+      <img [src]="b.coverUrl" [alt]="b.title" />
+      } @else {
+      <span class="cover-placeholder">{{ b.title }}</span>
+      }
+    </div>
+
+    <div class="info">
+      <h1>{{ b.title }}</h1>
+      <p class="author">{{ b.authorName }}</p>
+      <p class="meta">
+        @if (b.publishedYear) {
+        <span>{{ b.publishedYear }}</span>
+        }
+        @if (b.category) {
+        <span class="category">{{ b.category }}</span>
+        }
+        <span>ISBN {{ b.isbn }}</span>
+      </p>
+
+      @if (summary(); as s) {
+      <p class="rating" [title]="s.averageRating + ' / 5'">
+        <span class="stars">{{ stars(s.averageRating) }}</span>
+        {{ s.averageRating | number: '1.1-1' }} · {{ s.ratingCount }}
+        {{ s.ratingCount === 1 ? 'review' : 'reviews' }}
+      </p>
+      }
+
+      @if (b.description) {
+      <p class="description">{{ b.description }}</p>
+      }
+
+      <div class="shelf-box">
+        @if (!isAuthenticated()) {
+        <p class="hint">
+          <a routerLink="/login">Log in</a> to add this book to your shelf and write reviews.
+        </p>
+        } @else {
+        <h2>My shelf</h2>
+        @if (myShelfEntry(); as entry) {
+        <p class="current">Current status: <strong>{{ label(entry.status) }}</strong></p>
+        }
+        <div class="status-buttons">
+          @for (status of statuses; track status) {
+          <button
+            type="button"
+            [class.active]="myShelfEntry()?.status === status"
+            [disabled]="savingShelf()"
+            (click)="myShelfEntry() ? changeStatus(status) : addToShelf(status)"
+          >{{ label(status) }}</button>
+          }
+          @if (myShelfEntry()) {
+          <button
+            type="button"
+            class="ghost"
+            [disabled]="savingShelf()"
+            (click)="removeFromShelf()"
+          >Remove</button>
+          }
+        </div>
+        @if (shelfError()) {
+        <p class="error">{{ shelfError() }}</p>
+        }
+        }
+      </div>
+    </div>
+  </section>
+
+  @if (isAuthenticated()) {
+  <section class="reviews">
+    <h2>Reviews</h2>
+    @if (reviews().length === 0) {
+    <p class="empty">No reviews yet.</p>
+    } @else {
+    @for (review of reviews(); track review.id) {
+    <article class="review">
+      <header>
+        <span class="stars">{{ stars(review.rating) }}</span>
+        <span class="date">{{ review.updatedAt | date: 'mediumDate' }}</span>
+      </header>
+      @if (review.comment) {
+      <p>{{ review.comment }}</p>
+      }
+    </article>
+    }
+    }
+  </section>
+  }
+  }
+</main>
