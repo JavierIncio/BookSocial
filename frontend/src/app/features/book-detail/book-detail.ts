@@ -1,5 +1,6 @@
 import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
+import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
 import { BookService } from '@core/services/book.service';
@@ -12,7 +13,7 @@ import { Nav } from '@shared/components/nav/nav';
 
 @Component({
   selector: 'app-book-detail',
-  imports: [RouterLink, DatePipe, DecimalPipe, Nav],
+  imports: [RouterLink, DatePipe, DecimalPipe, ReactiveFormsModule, Nav],
   templateUrl: './book-detail.html',
   styleUrl: './book-detail.scss',
 })
@@ -22,6 +23,7 @@ export class BookDetail implements OnInit {
   private readonly reviewService = inject(ReviewService);
   private readonly shelfService = inject(ShelfService);
   private readonly auth = inject(AuthService);
+  private readonly fb = inject(NonNullableFormBuilder);
 
   readonly isAuthenticated = this.auth.isAuthenticated;
 
@@ -42,6 +44,12 @@ export class BookDetail implements OnInit {
   savingShelf = signal<boolean>(false);
   shelfError = signal<string>('');
 
+  selectedRating = signal<number>(0);
+  submittingReview = signal<boolean>(false);
+  reviewError = signal<string>('');
+  myReview = signal<ReviewResponse | null>(null);
+  reviewForm = this.fb.group({ comment: [''] });
+
   isbn = '';
 
   ngOnInit(): void {
@@ -55,6 +63,7 @@ export class BookDetail implements OnInit {
     if (this.isAuthenticated()) {
       this.loadReviews();
       this.loadMyShelfEntry();
+      this.loadMyReview();
     }
   }
 
@@ -79,6 +88,52 @@ export class BookDetail implements OnInit {
     this.reviewService.byBook(this.isbn).subscribe({
       next: (reviews) => this.reviews.set(reviews),
       error: () => this.reviews.set([]),
+    });
+  }
+
+  private loadMyReview(): void {
+    this.reviewService.mine().subscribe({
+      next: (mine) => {
+        const existing = mine.find((r) => r.bookIsbn === this.isbn) ?? null;
+        if (existing) {
+          this.myReview.set(existing);
+          this.selectedRating.set(existing.rating);
+          this.reviewForm.patchValue({ comment: existing.comment ?? '' });
+        }
+      },
+      error: () => {},
+    });
+  }
+
+  setRating(value: number): void {
+    this.selectedRating.set(value);
+  }
+
+  submitReview(): void {
+    const rating = this.selectedRating();
+    if (rating < 1 || rating > 5) {
+      this.reviewError.set('Select a rating between 1 and 5 stars.');
+      return;
+    }
+    this.submittingReview.set(true);
+    this.reviewError.set('');
+    const body = {
+      rating,
+      comment: this.reviewForm.getRawValue().comment.trim() || null,
+    };
+    const request = this.myReview()
+      ? this.reviewService.update(this.isbn, body)
+      : this.reviewService.create(this.isbn, body);
+    request.subscribe({
+      next: (saved) => {
+        this.myReview.set(saved);
+        this.submittingReview.set(false);
+        this.loadReviews();
+      },
+      error: () => {
+        this.submittingReview.set(false);
+        this.reviewError.set('Could not save your review. Try again.');
+      },
     });
   }
 

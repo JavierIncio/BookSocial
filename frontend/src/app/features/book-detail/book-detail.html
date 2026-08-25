@@ -81,6 +81,36 @@
   @if (isAuthenticated()) {
   <section class="reviews">
     <h2>Reviews</h2>
+
+    <div class="your-review">
+      <h3>{{ myReview() ? 'Edit your review' : 'Write a review' }}</h3>
+      <form [formGroup]="reviewForm" (ngSubmit)="submitReview()">
+        <div class="star-input" role="radiogroup" aria-label="Rating">
+          @for (n of [1, 2, 3, 4, 5]; track n) {
+          <button
+            type="button"
+            class="star"
+            [class.on]="selectedRating() >= n"
+            (click)="setRating(n)"
+          >★</button>
+          }
+        </div>
+        <textarea
+          formControlName="comment"
+          rows="3"
+          placeholder="Share your thoughts (optional)"
+        ></textarea>
+        <button
+          type="submit"
+          class="submit"
+          [disabled]="submittingReview()"
+        >{{ submittingReview() ? 'Saving…' : myReview() ? 'Update review' : 'Submit review' }}</button>
+        @if (reviewError()) {
+        <p class="error">{{ reviewError() }}</p>
+        }
+      </form>
+    </div>
+
     @if (reviews().length === 0) {
     <p class="empty">No reviews yet.</p>
     } @else {
