@@ -19,7 +19,11 @@
 
     <div class="info">
       <h1>{{ b.title }}</h1>
+      @if (b.authorId) {
+      <p class="author"><a [routerLink]="['/author', b.authorId]">{{ b.authorName }}</a></p>
+      } @else {
       <p class="author">{{ b.authorName }}</p>
+      }
       <p class="meta">
         @if (b.publishedYear) {
         <span>{{ b.publishedYear }}</span>

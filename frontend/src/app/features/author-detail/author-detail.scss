@@ -1,0 +1,135 @@
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 1.25rem;
+  color: #1976d2;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.error {
+  color: #c62828;
+}
+
+.profile {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+
+  .photo {
+    flex-shrink: 0;
+
+    img {
+      width: 160px;
+      height: 220px;
+      object-fit: cover;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .initials {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 160px;
+      height: 220px;
+      border-radius: 8px;
+      background: #e3ecf7;
+      color: #1976d2;
+      font-size: 3rem;
+      font-weight: 700;
+    }
+  }
+
+  .info {
+    h1 {
+      margin: 0 0 0.35rem;
+    }
+
+    .dates,
+    .meta {
+      margin: 0 0 0.5rem;
+      color: #666;
+      font-size: 0.95rem;
+    }
+
+    .subjects {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin: 0.75rem 0;
+
+      .chip {
+        padding: 0.2rem 0.65rem;
+        border-radius: 999px;
+        background: #eef2f7;
+        font-size: 0.8rem;
+        color: #455a64;
+      }
+    }
+
+    .bio {
+      margin: 0.75rem 0 0;
+      line-height: 1.6;
+      white-space: pre-line;
+    }
+  }
+}
+
+.works {
+  margin-top: 2rem;
+
+  h2 {
+    margin: 0 0 0.75rem;
+    font-size: 1.15rem;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 1rem;
+  }
+
+  .card {
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+
+    .cover {
+      height: 180px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f4f6f8;
+
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .cover-placeholder {
+        padding: 0.5rem;
+        text-align: center;
+        font-size: 0.85rem;
+        color: #90a4ae;
+      }
+    }
+
+    .title {
+      margin: 0;
+      padding: 0.6rem;
+      font-size: 0.88rem;
+      line-height: 1.3;
+    }
+  }
+}

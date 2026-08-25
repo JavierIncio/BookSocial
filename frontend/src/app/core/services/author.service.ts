@@ -12,6 +12,10 @@ export class AuthorService {
     return this.http.get<AuthorResponse[]>(`/authors/search`, { params });
   }
 
+  byInternalId(id: number): Observable<AuthorResponse> {
+    return this.http.get<AuthorResponse>(`/authors/id/${id}`);
+  }
+
   detail(openLibraryId: string): Observable<AuthorResponse> {
     return this.http.get<AuthorResponse>(`/authors/${openLibraryId}`);
   }
