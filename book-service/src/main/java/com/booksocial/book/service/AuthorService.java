@@ -46,26 +46,63 @@ public class AuthorService {
     }
 
     public AuthorResponse getAuthor(String openLibraryId) {
-        AuthorReadModel existingAuthor = readModelRepository.findById(openLibraryId).orElse(null);
-        if (existingAuthor != null) return toResponse(existingAuthor);
+        AuthorReadModel cached = readModelRepository.findById(openLibraryId).orElse(null);
+        if (cached != null && cached.getBio() != null && !cached.getBio().isBlank()) {
+            return toResponse(cached);
+        }
 
         AuthorDetailResponse olAuthor = openLibraryClient.getAuthor(openLibraryId);
-        if (olAuthor == null) return null;
+        if (olAuthor == null) {
+            return cached != null ? toResponse(cached) : null;
+        }
 
-        String photoUrl = mapper.coverUrl(openLibraryId);
+        String photoUrl = cached != null && cached.getPhotoUrl() != null
+                ? cached.getPhotoUrl()
+                : mapper.coverUrl(openLibraryId);
+        AuthorReadModel merged = new AuthorReadModel(openLibraryId, olAuthor.name(), olAuthor.bioText(),
+                olAuthor.birthDate(), olAuthor.deathDate(), photoUrl,
+                cached != null ? cached.getTopSubjects() : null,
+                cached != null ? cached.getWorkCount() : null);
+        readModelRepository.save(merged);
+        return toResponse(merged);
+    }
 
-        authorRepository.save(
-                new Author(openLibraryId, olAuthor.name(), olAuthor.bio(),
-                        olAuthor.birthDate(), olAuthor.deathDate(),
-                        photoUrl, null, null)
-        );
+    public AuthorResponse getAuthorById(Long authorId) {
+        Author author = authorRepository.findById(authorId).orElse(null);
+        if (author == null) return null;
 
-        AuthorReadModel saved = readModelRepository.save(
-                new AuthorReadModel(openLibraryId, olAuthor.name(), olAuthor.bio(),
-                        olAuthor.birthDate(), olAuthor.deathDate(),
-                        photoUrl, null, null)
-        );
-        return toResponse(saved);
+        String openLibraryId = author.getOpenLibraryId();
+        if (openLibraryId == null || openLibraryId.isBlank()) {
+            openLibraryId = resolveOpenLibraryIdByName(author.getName());
+        }
+        if (openLibraryId == null) {
+            return new AuthorResponse(null, author.getName(), author.getBio(),
+                    author.getBirthDate(), author.getDeathDate(), author.getPhotoUrl(),
+                    null, author.getWorkCount());
+        }
+        return getAuthor(openLibraryId);
+    }
+
+    private String resolveOpenLibraryIdByName(String name) {
+        List<AuthorReadModel> cached = readModelRepository.findByNameContainingIgnoreCase(name);
+        String fromCache = cached.stream()
+                .filter(rm -> rm.getName() != null && rm.getName().equalsIgnoreCase(name))
+                .map(AuthorReadModel::getOpenLibraryId)
+                .findFirst()
+                .orElse(null);
+        if (fromCache != null) return fromCache;
+
+        List<AuthorReadModel> fetched = openLibraryClient.searchAuthors(name)
+                .docs()
+                .stream()
+                .map(mapper::toReadModel)
+                .toList();
+        readModelRepository.saveAll(fetched);
+        return fetched.stream()
+                .filter(rm -> rm.getName() != null && rm.getName().equalsIgnoreCase(name))
+                .map(AuthorReadModel::getOpenLibraryId)
+                .findFirst()
+                .orElse(null);
     }
 
     public WorksResponse getAuthorWorks(String openLibraryId) {

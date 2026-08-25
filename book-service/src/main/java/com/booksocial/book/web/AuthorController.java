@@ -25,6 +25,11 @@ public class AuthorController {
         return authorService.searchAuthors(q);
     }
 
+    @GetMapping("/id/{authorId}")
+    public AuthorResponse getAuthorById(@PathVariable Long authorId) {
+        return authorService.getAuthorById(authorId);
+    }
+
     @GetMapping("/{openLibraryId}")
     public AuthorResponse getAuthor(@PathVariable String openLibraryId) {
         return authorService.getAuthor(openLibraryId);
