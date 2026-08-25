@@ -715,3 +715,53 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - [x] Gateway + SecurityConfig actualizados para `/authors/**`.
 - [x] Verificación: compilación y tests OK en los 4 servicios.
 - [x] Actualizar este documento al cerrar la fase.
+
+---
+
+## Fase 8 — Frontend Angular: catálogo, reseñas y estanterías ✅ Completada
+
+**Objetivo**: integrar el frontend Angular con las APIs de catálogo, reseñas, estanterías y autores a través del gateway: páginas de catálogo con búsqueda, detalle de libro con reseñas y estantería, mi estantería con filtros y formulario de reseñas.
+
+**Progreso**: Fase 8 completada — servicios+modelos (8.1), catálogo (8.2), detalle de libro (8.3), mi estantería + nav compartido (8.4), formulario de reseña (8.5). Pendiente 8.6 (página de autor) como extensión.
+
+### Fase 8.1 — Models + Services ✅ Completada
+
+- `core/models/`: `book.models.ts` (`BookResponse`), `author.models.ts` (`AuthorResponse`, `WorkEntry`, `WorksResponse`), `review.models.ts` (`ReviewResponse`, `ReviewSummaryResponse`), `shelf.models.ts` (`ShelfResponse`, union type `ShelfStatus`) — alineados 1:1 con los DTOs del backend.
+- `core/services/`: `BookService` (search/searchFull/getByIsbn), `AuthorService` (search/detail/works), `ReviewService` (byBook/summary/mine/create/update), `ShelfService` (mine/byUser/create/updateStatus/remove). Convención: `inject(HttpClient)` + `Observable<T>` tipado.
+
+### Fase 8.2 — Página de catálogo ✅ Completada
+
+- `features/catalog/`: ruta pública `/catalog`, lazy loaded.
+- Carga inicial con `GET /books/search?q=` vacío (catálogo local completo); búsqueda con `GET /books/search/full` (BD + Google Books).
+- Reactive Forms para el buscador; grid responsive de tarjetas con fallback de portada; estados loading/error/empty diferenciados; tarjetas enlazan a `/book/:isbn`.
+
+### Fase 8.3 — Detalle de libro ✅ Completada
+
+- `features/book-detail/`: ruta pública `/book/:isbn`.
+- Info del libro (auto-import desde Google si no está en BD), rating medio + lista de reseñas (solo autenticado), caja "My shelf" con alta/cambio de estado/borrado.
+- Página pública: reseñas y estantería se cargan condicionalmente según `isAuthenticated()`.
+
+### Fase 8.4 — Mi estantería + nav compartido ✅ Completada
+
+- `features/my-shelf/`: ruta `/shelf` protegida con `authGuard`; filtro por estado vía chips (All/Want to read/Reading/Read) con `computed()` reactivo; badges de estado coloreados; enlace a detalle.
+- `shared/components/nav/`: componente standalone reutilizado en todas las páginas de la app (brand, Catalog, My shelf + Logout autenticado / Log in invitado).
+
+### Fase 8.5 — Formulario de reseña ✅ Completada
+
+- En el detalle de libro: "Write a review" / "Edit your review" con selector de 1–5 estrellas clicables + comentario opcional.
+- Precarga la reseña propia vía `GET /reviews/me`; POST vs PUT según exista; refresca summary y lista al guardar.
+
+#### Fixes durante la fase
+
+- **Backend**: `toResponse` null-safe (crash con resultados efímeros de Google Books), retry de 3 intentos ante 503 transitorios de Google, filtro/dedupe por ISBN en `searchExternal`, normalización de `api-url`. Documentado en GUIDE 7.3–7.4.
+- **Frontend**: `proxy.conf.json` ampliado con `/books,/authors,/reviews,/shelves,/profiles,/follows` (el dev server solo enrutaba auth/users); entrada errónea `/catalog` eliminada. UI íntegramente en inglés (i18n posterior).
+
+### Cierre de la Fase 8
+
+- [x] Fase 8.1 — Models + Services (books/authors/reviews/shelves).
+- [x] Fase 8.2 — Página de catálogo con búsqueda.
+- [x] Fase 8.3 — Detalle de libro con reseñas y estantería.
+- [x] Fase 8.4 — Mi estantería con filtro por estado + nav compartido.
+- [x] Fase 8.5 — Formulario crear/editar reseña.
+- [x] Verificación: build de producción OK; flujos E2E probados contra el stack Docker.
+- [x] Actualizar este documento al cerrar la fase.

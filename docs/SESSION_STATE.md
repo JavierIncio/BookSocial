@@ -4,13 +4,13 @@ Documento de handoff para retomar el trabajo en cualquier momento. Se actualiza 
 
 ## Objective
 
-Continuar el monorepo **BookSocial**. Las **Fases 1-7 están completadas** (identity + gateway + frontend auth + user-service + book-service + review-service + shelf-service + backend integración Google Books + APIs públicas + Author entity + Open Library). CI verde. La **Fase 8 será integrar catálogo, reseñas y estanterías en el frontend Angular**.
+Continuar el monorepo **BookSocial**. Las **Fases 1-8 están completadas** (identity + gateway + frontend auth + user-service + book-service + review-service + shelf-service + backend integración Google Books + APIs públicas + Author entity + Open Library + frontend catálogo/reseñas/estanterías). CI verde. El siguiente paso es la **Fase 8.6 (página de autor)** o planificar la **Fase 9**.
 
 ## Important Details
 
 - El usuario escribe todo el código (VS Code); el asistente guía, revisa y verifica.
 - Repositorio: monorepo, branch `main`, remoto `https://github.com/JavierIncio/BookSocial.git`.
-- Commits: Fase 6.0 = `249de08`, Fase 6.1-6.2 = `fb57d02`.
+- Commits: Fase 6.0 = `249de08`, Fase 6.1-6.2 = `fb57d02`, Fase 8 = `5af355e`..`6f171c6` (8.1 servicios, 9581f9e/f995124 fixes+catálogo, 143a1b0 detalle, ce6d872 retry Google, 4b496b1 estantería+nav, 6f171c6 formulario reseña).
 - Runtime: Java 21, Spring Boot 4.1.0, Spring Cloud WebMVC 2025.1.2, Angular 21.2.19, Node 24, Maven wrapper, jjwt 0.12.6.
 - Stack Docker Compose: postgres:16-alpine, mongodb:8.0, rabbitmq:4-management, identity (:8081), gateway (:8080), user-service (:8082), book-service (:8083), review-service (:8084), shelf-service (:8085) — 9 contenedores.
 - Secretos en `.env` por módulo; todos comparten `APP_JWT_SECRET`.
@@ -88,10 +88,11 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-7 están completadas** (iden
 - **Fix frontend zoneless**: home.ts, login.ts, register.ts migrados de propiedades normales a `signal()` para compatibilidad con Angular 21 zoneless. Build OK.
 - **Fase 6 cerrada (backend integración + APIs públicas)**: Google Books API en book-service (search full + auto-import ISBN), endpoints de usuario en review-service, endpoints públicos en shelf-service. Gateway SecurityConfig actualizado.
 - **Fase 7 cerrada (Author entity + Open Library)**: Author entity (Postgres + Mongo) con cache, Open Library API integration (búsqueda autores + obras), migración `author` → `authorId`/`authorName` en book-service + downstream services (review + shelf). Gateway `/authors/**` route.
+- **Fase 8 cerrada (frontend catálogo/reseñas/estanterías)**: models+services alineados con DTOs backend (8.1), página catálogo con búsqueda BD+Google (8.2), detalle de libro con reseñas y estantería (8.3), mi estantería con filtros + nav compartido standalone (8.4), formulario crear/editar reseña con estrellas (8.5). Fixes durante la fase: proxy del dev server completo, retry Google Books a 3 intentos + `toResponse` null-safe (documentado en GUIDE 7.3-7.4 y Apéndice C de operaciones).
 
 ### Active
 
-- **Fase 8: Frontend Angular — integrar catálogo, reseñas y estanterías.**
+- Ninguno. Pendiente opcional: **8.6 — página de autor** (bio + obras + enlace a detalle) o planificar **Fase 9**. El usuario planea añadir i18n para traducciones (UI actual en inglés).
 
 ### Blocked
 
@@ -99,16 +100,13 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-7 están completadas** (iden
 
 ## Next Move
 
-Empezar la **Fase 8 — Frontend Angular**. Planificación sugerida:
+Opciones tras cerrar la Fase 8:
 
-| Paso | Descripción |
-|------|-------------|
-| 8.1 | Servicios Angular: `BookService`, `AuthorService`, `ReviewService`, `ShelfService` con llamadas REST al gateway |
-| 8.2 | Página de **catálogo** — grid de libros, búsqueda, enlace a detalle |
-| 8.3 | Página de **detalle de libro** — info + reseñas + botón "añadir a estantería" |
-| 8.4 | Página de **mi estantería** — filtro por status (WANTS_TO_READ / READING / READ) |
-| 8.5 | **Crear/editar reseña** — formulario con rating + comentario |
-| 8.6 | Página de **autor** — bio + obras + enlace a detalle de libro |
+| Opción | Descripción |
+|--------|-------------|
+| 8.6 | Página de **autor** — bio + obras (Open Library) + enlace a detalle de libro; requiere DTO `AuthorResponse` en frontend ya disponible |
+| 9.x | Planificar **Fase 9** (feed social, notificaciones, despliegue cloud...) |
+| i18n | Añadir internacionalización Angular (`@angular/localize` o ngx-translate) sobre la UI en inglés |
 
 ## Relevant Files
 
@@ -121,14 +119,19 @@ Empezar la **Fase 8 — Frontend Angular**. Planificación sugerida:
 - `gateway/` — Fase 1 + 6.1 + 6.3 + 7.1: JWT filter, 5 rutas (con /authors/** → book-service), headers strip-then-assert, SecurityConfig con GETs públicos para books, authors y shelves.
 - `infrastructure/docker-compose.yml` — 9 servicios.
 
-### Frontend (pendiente Fase 8)
+### Frontend (Fase 8 completada)
 - `frontend/` — Angular 21.2.19, login/registro/OAuth2/guardas/interceptor JWT + home con profile.
 - `features/home/` — signals para user/loading/error, llama a `GET /users/me`.
-- `features/auth/login/` — signals para errorMessage/loading, Reactive Forms.
-- `features/auth/register/` — signals para errorMessage/loading, Reactive Forms.
-- Convenciones: **signals** + `inject()` (standalone, sin constructor). Obligatorio en zoneless.
+- `features/auth/login/`, `features/auth/register/` — signals + Reactive Forms.
+- `features/catalog/` — 8.2: catálogo público con búsqueda (search local + searchFull Google), grid de tarjetas.
+- `features/book-detail/` — 8.3+8.5: detalle `/book/:isbn` público; reseñas y estantería solo autenticado; formulario de reseña con estrellas (create/update).
+- `features/my-shelf/` — 8.4: estantería propia `/shelf` con authGuard y filtros por estado (`computed()`).
+- `shared/components/nav/` — nav standalone compartido en todas las páginas (brand, Catalog, My shelf/Logout o Log in según sesión).
+- `core/models/` + `core/services/` — book/author/review/shelf alineados 1:1 con DTOs backend.
+- `proxy.conf.json` — enruta auth, users, profiles, follows, books, authors, reviews, shelves → gateway :8080.
+- Convenciones: **signals** + `inject()` (standalone, sin constructor). Obligatorio en zoneless. UI en inglés (i18n planeado).
 
 ### Docs
-- `docs/GUIDE.md` — Bloques 0-9, Apéndices A-B.
-- `docs/ROADMAP.md` — Fases 1-7 documentadas; Fase 8 pendiente.
+- `docs/GUIDE.md` — Bloques 0-9, Apéndices A-C (C: operación — despliegue, logs, depuración).
+- `docs/ROADMAP.md` — Fases 1-8 documentadas; Fase 8.6 opcional pendiente.
 - `docs/SESSION_STATE.md` — Este archivo.
