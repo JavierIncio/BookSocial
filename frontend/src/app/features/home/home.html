@@ -1,13 +1,4 @@
-<header class="topbar">
-  <h1>BookSocial</h1>
-  <nav>
-    <a routerLink="/catalog">Catalog</a>
-    <button
-      type="button"
-      (click)="logout()"
-    >Logout</button>
-  </nav>
-</header>
+<app-nav />
 
 <main>
   @if (loading()) {

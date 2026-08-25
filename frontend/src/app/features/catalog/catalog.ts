@@ -3,10 +3,11 @@ import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { BookService } from '@core/services/book.service';
 import { BookResponse } from '@core/models/book.models';
+import { Nav } from '@shared/components/nav/nav';
 
 @Component({
   selector: 'app-catalog',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, Nav],
   templateUrl: './catalog.html',
   styleUrl: './catalog.scss',
 })

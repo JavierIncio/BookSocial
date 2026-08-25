@@ -1,0 +1,15 @@
+<header class="topbar">
+  <a class="brand" routerLink="/home">BookSocial</a>
+  <nav>
+    <a routerLink="/catalog">Catalog</a>
+    @if (isAuthenticated()) {
+    <a routerLink="/shelf">My shelf</a>
+    <button
+      type="button"
+      (click)="logout()"
+    >Logout</button>
+    } @else {
+    <a routerLink="/login">Log in</a>
+    }
+  </nav>
+</header>

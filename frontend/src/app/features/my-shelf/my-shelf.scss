@@ -1,0 +1,123 @@
+:host {
+  display: block;
+}
+
+main {
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+
+  h1 {
+    margin: 0;
+    font-size: 1.4rem;
+  }
+}
+
+.filters {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+
+  button {
+    padding: 0.4rem 0.85rem;
+    border: 1px solid #ccc;
+    border-radius: 999px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 0.85rem;
+
+    &:hover:not(.active) {
+      border-color: #1976d2;
+      color: #1976d2;
+    }
+
+    &.active {
+      background: #1976d2;
+      border-color: #1976d2;
+      color: #fff;
+      font-weight: 600;
+    }
+  }
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+
+  &:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  }
+
+  .book-info {
+    min-width: 0;
+
+    h2 {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    p {
+      margin: 0.15rem 0 0;
+      font-size: 0.85rem;
+      color: #555;
+    }
+  }
+
+  .status {
+    flex-shrink: 0;
+    padding: 0.25rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+
+    &.wants_to_read {
+      background: #fff3e0;
+      color: #e65100;
+    }
+
+    &.reading {
+      background: #e3f2fd;
+      color: #1565c0;
+    }
+
+    &.read {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+  }
+}
+
+.error {
+  color: #c62828;
+}
+
+.empty {
+  color: #666;
+
+  a {
+    color: #1976d2;
+  }
+}

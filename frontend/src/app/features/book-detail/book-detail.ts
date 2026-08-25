@@ -8,10 +8,11 @@ import { ShelfService } from '@core/services/shelf.service';
 import { BookResponse } from '@core/models/book.models';
 import { ReviewResponse, ReviewSummaryResponse } from '@core/models/review.models';
 import { ShelfResponse, ShelfStatus } from '@core/models/shelf.models';
+import { Nav } from '@shared/components/nav/nav';
 
 @Component({
   selector: 'app-book-detail',
-  imports: [RouterLink, DatePipe, DecimalPipe],
+  imports: [RouterLink, DatePipe, DecimalPipe, Nav],
   templateUrl: './book-detail.html',
   styleUrl: './book-detail.scss',
 })
