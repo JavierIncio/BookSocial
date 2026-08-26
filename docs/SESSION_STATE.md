@@ -4,14 +4,14 @@ Documento de handoff para retomar el trabajo en cualquier momento. Se actualiza 
 
 ## Objective
 
-Continuar el monorepo **BookSocial**. Las **Fases 1-8 están completadas (incluida 8.6)** (identity + gateway + frontend auth + user-service + book-service + review-service + shelf-service + backend integración Google Books + APIs públicas + Author entity + Open Library + frontend catálogo/reseñas/estanterías/página autor). CI verde. El siguiente paso es planificar la **Fase 9** o el **i18n**.
+Continuar el monorepo **BookSocial**. Las **Fases 1-8 están completadas (incluida 8.6)** + **i18n completado** (identity + gateway + frontend auth + user-service + book-service + review-service + shelf-service + backend integración Google Books + APIs públicas + Author entity + Open Library + frontend catálogo/reseñas/estanterías/página autor + internacionalización Angular con 3 idiomas). CI verde. El siguiente paso es planificar la **Fase 9**.
 
 ## Important Details
 
 - El usuario escribe todo el código (VS Code); el asistente guía, revisa y verifica.
 - Repositorio: monorepo, branch `main`, remoto `https://github.com/JavierIncio/BookSocial.git`.
 - Commits: Fase 6.0 = `249de08`, Fase 6.1-6.2 = `fb57d02`, Fase 8 = `5af355e`..`6f171c6` (8.1 servicios, 9581f9e/f995124 fixes+catálogo, 143a1b0 detalle, ce6d872 retry Google, 4b496b1 estantería+nav, 6f171c6 formulario reseña), 8.6 = `e04f4bb` (backend author PK+Mongo-first), `37dba17` (frontend author-detail+proxy regex).
-- Runtime: Java 21, Spring Boot 4.1.0, Spring Cloud WebMVC 2025.1.2, Angular 21.2.19, Node 24, Maven wrapper, jjwt 0.12.6.
+- Runtime: Java 21, Spring Boot 4.1.0, Spring Cloud WebMVC 2025.1.2, Angular 21.2.21, Node 24, Maven wrapper, jjwt 0.12.6.
 - Stack Docker Compose: postgres:16-alpine, mongodb:8.0, rabbitmq:4-management, identity (:8081), gateway (:8080), user-service (:8082), book-service (:8083), review-service (:8084), shelf-service (:8085) — 9 contenedores.
 - Secretos en `.env` por módulo; todos comparten `APP_JWT_SECRET`.
 - **Spring Boot 4.1**: Mongo prefix `spring.mongodb.*` (env `SPRING_MONGODB_URI`), `?authSource=admin`.
@@ -22,11 +22,12 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-8 están completadas (inclui
 - Eventos: exchange `booksocial.events`, keys `follow.followed`, `follow.unfollowed`, `book.created`. `BookCreatedEvent`携带 `(bookIsbn, title, authorName, authorId, occurredAt)`. Colas durables declaradas por cada consumidor.
 - CI: GitHub Actions, Postgres service (no RabbitMQ/Mongo). Context tests pasan porque AMQP/MongoDB son lazy.
 - Frontend (convención): signals + `inject()` (standalone, sin constructor).
-- **Angular 21 zoneless**: NO usa zone.js. Todos los componentes deben usar **signals** para estado reactivo (`signal()`, `.set()`, `.asReadonly()`). Las propiedades normales mutadas en `.subscribe()` NO disparan change detection. Templates usan `signal()` como funciones: `@if (loading())`, `{{ user()?.name }}`.
+- **Angular 21.2.21 zoneless**: NO usa zone.js. Todos los componentes deben usar **signals** para estado reactivo (`signal()`, `.set()`, `.asReadonly()`). Las propiedades normales mutadas en `.subscribe()` NO disparan change detection. Templates usan `signal()` como funciones: `@if (loading())`, `{{ user()?.name }}`. i18n: `i18n="@@key"` en templates, `$localize` en TypeScript.
 - **Google Books API**: `https://www.googleapis.com/books/v1/`, API key en `book-service/.env` (`GOOGLE_BOOKS_API_KEY`). Solo se guardan libros con ISBN válido.
 - **Open Library API** (sin API key): `https://openlibrary.org`, rate limit ~3 req/s con User-Agent. Endpoints: `/search/authors.json?q=`, `/authors/{id}.json`, `/authors/{id}/works.json`. Cache local en Postgres `authors` + Mongo `authors`.
 - **Author entity**: `Author` en Postgres (`authors`) + Mongo (`authors`), con `openLibraryId` como clave de cache. Se crea bajo demanda desde Google Books, Open Library o manualmente.
 - **`Book.authorId`** (Long FK → `authors.id`): campo `author` (String) eliminado, migrado a `authorId`+`authorName` en todos los servicios.
+- **i18n**: `@angular/localize` v21.2.21, 87 messages extraídos, traducciones en `src/locale/messages.{es,pt}.xlf`. Build produce `dist/frontend/browser/{en,es,pt}/`. Polyfill `@angular/localize/init` en `angular.json`. Strings en templates anotados con `i18n="@@key"`, strings en TypeScript con `$localize`. Categorías de libros (dato de BD) no traducidas intencionalmente.
 
 ## Resumen de APIs disponibles (vía gateway :8080)
 
@@ -89,10 +90,11 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-8 están completadas (inclui
 - **Fase 6 cerrada (backend integración + APIs públicas)**: Google Books API en book-service (search full + auto-import ISBN), endpoints de usuario en review-service, endpoints públicos en shelf-service. Gateway SecurityConfig actualizado.
 - **Fase 7 cerrada (Author entity + Open Library)**: Author entity (Postgres + Mongo) con cache, Open Library API integration (búsqueda autores + obras), migración `author` → `authorId`/`authorName` en book-service + downstream services (review + shelf). Gateway `/authors/**` route.
 - **Fase 8 cerrada (frontend catálogo/reseñas/estanterías)**: models+services alineados con DTOs backend (8.1), página catálogo con búsqueda BD+Google (8.2), detalle de libro con reseñas y estantería (8.3), mi estantería con filtros + nav compartido standalone (8.4), formulario crear/editar reseña con estrellas (8.5). Fixes durante la fase: proxy del dev server completo, retry Google Books a 3 intentos + `toResponse` null-safe (documentado en GUIDE 7.3-7.4 y Apéndice C de operaciones).
+- **i18n cerrado**: `@angular/localize` v21.2.21 configurado (polyfill + `angular.json` i18n section + `types` en tsconfig). 87 messages extraídos de 9 templates + 8 archivos TypeScript. Traducciones completas en español y portugués (`messages.es.xlf`, `messages.pt.xlf`). Build de producción genera 3 directorios locale (`en/`, `es/`, `pt/`). ~50 strings anotados en templates con `i18n="@@key"`, ~25 strings en TypeScript con `$localize` tagged template literals.
 
 ### Active
 
-- Ninguno. Pendiente: planificar **Fase 9** (feed social, notificaciones, despliegue cloud...) o **i18n** (traducciones Angular, UI actual en inglés).
+- Ninguno. Pendiente: planificar **Fase 9** (feed social, notificaciones, despliegue cloud...).
 
 ### Blocked
 
@@ -100,13 +102,12 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-8 están completadas (inclui
 
 ## Next Move
 
-Opciones tras cerrar la Fase 8 (incluida 8.6):
+Opciones tras cerrar la Fase 8 (incluida 8.6) + i18n:
 
 | Opción | Descripción |
 |--------|-------------|
 | 9.x | Planificar **Fase 9** (feed social, notificaciones, despliegue cloud...) |
-| i18n | Añadir internacionalización Angular (`@angular/localize` o ngx-translate) sobre la UI en inglés |
-| Otros | Feed de actividad, sistema de seguidores de lecturas, clube de lectura... (proyecto `club-service` ya esbozado en `frontend/`) |
+| Otros | Feed de actividad, sistema de seguidores de lecturas, club de lectura... (proyecto `club-service` ya esbozado en `frontend/`) |
 
 ## Relevant Files
 
@@ -119,8 +120,8 @@ Opciones tras cerrar la Fase 8 (incluida 8.6):
 - `gateway/` — Fase 1 + 6.1 + 6.3 + 7.1: JWT filter, 5 rutas (con /authors/** → book-service), headers strip-then-assert, SecurityConfig con GETs públicos para books, authors y shelves.
 - `infrastructure/docker-compose.yml` — 9 servicios.
 
-### Frontend (Fase 8 completada)
-- `frontend/` — Angular 21.2.19, login/registro/OAuth2/guardas/interceptor JWT + home con profile.
+### Frontend (Fase 8 + i18n completados)
+- `frontend/` — Angular 21.2.21, login/registro/OAuth2/guardas/interceptor JWT + home con profile.
 - `features/home/` — signals para user/loading/error, llama a `GET /users/me`.
 - `features/auth/login/`, `features/auth/register/` — signals + Reactive Forms.
 - `features/catalog/` — 8.2: catálogo público con búsqueda (search local + searchFull Google), grid de tarjetas.
@@ -130,7 +131,10 @@ Opciones tras cerrar la Fase 8 (incluida 8.6):
 - `shared/components/nav/` — nav standalone compartido en todas las páginas (brand, Catalog, My shelf/Logout o Log in según sesión).
 - `core/models/` + `core/services/` — book/author/review/shelf alineados 1:1 con DTOs backend.
 - `proxy.conf.json` — enruta auth, users, profiles, follows, books, authors, reviews, shelves → gateway :8080 (claves regex con frontera).
-- Convenciones: **signals** + `inject()` (standalone, sin constructor). Obligatorio en zoneless. UI en inglés (i18n planeado).
+- `src/locale/messages.xlf` — archivo fuente de traducciones (87 messages).
+- `src/locale/messages.es.xlf` — traducciones al español.
+- `src/locale/messages.pt.xlf` — traducciones al portugués.
+- Convenciones: **signals** + `inject()` (standalone, sin constructor). Obligatorio en zoneless. UI multilingüe (en/es/pt) con `@angular/localize`.
 
 ### Docs
 - `docs/GUIDE.md` — Bloques 0-9, Apéndices A-C (C: operación — despliegue, logs, depuración).

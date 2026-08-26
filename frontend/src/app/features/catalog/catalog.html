@@ -1,37 +1,68 @@
 <app-nav />
 
 <main>
-  <form class="search" [formGroup]="searchForm" (ngSubmit)="doSearch()">
+  <form
+    class="search"
+    [formGroup]="searchForm"
+    (ngSubmit)="doSearch()"
+  >
     <input
       type="text"
       formControlName="q"
       placeholder="Search by title or author…"
+      i18n-placeholder="@@catalogSearchPlaceholder"
       aria-label="Search books"
+      i18n-aria-label="@@catalogSearchAriaLabel"
     />
-    <button type="submit" [disabled]="searching()">
+    <button
+      type="submit"
+      [disabled]="searching()"
+      i18n="@@catalogSearchButton"
+    >
       {{ searching() ? 'Searching…' : 'Search' }}
     </button>
     @if (searched()) {
-    <button type="button" class="ghost" (click)="loadCatalog()">Clear</button>
+    <button
+      type="button"
+      class="ghost"
+      (click)="loadCatalog()"
+      i18n="@@catalogClearButton"
+    >Clear</button>
     }
   </form>
 
   @if (loading()) {
-  <p>Loading catalog…</p>
-  } @else if (error()) {
+  <p i18n="@@catalogLoading">Loading catalog…</p>
+  }
+  @else if (error()) {
   <p class="error">{{ error() }}</p>
-  } @else if (books().length === 0) {
+  }
+  @else if (books().length === 0) {
   <p class="empty">
-    @if (searched()) { No results found. } @else { The catalog is empty. }
+    @if (searched()) {
+    <span i18n="@@catalogNoResults">No results found.</span>
+    }
+    @else {
+    <span i18n="@@catalogEmpty">The catalog is empty.</span>
+    }
   </p>
-  } @else {
+  }
+  @else {
   <section class="grid">
     @for (book of books(); track book.isbn) {
-    <a class="card" [routerLink]="['/book', book.isbn]">
+    <a
+      class="card"
+      [routerLink]="['/book', book.isbn]"
+    >
       <div class="cover">
         @if (book.coverUrl) {
-        <img [src]="book.coverUrl" [alt]="book.title" loading="lazy" />
-        } @else {
+        <img
+          [src]="book.coverUrl"
+          [alt]="book.title"
+          loading="lazy"
+        />
+        }
+        @else {
         <span class="cover-placeholder">{{ book.title }}</span>
         }
       </div>

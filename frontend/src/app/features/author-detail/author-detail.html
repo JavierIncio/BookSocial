@@ -1,17 +1,24 @@
 <app-nav />
 
 <main>
-  <a class="back" routerLink="/catalog">← Back to catalog</a>
+  <a
+    class="back"
+    routerLink="/catalog"
+    i18n="@@authorDetailBack"
+  >← Back to catalog</a>
 
   @if (loading()) {
-  <p>Loading author…</p>
+  <p i18n="@@authorDetailLoading">Loading author…</p>
   } @else if (error()) {
   <p class="error">{{ error() }}</p>
   } @else if (author(); as a) {
   <section class="profile">
     <div class="photo">
       @if (a.photoUrl) {
-      <img [src]="a.photoUrl" [alt]="a.name" />
+      <img
+        [src]="a.photoUrl"
+        [alt]="a.name"
+      />
       } @else {
       <span class="initials">{{ initials(a.name) }}</span>
       }
@@ -23,7 +30,7 @@
       <p class="dates">{{ a.birthDate }} – {{ a.deathDate }}</p>
       }
       @if (a.workCount) {
-      <p class="meta">{{ a.workCount }} works in Open Library</p>
+      <p class="meta">{{ a.workCount }} <span i18n="@@authorDetailWorksMeta">works in Open Library</span></p>
       }
 
       @if (a.topSubjects && a.topSubjects.length > 0) {
@@ -41,16 +48,23 @@
   </section>
 
   <section class="works">
-    <h2>Works</h2>
+    <h2 i18n="@@authorDetailWorksTitle">Works</h2>
     @if (works().length === 0) {
-    <p class="empty">No works information available.</p>
+    <p
+      class="empty"
+      i18n="@@authorDetailNoWorks"
+    >No works information available.</p>
     } @else {
     <div class="grid">
       @for (work of works().slice(0, 24); track work.key) {
       <article class="card">
         <div class="cover">
           @if (workCover(work); as coverUrl) {
-          <img [src]="coverUrl" [alt]="work.title" loading="lazy" />
+          <img
+            [src]="coverUrl"
+            [alt]="work.title"
+            loading="lazy"
+          />
           } @else {
           <span class="cover-placeholder">{{ work.title }}</span>
           }

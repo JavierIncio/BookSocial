@@ -14,15 +14,16 @@ export class MyShelf implements OnInit {
   private readonly shelfService = inject(ShelfService);
 
   readonly filters: { value: ShelfStatus | null; label: string }[] = [
-    { value: null, label: 'All' },
-    { value: 'WANTS_TO_READ', label: 'Want to read' },
-    { value: 'READING', label: 'Reading' },
-    { value: 'READ', label: 'Read' },
+    { value: null, label: $localize`@@shelfFilterAll:All` },
+    { value: 'WANTS_TO_READ', label: $localize`@@shelfStatusWantToRead:Want to read` },
+    { value: 'READING', label: $localize`@@shelfStatusReading:Reading` },
+    { value: 'READ', label: $localize`@@shelfStatusRead:Read` },
   ];
+
   private readonly statusLabels: Record<ShelfStatus, string> = {
-    WANTS_TO_READ: 'Want to read',
-    READING: 'Reading',
-    READ: 'Read',
+    WANTS_TO_READ: $localize`@@shelfStatusWantToRead:Want to read`,
+    READING: $localize`@@shelfStatusReading:Reading`,
+    READ: $localize`@@shelfStatusRead:Read`,
   };
 
   shelves = signal<ShelfResponse[]>([]);
@@ -44,7 +45,7 @@ export class MyShelf implements OnInit {
       },
       error: () => {
         this.loading.set(false);
-        this.error.set('Failed to load your shelf.');
+        this.error.set($localize`@@shelfErrorLoad:Failed to load your shelf.`);
       },
     });
   }

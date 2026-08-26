@@ -3,9 +3,9 @@
   (ngSubmit)="submit()"
   class="auth-form"
 >
-  <h1>Login</h1>
+  <h1 i18n="@@loginTitle">Login</h1>
 
-  <label>
+  <label i18n="@@loginEmailLabel">
     Email
     <input
       type="email"
@@ -14,7 +14,7 @@
     >
   </label>
 
-  <label>
+  <label i18n="@@loginPasswordLabel">
     Password
     <input
       type="password"
@@ -30,6 +30,7 @@
   <button
     type="submit"
     [disabled]="form.invalid"
+    i18n="@@loginSubmitButton"
   >
     {{ loading() ? 'Logging in...' : 'Login' }}
   </button>
@@ -38,11 +39,15 @@
     type="button"
     class="google"
     (click)="loginWithGoogle()"
+    i18n="@@loginGoogleButton"
   >
     Login with Google
   </button>
 
-  <p class="switch">
+  <p
+    class="switch"
+    i18n="@@loginSwitch"
+  >
     Don't have an account? <a routerLink="/register">Sign up</a>
   </p>
 </form>

@@ -2,7 +2,7 @@
 
 <main>
   @if (loading()) {
-  <p>Loading profile…</p>
+  <p i18n="@@homeLoading">Loading profile…</p>
   } @else if (error()) {
   <p class="error">{{ error() }}</p>
   } @else if (user()) {
@@ -10,11 +10,11 @@
     <div class="avatar">{{ user()?.firstName + ' ' + user()?.lastName | initials }}</div>
     <h2>{{ user()?.firstName }} {{ user()?.lastName }}</h2>
     <dl>
-      <dt>Email</dt>
+      <dt i18n="@@homeEmailLabel">Email</dt>
       <dd>{{ user()?.email }}</dd>
-      <dt>Age</dt>
+      <dt i18n="@@homeAgeLabel">Age</dt>
       <dd>{{ user()?.age === -1 ? '—' : user()?.age }}</dd>
-      <dt>Roles</dt>
+      <dt i18n="@@homeRolesLabel">Roles</dt>
       <dd>
         @for (role of user()?.roles; track role) {
         <span class="role">{{ role | capitalize }}</span>

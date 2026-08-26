@@ -13,7 +13,7 @@ Guía detallada del proceso de desarrollo del proyecto. Se actualiza **al final 
 | Repositorio      | Monorepo en GitHub (privado) — `https://github.com/JavierIncio/BookSocial.git`              |
 | Branch principal | `main`                                                                                      |
 | Backend          | Microservicios Java 21 + Spring Boot 4.1.0, build con **Maven + wrapper** (`mvnw`)          |
-| Frontend         | Angular 21 (CLI 21.2.19) + PWA                                                              |
+| Frontend         | Angular 21 (CLI 21.2.21) + PWA + i18n (en/es/pt)                                              |
 | Comunicación     | REST síncrona vía API Gateway + eventos asíncronos con RabbitMQ                             |
 | Persistencia     | Cada servicio es propietario de sus datos: PostgreSQL (command side) + MongoDB (query side) |
 | CI/CD            | GitHub Actions (workflow `ci.yml`), filosofía GitOps, despliegue incremental                |
@@ -27,7 +27,7 @@ Guía detallada del proceso de desarrollo del proyecto. Se actualiza **al final 
 | JDK (Temurin)    | 21.0.12 LTS — `JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.12.8-hotspot` |
 | Maven            | 3.9.16 (instalado local y gestionado por el wrapper)                              |
 | Node / npm       | 24.11.1 / 11.11.0                                                                 |
-| Angular CLI      | 21.2.19                                                                           |
+| Angular CLI      | 21.2.21                                                                           |
 | Docker / Compose | 29.5.3 / v5.1.4                                                                   |
 | Git              | 2.51.2                                                                            |
 | Terraform        | 1.14.9                                                                            |
@@ -777,4 +777,64 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - [x] Fase 8.5 — Formulario crear/editar reseña.
 - [x] Fase 8.6 — Página de autor con obras.
 - [x] Verificación: build de producción OK; flujos E2E probados contra el stack Docker.
+- [x] Actualizar este documento al cerrar la fase.
+
+---
+
+## Fase i18n — Internacionalización Angular ✅ Completada
+
+**Objetivo**: añadir internacionalización (`@angular/localize`) al frontend Angular 21 con soporte para 3 idiomas: inglés (default), español y portugués.
+
+**Progreso**: Fase i18n completada — setup (A), anotación de templates (B), anotación de TypeScript (C), extracción y traducción (D), verificación (E).
+
+### Fase A — Setup ✅ Completada
+
+- **Upgrade Angular**: `^21.2.0` → `^21.2.21` (todos los paquetes alineados).
+- **Instalar `@angular/localize`**: `@angular/localize@^21.2.21` en devDependencies.
+- **Polyfill**: `"polyfills": ["@angular/localize/init"]` en `angular.json` options.
+- **Tipos**: `"types": ["@angular/localize"]` en `tsconfig.app.json` compilerOptions.
+- **i18n config**: bloque `"i18n"` en nivel de proyecto en `angular.json` con `sourceLocale: "en"` y locales `es`/`pt`.
+- **Build config**: `"localize": true` en configuración production de `angular.json`.
+
+#### Errores encontrados (con solución directa)
+
+1. **`ng add @angular/localize` falla por peer dependency conflict** — `@angular/localize` resolvía a `21.2.21` pero compiler era `21.2.19`. Solución: borrar `node_modules` + `package-lock.json`, actualizar todos los rangos a `^21.2.21` en `package.json`, reinstalar limpio.
+2. **Warning `Include '@angular/localize/init' as a polyfill instead`** — import en `main.ts` no es la forma recomendada en Angular 21. Solución: quitar import, usar polyfill en `angular.json`.
+3. **Propiedad `i18n` no permitida en `options`** — en `@angular/build:application`, `i18n` va a nivel de proyecto (no dentro de `options` ni `architect.build`). Solución: mover bloque `i18n` a nivel `"frontend": { "i18n": {...} }`.
+4. **`$localize` not found** — `types: []` en `tsconfig.app.json` no incluía `@angular/localize`. Solución: añadir `"@angular/localize"` al array.
+
+### Fase B — Anotación de templates ✅ Completada
+
+- 9 archivos HTML anotados: `nav.html`, `login.html`, `register.html`, `oauth2-callback.html`, `home.html`, `catalog.html`, `book-detail.html`, `my-shelf.html`, `author-detail.html`.
+- ~50 strings anotados con `i18n="@@key"` (attributes, text content, placeholders, aria-labels).
+- `category` (dato de BD) no traducido intencionalmente.
+- Build de desarrollo verificado sin errores.
+
+### Fase C — Anotación de TypeScript ✅ Completada
+
+- 8 archivos `.ts` modificados: `login.ts`, `register.ts`, `oauth2-callback.ts`, `home.ts`, `catalog.ts`, `book-detail.ts`, `my-shelf.ts`, `author-detail.ts`.
+- ~25 strings reemplazados con `$localize` tagged template literals.
+- `statusLabels` maps y `filters` arrays traducidos.
+- Build de desarrollo verificado sin errores.
+
+### Fase D — Extracción y traducción ✅ Completada
+
+- `ng extract-i18n` → 87 messages extraídos a `src/locale/messages.xlf`.
+- `src/locale/messages.es.xlf` — traducciones al español (87 trans-units).
+- `src/locale/messages.pt.xlf` — traducciones al portugués (87 trans-units).
+- Todos los `<x>` tags, `ctype`, `equiv-text` preservados intactos.
+- Nombres propios no traducidos: BookSocial, Google, Open Library, ISBN.
+
+### Fase E — Verificación ✅ Completada
+
+- `ng build` produce `dist/frontend/browser/{en,es,pt}/`.
+- Cada locale tiene su bundle completo con traducciones embebidas.
+
+### Cierre de la Fase i18n
+
+- [x] Fase A — Setup (`@angular/localize`, polyfill, tipos, angular.json).
+- [x] Fase B — Templates anotados (~50 strings en 9 archivos).
+- [x] Fase C — TypeScript anotado (~25 strings en 8 archivos).
+- [x] Fase D — Archivos de traducción creados (es + pt).
+- [x] Fase E — Build de producción con 3 locales verificado.
 - [x] Actualizar este documento al cerrar la fase.

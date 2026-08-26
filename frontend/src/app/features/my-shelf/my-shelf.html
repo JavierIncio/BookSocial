@@ -2,7 +2,7 @@
 
 <main>
   <header class="page-header">
-    <h1>My shelf</h1>
+    <h1 i18n="@@shelfTitle">My shelf</h1>
     <nav class="filters">
       @for (option of filters; track option.value) {
       <button
@@ -15,23 +15,35 @@
   </header>
 
   @if (loading()) {
-  <p>Loading your shelf…</p>
+  <p i18n="@@shelfLoading">Loading your shelf…</p>
   } @else if (error()) {
   <p class="error">{{ error() }}</p>
   } @else if (filtered().length === 0) {
   <p class="empty">
-    @if (shelves().length === 0) { Your shelf is empty. <a routerLink="/catalog">Browse the catalog</a>. }
-    @else { No books with this status. }
+    @if (shelves().length === 0) {
+    <span i18n="@@shelfEmpty">Your shelf is empty.</span> <a
+      routerLink="/catalog"
+      i18n="@@shelfBrowseCatalog"
+    >Browse the catalog</a>. }
+    @else {
+    <span i18n="@@shelfEmptyStatus">No books with this status.</span>
+    }
   </p>
   } @else {
   <section class="list">
     @for (entry of filtered(); track entry.id) {
-    <a class="row" [routerLink]="['/book', entry.bookIsbn]">
+    <a
+      class="row"
+      [routerLink]="['/book', entry.bookIsbn]"
+    >
       <div class="book-info">
         <h2>{{ entry.title }}</h2>
         <p>{{ entry.authorName }}</p>
       </div>
-      <span class="status" [class]="'status ' + entry.status.toLowerCase()">{{ label(entry.status) }}</span>
+      <span
+        class="status"
+        [class]="'status ' + entry.status.toLowerCase()"
+      >{{ label(entry.status) }}</span>
     </a>
     }
   </section>

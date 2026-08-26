@@ -26,7 +26,7 @@ export class Home implements OnInit {
       },
       error: () => {
         this.loading.set(false);
-        this.error.set('Failed to load your profile.');
+        this.error.set($localize`@@homeErrorLoad:Failed to load your profile.`);
       },
     });
   }

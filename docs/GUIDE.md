@@ -1,6 +1,6 @@
 # BookSocial — Guía de Desarrollo
 
-Guía completa para construir **BookSocial**, una red social de libros con arquitectura de microservicios. El proyecto usa Java 21, Spring Boot 4.1.0, Spring Cloud Gateway, Angular 21, PostgreSQL, MongoDB, RabbitMQ y Docker.
+Guía completa para construir **BookSocial**, una red social de libros con arquitectura de microservicios. El proyecto usa Java 21, Spring Boot 4.1.0, Spring Cloud Gateway, Angular 21 (con i18n en español y portugués), PostgreSQL, MongoDB, RabbitMQ y Docker.
 
 ---
 
@@ -30,6 +30,7 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 | [7. book-service](#bloque-7--book-service-catálogo-de-libros-con-cqrs)                | Catálogo, búsqueda, roles              | Fase 3     |
 | [8. review-service](#bloque-8--review-service-reseñas--primer-evento-cruzado)         | Eventos cruzados, stats                | Fase 4     |
 | [9. shelf-service](#bloque-9--shelf-service-estantería-personal-del-usuario)          | Estantería, dual-write, evento cruzado | Fase 5     |
+| [10. i18n](#bloque-10--i18n-internacionalización-angular)                             | @angular/localize, en/es/pt            | i18n       |
 | [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable)            | JwtService, filtros, config            | Referencia |
 | [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño)                          | Resumen arquitectónico                 | Referencia |
 | [C. Operación](#apéndice-c--operación-despliegue-logs-y-depuración)                   | Despliegue, logs, depuración           | Referencia |
@@ -545,13 +546,13 @@ El **Identity Service** es el microservicio responsable de todo lo relacionado c
 
 **Ficha del servicio**
 
-| | |
-|---|---|
-| Puerto | `8081` |
-| Persistencia | PostgreSQL (`users`, `refresh_tokens`, roles) |
+|                 |                                                                                                                           |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Puerto          | `8081`                                                                                                                    |
+| Persistencia    | PostgreSQL (`users`, `refresh_tokens`, roles)                                                                             |
 | Responsabilidad | Identidad y autenticación: registro, login email+password, login Google OAuth2, emisión/rotación de JWT, gestión de roles |
-| Endpoints clave | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, callback OAuth2 |
-| Consumidores | Todos los servicios (confían en los headers `X-User-*` que valida el gateway) |
+| Endpoints clave | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, callback OAuth2                     |
+| Consumidores    | Todos los servicios (confían en los headers `X-User-*` que valida el gateway)                                             |
 
 ### 1.0 — Creación del servicio y dependencias
 
@@ -1782,13 +1783,13 @@ El **API Gateway** es el punto único de entrada del sistema. Después de constr
 
 **Ficha del servicio**
 
-| | |
-|---|---|
-| Puerto | `8080` |
-| Persistencia | Ninguna (stateless, valida el JWT con su clave compartida) |
-| Responsabilidad | Punto único de entrada: enrutamiento por ruta a cada microservicio, validación JWT centralizada, inyección de headers de confianza |
-| Rutas | `/auth/**` → identity · `/users,/profiles,/follows/**` → user · `/books,/authors/**` → book · `/reviews/**` → review · `/shelves/**` → shelf |
-| Seguridad | GETs públicos en `/books`, `/authors`, `/shelves`; resto requiere token; entry point devuelve 401 JSON |
+|                 |                                                                                                                                              |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Puerto          | `8080`                                                                                                                                       |
+| Persistencia    | Ninguna (stateless, valida el JWT con su clave compartida)                                                                                   |
+| Responsabilidad | Punto único de entrada: enrutamiento por ruta a cada microservicio, validación JWT centralizada, inyección de headers de confianza           |
+| Rutas           | `/auth/**` → identity · `/users,/profiles,/follows/**` → user · `/books,/authors/**` → book · `/reviews/**` → review · `/shelves/**` → shelf |
+| Seguridad       | GETs públicos en `/books`, `/authors`, `/shelves`; resto requiere token; entry point devuelve 401 JSON                                       |
 
 ### 2.1 — Qué es un API Gateway y por qué aquí
 
@@ -2043,13 +2044,13 @@ Con el backend (Identity Service + Gateway) funcionando, el siguiente paso es co
 
 **Ficha de la aplicación**
 
-| | |
-|---|---|
-| Puerto | `4200` (`ng serve` con proxy a `:8080`) |
-| Stack | Angular 21, standalone components, zoneless + signals, Reactive Forms |
+|                 |                                                                                                                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Puerto          | `4200` (`ng serve` con proxy a `:8080`)                                                                                                                            |
+| Stack           | Angular 21, standalone components, zoneless + signals, Reactive Forms                                                                                              |
 | Responsabilidad | SPA: sesión (login/registro/Google), interceptor JWT con refresh, guardas de ruta y páginas del dominio (catálogo, libros, autores, reseñas, estanterías — Fase 8) |
-| Estructura | `core/` (services, models, guards), `features/<nombre>/` lazy-loaded, `shared/components/nav` |
-| Convención | Cada feature exporta `routes.ts` con `loadComponent`; UI en inglés (i18n planeado) |
+| Estructura      | `core/` (services, models, guards), `features/<nombre>/` lazy-loaded, `shared/components/nav`                                                                      |
+| Convención      | Cada feature exporta `routes.ts` con `loadComponent`; UI en inglés (i18n planeado)                                                                                 |
 
 ### 3.1 — Creación del proyecto y estructura
 
@@ -2707,13 +2708,13 @@ Este bloque consolida las lecciones aprendidas durante la Fase 1 (Bloques 0-4). 
 
 **Ficha del servicio**
 
-| | |
-|---|---|
-| Puerto | `8082` |
-| Persistencia | PostgreSQL (`profiles`, `follows`) + MongoDB (lecturas: `profiles`, `user_links`) |
+|                 |                                                                                                                         |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Puerto          | `8082`                                                                                                                  |
+| Persistencia    | PostgreSQL (`profiles`, `follows`) + MongoDB (lecturas: `profiles`, `user_links`)                                       |
 | Responsabilidad | Perfil de usuario (bio, avatar, preferencias) y grafo social de amistades (seguir/dejar de seguir, listas y contadores) |
-| Endpoints clave | `GET /users/me`, `/profiles/**`, `POST/DELETE /follows/{username}`, `GET /follows/**` |
-| Mensajería | Publica y consume eventos de amistad por RabbitMQ (sincronización de contadores) |
+| Endpoints clave | `GET /users/me`, `/profiles/**`, `POST/DELETE /follows/{username}`, `GET /follows/**`                                   |
+| Mensajería      | Publica y consume eventos de amistad por RabbitMQ (sincronización de contadores)                                        |
 
 ### 6.1 — Esqueleto del user-service
 
@@ -3413,13 +3414,13 @@ La Fase 3 replica el patrón de la Fase 2 en un nuevo microservicio: **Postgres 
 
 **Ficha del servicio**
 
-| | |
-|---|---|
-| Puerto | `8083` |
-| Persistencia | PostgreSQL (`books`, `authors`) + MongoDB (lecturas: `books`, `authors`) |
+|                 |                                                                                                                                                             |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Puerto          | `8083`                                                                                                                                                      |
+| Persistencia    | PostgreSQL (`books`, `authors`) + MongoDB (lecturas: `books`, `authors`)                                                                                    |
 | Responsabilidad | Catálogo CQRS: búsqueda local y externa, alta ADMIN, auto-import por ISBN desde Google Books; fichas y obras de autores vía Open Library con cache en Mongo |
-| Endpoints clave | `GET /books/search`, `GET /books/search/full`, `GET /books/{isbn}`, `/authors/**` (search, `id/{authorId}`, detalle, works), `POST /books` |
-| Mensajería | Publica `BookCreatedEvent` → lo consumen review-service y shelf-service |
+| Endpoints clave | `GET /books/search`, `GET /books/search/full`, `GET /books/{isbn}`, `/authors/**` (search, `id/{authorId}`, detalle, works), `POST /books`                  |
+| Mensajería      | Publica `BookCreatedEvent` → lo consumen review-service y shelf-service                                                                                     |
 
 ### 7.1 — Esqueleto del book-service
 
@@ -4291,13 +4292,13 @@ La Fase 4 introduce dos novedades respecto a las anteriores: (1) un **evento cru
 
 **Ficha del servicio**
 
-| | |
-|---|---|
-| Puerto | `8084` |
-| Persistencia | PostgreSQL (`reviews`, comandos) + MongoDB (lecturas: `reviews`, `book_refs` — catálogo local desnormalizado) |
-| Responsabilidad | Reseñas con rating 1-5 y comentario; rating medio + nº de reseñas agregados por libro |
+|                 |                                                                                                                                                |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Puerto          | `8084`                                                                                                                                         |
+| Persistencia    | PostgreSQL (`reviews`, comandos) + MongoDB (lecturas: `reviews`, `book_refs` — catálogo local desnormalizado)                                  |
+| Responsabilidad | Reseñas con rating 1-5 y comentario; rating medio + nº de reseñas agregados por libro                                                          |
 | Endpoints clave | `GET /reviews/books/{isbn}`, `GET /reviews/books/{isbn}/summary`, `GET /reviews/me`, `GET /reviews/users/{userId}`, `POST/PUT /reviews/{isbn}` |
-| Mensajería | Consume `BookCreatedEvent` para mantener su catálogo local (`book_refs`) sin llamar a book-service |
+| Mensajería      | Consume `BookCreatedEvent` para mantener su catálogo local (`book_refs`) sin llamar a book-service                                             |
 
 ### 8.1 — Esqueleto del review-service
 
@@ -4678,13 +4679,13 @@ La Fase 4 continúa con el patrón de eventos cruzados: `shelf-service` consume 
 
 **Ficha del servicio**
 
-| | |
-|---|---|
-| Puerto | `8085` |
-| Persistencia | PostgreSQL (`shelves`, comandos) + MongoDB (lecturas: `shelves`, `book_refs`) |
-| Responsabilidad | Estantería personal por usuario: alta/cambio/eliminación de libros con estado (`WANTS_TO_READ`, `READING`, `READ`) |
+|                 |                                                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Puerto          | `8085`                                                                                                              |
+| Persistencia    | PostgreSQL (`shelves`, comandos) + MongoDB (lecturas: `shelves`, `book_refs`)                                       |
+| Responsabilidad | Estantería personal por usuario: alta/cambio/eliminación de libros con estado (`WANTS_TO_READ`, `READING`, `READ`)  |
 | Endpoints clave | `GET /shelves`, `POST /shelves`, `PUT/DELETE /shelves/{isbn}`, `GET /shelves/{isbn}`, `GET /shelves/users/{userId}` |
-| Mensajería | Consume `BookCreatedEvent` (mismo patrón que review-service) |
+| Mensajería      | Consume `BookCreatedEvent` (mismo patrón que review-service)                                                        |
 
 ### 9.1 — Esqueleto del shelf-service
 
@@ -5043,6 +5044,243 @@ public record ShelfResponse(
 
 ---
 
+## Bloque 10 — i18n: internacionalización Angular
+
+**Objetivo**: añadir soporte multilingüe al frontend usando `@angular/localize` (la solución oficial de Angular), con 3 idiomas: inglés (default), español y portugués.
+
+**Por qué `@angular/localize` y no `@ngx-translate`**: es la solución oficial del framework, funciona a nivel de compilación (sin runtime overhead), maneja pluralización y descripciones de contexto nativamente, y genera un bundle por idioma. Para un proyecto con idiomas conocidos es la opción más robusta.
+
+### 10.1 — Setup de `@angular/localize`
+
+#### Instalación
+
+```bash
+cd frontend
+npm install @angular/localize@^21.2.21 --save-dev
+```
+
+> **Error conocido**: `ng add @angular/localize` puede fallar por peer dependency conflict si los paquetes Angular no están todos en la misma versión. Solución: alinear todas las dependencias Angular a la misma versión (`^21.2.21`), borrar `node_modules` + `package-lock.json`, y reinstalar limpio.
+
+#### Polyfill en `angular.json`
+
+Un **polyfill** es un fragmento de código que extiende o re implementa funcionalidades que el runtime del navegador no provee nativamente. En este caso, `@angular/localize/init` inyecta la función global `$localize` en el entorno de ejecución antes de que arranque la aplicación, del mismo modo que un polyfill de JavaScript añade métodos a `Array.prototype` cuando el navegador no los soporta. Angular lo gestiona a través de la opción `polyfills` del build, que los incluye en el bundle automáticamente sin necesidad de importarlos manualmente en `main.ts`.
+
+```json
+"architect": {
+  "build": {
+    "options": {
+      "polyfills": ["@angular/localize/init"]
+    }
+  }
+}
+```
+
+#### Tipos en `tsconfig.app.json`
+
+```json
+"compilerOptions": {
+  "types": ["@angular/localize"]
+}
+```
+
+Sin esto, TypeScript no reconoce `$localize` como global.
+
+#### Configuración i18n en `angular.json`
+
+El bloque `i18n` va a **nivel de proyecto**:
+
+```json
+{
+  "projects": {
+    "frontend": {
+      "i18n": {
+        "sourceLocale": "en",
+        "locales": {
+          "es": "src/locale/messages.es.xlf",
+          "pt": "src/locale/messages.pt.xlf"
+        }
+      },
+      "architect": {
+        "build": {
+          "configurations": {
+            "production": {
+              "localize": true
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Con `localize: true`, `ng build` genera un bundle por idioma en `dist/frontend/browser/{en,es,pt}/`.
+
+### 10.2 — Anotación de strings en templates
+
+Para strings visibles en el HTML, se usa el atributo `i18n` con una clave única:
+
+```html
+<!-- Texto simple -->
+<h1 i18n="@@loginTitle">Login</h1>
+
+<!-- Label que envuelve un input -->
+<label i18n="@@loginEmailLabel">
+  Email
+  <input type="email" formControlName="email" />
+</label>
+
+<!-- Placeholder y aria-label -->
+<input
+  placeholder="Search by title or author…"
+  i18n-placeholder="@@catalogSearchPlaceholder"
+  aria-label="Search books"
+  i18n-aria-label="@@catalogSearchAria"
+/>
+
+<!-- Botón con interpolación ternaria -->
+<button i18n="@@loginSubmitButton">
+  {{ loading() ? 'Logging in…' : 'Login' }}
+</button>
+
+<!-- Texto con link embebido -->
+<p i18n="@@loginSwitch">
+  Don't have an account? <a routerLink="/register">Sign up</a>
+</p>
+```
+
+**Convención de claves**: `{área}{elemento}{contexto}` — ej. `@@loginTitle`, `@@catalogSearchPlaceholder`, `@@bookDetailErrorNotFound`.
+
+**Qué NO anotar**:
+
+- Datos dinámicos de BD: `{{ book.title }}`, `{{ book.category }}` — son datos, no UI.
+- Acrónimos universales: ISBN, URL — se escriben igual en todos los idiomas.
+- Nombres propios: BookSocial, Google, Open Library.
+
+### 10.3 — Anotación de strings en TypeScript
+
+Para strings en `.ts` (mensajes de error, labels, textos dinámicos), se usa `$localize` como tagged template literal:
+
+```ts
+// Mensaje de error simple
+this.error.set($localize`@@catalogErrorLoad:Failed to load the catalog.`);
+
+// Mapa de labels
+private readonly statusLabels: Record<ShelfStatus, string> = {
+  WANTS_TO_READ: $localize`@@shelfStatusWantToRead:Want to read`,
+  READING: $localize`@@shelfStatusReading:Reading`,
+  READ: $localize`@@shelfStatusRead:Read`,
+};
+
+// Array de filtros
+readonly filters = [
+  { value: null, label: $localize`@@shelfFilterAll:All` },
+  { value: 'WANTS_TO_READ', label: $localize`@@shelfStatusWantToRead:Want to read` },
+];
+```
+
+**Formato**: `` $localize`@@key:Texto en inglés` `` — el prefijo `@@key` se extrae automáticamente al generar el XLF y se elimina del runtime.
+
+### 10.4 — Extracción y traducción
+
+```bash
+ng extract-i18n
+```
+
+Esto genera `src/locale/messages.xlf` (archivo fuente en inglés) con todos los strings anotados. Cada `<trans-unit>` tiene un `id` (la clave) y un `<source>`.
+
+Para crear una traducción:
+
+1. Copiar `messages.xlf` a `messages.es.xlf` y `messages.pt.xlf`
+2. Añadir `target-language="es"` / `target-language="pt"` al tag `<file>`
+3. Añadir `<target>` tras cada `<source>` con la traducción
+4. **Nunca modificar** los tags `<x>`, `ctype`, `equiv-text` ni `<context-group>`
+
+Ejemplo de trans-unit:
+
+```xml
+<trans-unit id="loginTitle" datatype="html">
+  <source>Login</source>
+  <target>Iniciar sesión</target>
+  <context-group purpose="location">
+    <context context-type="sourcefile">src/app/features/auth/login/login.html</context>
+    <context context-type="linenumber">6,8</context>
+  </context-group>
+</trans-unit>
+```
+
+Para strings con interpolación en templates, el `<target>` replica los tags `<x>`:
+
+```xml
+<trans-unit id="loginSubmitButton" datatype="html">
+  <source> <x id="INTERPOLATION" equiv-text="..."/> </source>
+  <target> <x id="INTERPOLATION" equiv-text="..."/> </target>
+</trans-unit>
+```
+
+Los textos de **interpolación ternaria** viven en el template:
+
+```html
+<button i18n="@@loginSubmitButton">
+  {{ loading() ? 'Logging in…' : 'Login' }}
+</button>
+```
+
+El archivo XLF **solo** almacena el placeholder <x id="INTERPOLATION"/> — no contiene las cadenas "Logging in…" ni "Login". Esas cadenas viven dentro del `.html`, no en el XLF.
+
+### 10.5 — Build multi-locale
+
+```bash
+ng build                    # genera dist/frontend/browser/{en,es,pt}/
+ng build --configuration development   # solo locale source (para dev)
+```
+
+En producción, cada locale tiene su propio bundle con las traducciones embebidas. El `sourceLocale` (`en`) siempre se genera; los demás solo si están listados en `locales`.
+
+### 10.6 — Archivos relevantes
+
+```
+frontend/
+├── angular.json                          # i18n section + localize: true
+├── tsconfig.app.json                     # types: ["@angular/localize"]
+├── package.json                          # @angular/localize en devDependencies
+└── src/
+    ├── main.ts                           # sin import de @angular/localize/init
+    ├── locale/
+    │   ├── messages.xlf                  # archivo fuente (87 messages, inglés)
+    │   ├── messages.es.xlf               # traducciones español
+    │   └── messages.pt.xlf               # traducciones portugués
+    └── app/
+        ├── features/
+        │   ├── auth/login/login.{html,ts}
+        │   ├── auth/register/register.{html,ts}
+        │   ├── auth/oauth2-callback/oauth2-callback.{html,ts}
+        │   ├── home/home.{html,ts}
+        │   ├── catalog/catalog.{html,ts}
+        │   ├── book-detail/book-detail.{html,ts}
+        │   ├── my-shelf/my-shelf.{html,ts}
+        │   └── author-detail/author-detail.{html,ts}
+        └── shared/components/nav/nav.html
+```
+
+### 10.7 — Errores encontrados (con solución directa)
+
+1. **`ng add @angular/localize` — peer dependency conflict**: paquetes Angular en versiones mixtas (`21.2.19` vs `21.2.21`). Solución: alinear todos a `^21.2.21`, borrar `node_modules` + `package-lock.json`, reinstalar limpio.
+
+2. **Warning `Include '@angular/localize/init' as a polyfill instead`**: `import '@angular/localize/init'` en `main.ts` no es la forma recomendada. Solución: quitar el import y añadir `"polyfills": ["@angular/localize/init"]` en `angular.json`.
+
+3. **Propiedad `i18n` no permitida**: el bloque `i18n` estaba dentro de `architect.build.options`. En `@angular/build:application`, `i18n` va a **nivel de proyecto** (dentro de `"frontend": {}`). Solución: mover el bloque un nivel más arriba.
+
+4. **`$localize` not found**: `tsconfig.app.json` tenía `"types": []`. Solución: añadir `"@angular/localize"` al array.
+
+### Decisiones de diseño de i18n
+
+- **Compile-time vs runtime**: se eligió compile-time (`@angular/localize`) porque el proyecto tiene idiomas fijos (en/es/pt) y no necesita cambio dinámico de idioma en runtime. Un bundle por idioma es más eficiente que un mapa de traducciones en runtime.
+- **Categorías no traducidas**: los valores de `book.category` (Fantasy, Science Fiction, etc.) son datos de BD que vienen de Google Books API. Traducirlos requeriría un mapping frontend o i18n en backend, lo cual escopa del i18n de UI. Se dejan en inglés como datos de contenido.
+- **Strings compartidos**: `statusLabels` (Want to read / Reading / Read) aparecen en `book-detail.ts` y `my-shelf.ts`. Se usan las mismas claves `@@shelfStatus*` en ambos archivos para mantener consistencia.
+
+---
+
 ## Apéndice A — Plantilla de seguridad reutilizable
 
 Los servicios downstream (user-service, book-service, review-service, shelf-service) comparten la misma configuración de seguridad: **solo validan JWT, no los generan**. El identity-service es el único que emite tokens. Esta sección consolida el patrón para evitar repetirlo en cada bloque.
@@ -5391,7 +5629,17 @@ docker exec booksocial-postgres psql -U booksocial -d booksocial -c "SELECT isbn
 ```powershell
 cd frontend
 npm start                # ng serve en :4200 con proxy a :8080 (proxy.conf.json)
-npm run build            # verificación de compilación
+npm run build            # verificación de compilación (solo locale source)
+ng build                 # build de producción con 3 idiomas (en/es/pt)
+ng extract-i18n          # regenerar messages.xlf desde templates + $localize
 ```
 
 Ojo: si editas `proxy.conf.json` hay que **reiniciar** `ng serve` — el proxy solo se lee al arrancar, el hot-reload no lo recoge.
+
+#### i18n — añadir un string nuevo
+
+1. En el template: añadir `i18n="@@nuevaClave"` al elemento.
+2. En `.ts` (si aplica): usar `` $localize`@@nuevaClave:Texto en inglés` ``.
+3. Ejecutar `ng extract-i18n` para regenerar `messages.xlf`.
+4. Copiar las nuevas `<trans-unit>` a `messages.es.xlf` y `messages.pt.xlf` con sus `<target>`.
+5. Verificar con `ng build`.

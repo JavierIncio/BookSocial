@@ -1,17 +1,24 @@
 <app-nav />
 
 <main>
-  <a class="back" routerLink="/catalog">← Back to catalog</a>
+  <a
+    class="back"
+    routerLink="/catalog"
+    i18n="@@bookDetailBack"
+  >← Back to catalog</a>
 
   @if (loading()) {
-  <p>Loading book…</p>
+  <p i18n="@@bookDetailLoading">Loading book…</p>
   } @else if (error()) {
   <p class="error">{{ error() }}</p>
   } @else if (book(); as b) {
   <section class="detail">
     <div class="cover">
       @if (b.coverUrl) {
-      <img [src]="b.coverUrl" [alt]="b.title" />
+      <img
+        [src]="b.coverUrl"
+        [alt]="b.title"
+      />
       } @else {
       <span class="cover-placeholder">{{ b.title }}</span>
       }
@@ -35,7 +42,10 @@
       </p>
 
       @if (summary(); as s) {
-      <p class="rating" [title]="s.averageRating + ' / 5'">
+      <p
+        class="rating"
+        [title]="s.averageRating + ' / 5'"
+      >
         <span class="stars">{{ stars(s.averageRating) }}</span>
         {{ s.averageRating | number: '1.1-1' }} · {{ s.ratingCount }}
         {{ s.ratingCount === 1 ? 'review' : 'reviews' }}
@@ -49,12 +59,17 @@
       <div class="shelf-box">
         @if (!isAuthenticated()) {
         <p class="hint">
-          <a routerLink="/login">Log in</a> to add this book to your shelf and write reviews.
+          <a
+            routerLink="/login"
+            i18n="@@bookDetailLoginHint"
+          >Log in</a> <span i18n="@@bookDetailLoginHintText">to add this book to your shelf and write reviews.</span>
         </p>
         } @else {
-        <h2>My shelf</h2>
+        <h2 i18n="@@bookDetailMyShelf">My shelf</h2>
         @if (myShelfEntry(); as entry) {
-        <p class="current">Current status: <strong>{{ label(entry.status) }}</strong></p>
+        <p class="current">
+          <span i18n="@@bookDetailCurrentStatus">Current status:</span> <strong>{{ label(entry.status) }}</strong>
+        </p>
         }
         <div class="status-buttons">
           @for (status of statuses; track status) {
@@ -71,6 +86,7 @@
             class="ghost"
             [disabled]="savingShelf()"
             (click)="removeFromShelf()"
+            i18n="@@bookDetailRemoveButton"
           >Remove</button>
           }
         </div>
@@ -84,12 +100,20 @@
 
   @if (isAuthenticated()) {
   <section class="reviews">
-    <h2>Reviews</h2>
+    <h2 i18n="@@bookDetailReviewsTitle">Reviews</h2>
 
     <div class="your-review">
-      <h3>{{ myReview() ? 'Edit your review' : 'Write a review' }}</h3>
-      <form [formGroup]="reviewForm" (ngSubmit)="submitReview()">
-        <div class="star-input" role="radiogroup" aria-label="Rating">
+      <h3 i18n="@@bookDetailReviewHeading">{{ myReview() ? 'Edit your review' : 'Write a review' }}</h3>
+      <form
+        [formGroup]="reviewForm"
+        (ngSubmit)="submitReview()"
+      >
+        <div
+          class="star-input"
+          role="radiogroup"
+          aria-label="Rating"
+          i18n-aria-label="@@bookDetailRatingAria"
+        >
           @for (n of [1, 2, 3, 4, 5]; track n) {
           <button
             type="button"
@@ -103,11 +127,13 @@
           formControlName="comment"
           rows="3"
           placeholder="Share your thoughts (optional)"
+          i18n-placeholder="@@bookDetailCommentPlaceholder"
         ></textarea>
         <button
           type="submit"
           class="submit"
           [disabled]="submittingReview()"
+          i18n="@@bookDetailSubmitReview"
         >{{ submittingReview() ? 'Saving…' : myReview() ? 'Update review' : 'Submit review' }}</button>
         @if (reviewError()) {
         <p class="error">{{ reviewError() }}</p>
@@ -116,7 +142,10 @@
     </div>
 
     @if (reviews().length === 0) {
-    <p class="empty">No reviews yet.</p>
+    <p
+      class="empty"
+      i18n="@@bookDetailNoReviews"
+    >No reviews yet.</p>
     } @else {
     @for (review of reviews(); track review.id) {
     <article class="review">

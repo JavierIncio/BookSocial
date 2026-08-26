@@ -3,10 +3,10 @@
   (ngSubmit)="submit()"
   class="auth-form"
 >
-  <h1>Create Account</h1>
+  <h1 i18n="@@registerTitle">Create Account</h1>
 
   <div class="row">
-    <label>
+    <label i18n="@@registerFirstNameLabel">
       Name
       <input
         type="text"
@@ -15,7 +15,7 @@
       />
     </label>
 
-    <label>
+    <label i18n="@@registerLastNameLabel">
       Last Name
       <input
         type="text"
@@ -25,7 +25,7 @@
     </label>
   </div>
 
-  <label>
+  <label i18n="@@registerEmailLabel">
     Email
     <input
       type="email"
@@ -35,16 +35,16 @@
   </label>
 
   <label>
-    Password
+    <span i18n="@@registerPasswordLabel">Password</span>
     <input
       type="password"
       formControlName="password"
       autocomplete="new-password"
     />
-    <small>Minimum 8 characters.</small>
+    <small i18n="@@registerPasswordHint">Minimum 8 characters.</small>
   </label>
 
-  <label>
+  <label i18n="@@registerBirthDateLabel">
     Birth Date
     <input
       type="date"
@@ -59,6 +59,7 @@
   <button
     type="submit"
     [disabled]="form.invalid || loading()"
+    i18n="@@registerSubmitButton"
   >
     {{ loading() ? 'Creating…' : 'Create Account' }}
   </button>
@@ -67,7 +68,13 @@
     type="button"
     (click)="loginWithGoogle()"
     class="google"
+    i18n="@@registerGoogleButton"
   >Continue with Google</button>
 
-  <p class="switch">Already have an account? <a routerLink="/login">Sign in</a></p>
+  <p
+    class="switch"
+    i18n="@@registerSwitch"
+  >
+    Already have an account? <a routerLink="/login">Sign in</a>
+  </p>
 </form>

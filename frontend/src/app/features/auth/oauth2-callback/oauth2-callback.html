@@ -1,8 +1,14 @@
 @if (errorMessage) {
 <div class="callback-error">
   <p>{{ errorMessage }}</p>
-  <a routerLink="/login">Return to Login</a>
+  <a
+    routerLink="/login"
+    i18n="@@oauthReturnToLogin"
+  >Return to Login</a>
 </div>
 } @else {
-<p class="callback-loading">Completing login…</p>
+<p
+  class="callback-loading"
+  i18n="@@oauthCompleting"
+>Completing login…</p>
 }

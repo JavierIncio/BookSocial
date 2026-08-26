@@ -29,9 +29,9 @@ export class BookDetail implements OnInit {
 
   readonly statuses: ShelfStatus[] = ['WANTS_TO_READ', 'READING', 'READ'];
   private readonly statusLabels: Record<ShelfStatus, string> = {
-    WANTS_TO_READ: 'Want to read',
-    READING: 'Reading',
-    READ: 'Read',
+    WANTS_TO_READ: $localize`@@shelfStatusWantToRead:Want to read`,
+    READING: $localize`@@shelfStatusReading:Reading`,
+    READ: $localize`@@shelfStatusRead:Read`,
   };
 
   book = signal<BookResponse | null>(null);
@@ -55,7 +55,7 @@ export class BookDetail implements OnInit {
   ngOnInit(): void {
     this.isbn = this.route.snapshot.paramMap.get('isbn') ?? '';
     if (!this.isbn) {
-      this.error.set('ISBN not found in route.');
+      this.error.set($localize`@@bookDetailErrorIsbn:ISBN not found in route.`);
       this.loading.set(false);
       return;
     }
@@ -75,7 +75,7 @@ export class BookDetail implements OnInit {
       },
       error: () => {
         this.loading.set(false);
-        this.error.set('Book not found.');
+        this.error.set($localize`@@bookDetailErrorNotFound:Book not found.`);
       },
     });
   }
@@ -112,7 +112,9 @@ export class BookDetail implements OnInit {
   submitReview(): void {
     const rating = this.selectedRating();
     if (rating < 1 || rating > 5) {
-      this.reviewError.set('Select a rating between 1 and 5 stars.');
+      this.reviewError.set(
+        $localize`@@bookDetailErrorRating:Select a rating between 1 and 5 stars.`,
+      );
       return;
     }
     this.submittingReview.set(true);
@@ -132,7 +134,9 @@ export class BookDetail implements OnInit {
       },
       error: () => {
         this.submittingReview.set(false);
-        this.reviewError.set('Could not save your review. Try again.');
+        this.reviewError.set(
+          $localize`@@bookDetailErrorSaveReview:Could not save your review. Try again.`,
+        );
       },
     });
   }
@@ -165,7 +169,9 @@ export class BookDetail implements OnInit {
       },
       error: () => {
         this.savingShelf.set(false);
-        this.shelfError.set('Could not update your shelf. Try again.');
+        this.shelfError.set(
+          $localize`@@bookDetailErrorUpdateShelf:Could not update your shelf. Try again.`,
+        );
       },
     });
   }
@@ -181,7 +187,9 @@ export class BookDetail implements OnInit {
       },
       error: () => {
         this.savingShelf.set(false);
-        this.shelfError.set('Could not update status. Try again.');
+        this.shelfError.set(
+          $localize`@@bookDetailErrorUpdateStatus:Could not update status. Try again.`,
+        );
       },
     });
   }
@@ -196,7 +204,9 @@ export class BookDetail implements OnInit {
       },
       error: () => {
         this.savingShelf.set(false);
-        this.shelfError.set('Could not remove the book. Try again.');
+        this.shelfError.set(
+          $localize`@@bookDetailErrorRemove:Could not remove the book. Try again.`,
+        );
       },
     });
   }

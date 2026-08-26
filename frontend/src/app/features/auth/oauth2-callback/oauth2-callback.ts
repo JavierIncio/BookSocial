@@ -29,8 +29,8 @@ export class Oauth2Callback implements OnInit {
 
     this.errorMessage =
       error === 'access_denied'
-        ? 'You have canceled the Google login.'
-        : 'Failed to login with Google.';
+        ? $localize`@@oauthCanceled:You have canceled the Google login.`
+        : $localize`@@oauthFailed:Failed to login with Google.`;
     this.router.navigate(['/login'], { queryParams: { googleError: this.errorMessage } });
   }
 }

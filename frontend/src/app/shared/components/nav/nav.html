@@ -1,15 +1,28 @@
 <header class="topbar">
-  <a class="brand" routerLink="/home">BookSocial</a>
+  <a
+    class="brand"
+    routerLink="/home"
+  >BookSocial</a>
   <nav>
-    <a routerLink="/catalog">Catalog</a>
+    <a
+      routerLink="/catalog"
+      i18n="@@navCatalog"
+    >Catalog</a>
     @if (isAuthenticated()) {
-    <a routerLink="/shelf">My shelf</a>
+    <a
+      routerLink="/shelf"
+      i18n="@@navMyShelf"
+    >My shelf</a>
     <button
       type="button"
       (click)="logout()"
+      i18n="@@navLogout"
     >Logout</button>
     } @else {
-    <a routerLink="/login">Log in</a>
+    <a
+      routerLink="/login"
+      i18n="@@navLogin"
+    >Log in</a>
     }
   </nav>
 </header>
