@@ -64,6 +64,7 @@ services:
       BOOK_SERVICE_URI: http://book-service:8083
       REVIEW_SERVICE_URI: http://review-service:8084
       SHELF_SERVICE_URI: http://shelf-service:8085
+      SOCIAL_SERVICE_URI: http://social-service:8086
     depends_on:
       identity-service:
         condition: service_healthy
@@ -198,6 +199,31 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+
+  social-service:
+    build:
+      context: ..
+      dockerfile: social-service/Dockerfile
+    container_name: booksocial-social
+    ports:
+      - "8086:8086"
+    env_file:
+      - ../social-service/.env
+    environment:
+      SPRING_MONGODB_URI: mongodb://booksocial:booksocial@mongodb:27017/booksocial?authSource=admin
+      SPRING_RABBITMQ_HOST: rabbitmq
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/actuator/health"]
       interval: 10s
       timeout: 5s
       retries: 12

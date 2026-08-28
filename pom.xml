@@ -45,5 +45,6 @@
         <module>book-service</module>
         <module>review-service</module>
         <module>shelf-service</module>
+        <module>social-service</module>
     </modules>
 </project>

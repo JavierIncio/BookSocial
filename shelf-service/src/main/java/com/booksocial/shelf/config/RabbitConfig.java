@@ -14,6 +14,7 @@ public class RabbitConfig {
     public static final String EXCHANGE = "booksocial.events";
     public static final String SHELF_QUEUE = "shelf-service.books.created";
     public static final String SHELF_KEY = "book.created";
+    public static final String SHELF_CHANGED_KEY = "shelf.changed";
 
     @Bean
     public TopicExchange eventsExchange() {

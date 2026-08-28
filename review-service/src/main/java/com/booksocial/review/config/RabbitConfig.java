@@ -14,6 +14,8 @@ public class RabbitConfig {
     public static final String EXCHANGE = "booksocial.events";
     public static final String REVIEW_QUEUE = "review-service.books.created";
     public static final String REVIEW_KEY = "book.created";
+    public static final String REVIEW_CREATED_KEY = "review.created";
+    public static final String REVIEW_UPDATED_KEY = "review.updated";
 
     @Bean
     public TopicExchange eventsExchange() {

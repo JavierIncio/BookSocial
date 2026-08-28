@@ -2,6 +2,8 @@ package com.booksocial.shelf.service;
 
 
 import com.booksocial.shelf.domain.*;
+import com.booksocial.shelf.events.ShelfChangedEvent;
+import com.booksocial.shelf.events.ShelfEventPublisher;
 import com.booksocial.shelf.readmodel.BookRefReadModel;
 import com.booksocial.shelf.readmodel.BookRefReadModelRepository;
 import com.booksocial.shelf.readmodel.ShelfReadModel;
@@ -23,13 +25,16 @@ public class ShelfService {
     private final BookRefReadModelRepository bookRefRepository;
     private final ShelfRepository shelfRepository;
     private final ShelfReadModelRepository readModelRepository;
+    private final ShelfEventPublisher eventPublisher;
 
     public ShelfService(BookRefReadModelRepository bookRefRepository,
                         ShelfRepository shelfRepository,
-                        ShelfReadModelRepository readModelRepository) {
+                        ShelfReadModelRepository readModelRepository,
+                        ShelfEventPublisher eventPublisher) {
         this.bookRefRepository = bookRefRepository;
         this.shelfRepository = shelfRepository;
         this.readModelRepository = readModelRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     public ShelfResponse create(CreateShelfRequest req, Long userId) {
@@ -44,6 +49,11 @@ public class ShelfService {
 
         ShelfReadModel readModel = new ShelfReadModel(shelf, bookRef);
         readModelRepository.save(readModel);
+
+        eventPublisher.publishChanged(new ShelfChangedEvent(
+                shelf.getUserId(), readModel.getBookIsbn(), readModel.getTitle(),
+                readModel.getAuthorName(), readModel.getStatus().name(),
+                Instant.now()));
 
         return toResponse(readModel);
     }
@@ -65,6 +75,11 @@ public class ShelfService {
         shelfRepository.save(shelf);
 
         ShelfReadModel readModel = readModelRepository.save(new ShelfReadModel(shelf, bookRef));
+
+        eventPublisher.publishChanged(new ShelfChangedEvent(
+                shelf.getUserId(), readModel.getBookIsbn(), readModel.getTitle(),
+                readModel.getAuthorName(), readModel.getStatus().name(),
+                Instant.now()));
 
         return toResponse(readModel);
     }

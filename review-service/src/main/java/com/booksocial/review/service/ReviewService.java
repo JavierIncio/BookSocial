@@ -4,6 +4,9 @@ import com.booksocial.review.domain.BookNotInCatalogException;
 import com.booksocial.review.domain.Review;
 import com.booksocial.review.domain.ReviewAlreadyExistsException;
 import com.booksocial.review.domain.ReviewNotFoundException;
+import com.booksocial.review.events.ReviewCreatedEvent;
+import com.booksocial.review.events.ReviewEventPublisher;
+import com.booksocial.review.events.ReviewUpdatedEvent;
 import com.booksocial.review.readmodel.*;
 import com.booksocial.review.repository.ReviewRepository;
 import com.booksocial.review.web.dto.CreateReviewRequest;
@@ -24,12 +27,17 @@ public class ReviewService {
     private final ReviewRepository reviewRepo;
     private final ReviewReadModelRepository readModelRepo;
     private final ReviewStatsReadModelRepository statsRepo;
+    private final ReviewEventPublisher eventPublisher;
 
-    public ReviewService(BookRefReadModelRepository bookRefRepo, ReviewRepository reviewRepo, ReviewReadModelRepository readModelRepo, ReviewStatsReadModelRepository statsRepo) {
+    public ReviewService(
+            BookRefReadModelRepository bookRefRepo, ReviewRepository reviewRepo,
+            ReviewReadModelRepository readModelRepo, ReviewStatsReadModelRepository statsRepo,
+            ReviewEventPublisher eventPublisher) {
         this.bookRefRepo = bookRefRepo;
         this.reviewRepo = reviewRepo;
         this.readModelRepo = readModelRepo;
         this.statsRepo = statsRepo;
+        this.eventPublisher = eventPublisher;
     }
 
     public ReviewResponse create(Long userId, String bookIsbn, CreateReviewRequest req) {
@@ -40,6 +48,16 @@ public class ReviewService {
         Review review = reviewRepo.save(new Review(bookIsbn, userId, req.rating(), req.comment()));
         readModelRepo.save(new ReviewReadModel(review));  // upsert
         syncStats(bookIsbn);
+
+        BookRefReadModel book = bookRefRepo.findById(bookIsbn).orElse(null);
+        eventPublisher.publishCreated(new ReviewCreatedEvent(
+                review.getId(), bookIsbn,
+                book != null ? book.getTitle() : null,
+                book != null ? book.getAuthorName() : null,
+                review.getRating(), review.getComment(),
+                userId, Instant.now())
+        );
+
         return toResponse(review);
     }
 
@@ -60,6 +78,16 @@ public class ReviewService {
         reviewRepo.save(review);
         readModelRepo.save(new ReviewReadModel(review));
         syncStats(bookIsbn);
+
+        BookRefReadModel book = bookRefRepo.findById(bookIsbn).orElse(null);
+        eventPublisher.publishUpdated(new ReviewUpdatedEvent(
+                review.getId(), bookIsbn,
+                book != null ? book.getTitle() : null,
+                book != null ? book.getAuthorName() : null,
+                review.getRating(), review.getComment(),
+                review.getUserId(), Instant.now())
+        );
+
         return toResponse(review);
     }
 
