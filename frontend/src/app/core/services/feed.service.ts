@@ -10,6 +10,6 @@ export class FeedService {
   getFeed(cursor?: string, limit = 10): Observable<FeedPageResponse> {
     const params: Record<string, string> = { limit: String(limit) };
     if (cursor) params['cursor'] = cursor;
-    return this.http.get<FeedPageResponse>('/feed', { params });
+    return this.http.get<FeedPageResponse>('/api/feed', { params });
   }
 }

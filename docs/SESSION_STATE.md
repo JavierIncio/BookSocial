@@ -113,7 +113,7 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-10 están completadas** (1-9
 
 ### Active
 
-- Ninguno bloqueado. Siguiente: **verificación E2E manual en el navegador contra el stack Docker** (login, feed con actividad FOLLOW/REVIEW/SHELF, campana con badge y push en tiempo real entre dos usuarios). Commit `cc12352` pusheado a `origin/main`.
+- Ninguno bloqueado. Feed arreglado y **verificado con navegador real (Chrome headless + CDP, F5 a `/feed` en sesión con cookie de refresh)**: página `/feed` → index.html (SPA), `XHR /api/feed?limit=10` → `application/json` 200, refresh por cookie 200, enriquecimiento `/profiles/{userId}` 200, DOM mostrando *"Your feed social2@test.com started following you…"*. Commit `cc12352` pusheado a `origin/main`. **Fixes post-commit pendientes de commit (sin pushear)**: colisiones proxy↔SPA + query-string en `proxy.conf.json` (prefijos `/api/feed`/`/api/notifications` con `pathRewrite`, límites `(\?|/|$)`), guard de sesión asíncrono (`ensureSession`) + `withEnabledBlockingInitialNavigation`.
 
 ### Blocked
 
@@ -154,13 +154,13 @@ Tras cerrar la **Fase 10** (frontend feed + notificaciones):
 - `features/notifications/notification-bell/` — **Fase 10**: campana en nav con badge unread-count, dropdown con lista, enriquecimiento del follower name, "Mark all as read"; conecta `NotificationRealtimeService` en `ngOnInit` y desconecta en `ngOnDestroy`.
 - `shared/components/nav/` — nav standalone compartido (brand, Catalog, Feed, campana, My shelf/Logout o Log in según sesión).
 - `core/models/` + `core/services/` — book/author/review/shelf alineados 1:1 con DTOs backend; **Fase 10**: `feed.models.ts` (`FeedItemResponse`/`FeedPageResponse`/`FeedPayload`), `notification.models.ts` (`NotificationResponse`), `ProfileResponse` en `user.models.ts`; services `FeedService` (cursor), `NotificationService` (list/unreadCount/markAllAsRead), `NotificationRealtimeService` (STOMP `@stomp/stompjs`), `AuthService.userId()` (claim `uid`).
-- `proxy.conf.json` — enruta auth, users, profiles, follows, books, authors, reviews, shelves, **feed, notifications** → gateway :8080 (claves regex con frontera).
+- `proxy.conf.json` — enruta auth, users, profiles, follows, books, authors, reviews, shelves → gateway :8080 (claves regex con frontera). **Fase 10**: feed y notifications vía `^/api/feed(\?|/|$)` y `^/api/notifications(\?|/|$)` **con `pathRewrite`** (`/api/feed` → `/feed`) para **evitar la colisión con la ruta SPA `/feed`**: el dev-server (Vite) proxea las navegaciones de página completas antes del fallback SPA, así que F5 en `/feed` devolvía el 401 del gateway. **TODAS las claves usan el límite `(\?|/|$)`** porque Vite matchea `req.url` **incluyendo el query string**: con la frontera antigua `(/|$)`, `GET /api/feed?limit=10` NO matcheaba → el dev-server servía `index.html` como `text/html` → HttpClient fallaba → **"Failed to load your feed."** Lo mismo habría roto `/books/search?q=`, `/authors/search?q=` y `/books/search/full?q=`.
 - `src/locale/messages.xlf` — archivo fuente de traducciones (**104 trans-units**).
 - `src/locale/messages.es.xlf` — traducciones al español (104).
 - `src/locale/messages.pt.xlf` — traducciones al portugués (104).
 - Convenciones: **signals** + `inject()` (standalone, sin constructor). Obligatorio en zoneless. UI multilingüe (en/es/pt) con `@angular/localize`.
 
 ### Docs
-- `docs/GUIDE.md` — Bloques 0-9, Apéndices A-C (C: operación — despliegue, logs, depuración).
+- `docs/GUIDE.md` — Bloques 0-12, Apéndices A-E (C: operación — despliegue, logs, depuración; E: WebSocket STOMP).
 - `docs/ROADMAP.md` — Fases 1-10 documentadas (8.1-8.6 + i18n + Fase 9.1-9.4 + Fase 10).
 - `docs/SESSION_STATE.md` — Este archivo.

@@ -1,52 +1,54 @@
 {
-  "^/auth(/|$)": {
+  "^/auth(\\?|/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
     "secure": false
   },
-  "^/users(/|$)": {
+  "^/users(\\?|/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
     "secure": false
   },
-  "^/profiles(/|$)": {
+  "^/profiles(\\?|/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
     "secure": false
   },
-  "^/follows(/|$)": {
+  "^/follows(\\?|/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
     "secure": false
   },
-  "^/books(/|$)": {
+  "^/books(\\?|/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
     "secure": false
   },
-  "^/authors(/|$)": {
+  "^/authors(\\?|/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
     "secure": false
   },
-  "^/reviews(/|$)": {
+  "^/reviews(\\?|/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
     "secure": false
   },
-  "^/shelves(/|$)": {
+  "^/shelves(\\?|/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
     "secure": false
   },
-  "^/feed(/|$)": {
+  "^/api/feed(\\?|/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
-    "secure": false
+    "secure": false,
+    "pathRewrite": { "^/api/feed": "/feed" }
   },
-  "^/notifications(/|$)": {
+  "^/api/notifications(\\?|/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
-    "secure": false
+    "secure": false,
+    "pathRewrite": { "^/api/notifications": "/notifications" }
   }
 }

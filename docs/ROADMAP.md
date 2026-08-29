@@ -941,6 +941,13 @@ Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y 
 - Build dev sin errores; i18n: xlf == es == pt == 104 trans-units (sin faltantes ni extras).
 - Pendiente: **E2E manual en navegador contra el stack Docker** (two-user: feed + push STOMP en vivo). Commit + push hecho (`cc12352`).
 
+### Fixes post-Fase 10 (commiteables en `main`)
+
+- **Colisión proxy↔SPA**: el dev-server (Vite) proxea las navegaciones de página completas antes que el fallback SPA; la clave `^/feed` del proxy hacía que **F5 en `/feed`** devolviera el 401 del gateway. Fix: la API pasó a `/api/feed` y `/api/notifications` con `pathRewrite` → `/feed`/`/notifications`; la página SPA `/feed` ya no colisiona.
+- **Query string**: Vite matchea `req.url` incluyendo el query string, así que la frontera `(/|$)` no matcheaba `/api/feed?limit=10` → el dev-server servía `index.html` (`text/html`) → **"Failed to load your feed."**. Fix: **todas** las claves del proxy usan el límite `(\?|/|$)`. Esto también protegía (aún estando roto) a `/books/search?q=`, `/authors/search?q=` y `/books/search/full?q=`.
+- **Sesión en F5**: guard asíncrono con `AuthService.ensureSession()` (promesa memoizada) + `withEnabledBlockingInitialNavigation()` para que la restauración de sesión (refresh por cookie) preceda a la navegación protegida.
+- **Verificado con Chrome headless + CDP** (F5 a `/feed` con cookie `refresh_token`): `/feed` → index.html (SPA), `/api/feed?limit=10` → JSON 200, refresh por cookie 200, feed renderizado con actividad FOLLOW/REVIEW/SHELF y nombres enriquecidos. El push STOMP funciona (solo permite origen `http://localhost:4200`; para el E2E usar el puerto por defecto).
+
 ### Cierre de la Fase 10
 
 - [x] Fase 10.1 — Deps STOMP + proxy (`/feed`, `/notifications`) + models/services + `AuthService.userId()`.

@@ -32,6 +32,7 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 | [9. shelf-service](#bloque-9--shelf-service-estantería-personal-del-usuario)                                    | Estantería, dual-write, evento cruzado | Fase 5     |
 | [10. i18n](#bloque-10--i18n-internacionalización-angular)                                                       | @angular/localize, en/es/pt            | i18n       |
 | [11. social + notification](#bloque-11--fase-9-feed-social-social-service--notificaciones-notification-service) | Feed por eventos, notificaciones STOMP | Fase 9     |
+| [12. Frontend feed + notificaciones](#bloque-12--fase-10-frontend-del-feed-social--notificaciones-en-tiempo-real) | `/feed` SPA, campana, STOMP, proxy     | Fase 10    |
 | [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable)                                      | JwtService, filtros, config            | Referencia |
 | [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño)                                                    | Resumen arquitectónico                 | Referencia |
 | [C. Operación](#apéndice-c--operación-despliegue-logs-y-depuración)                                             | Despliegue, logs, depuración           | Referencia |
@@ -6161,6 +6162,56 @@ db.notifications.find({userId: 19})                     # 1 doc FOLLOW (sin dupl
 - **Unfollow no retroactivo**: solo se actualiza el índice de seguidores; el feed ya materializado no se depura.
 - **WebSocket STOMP vía `SimpMessagingTemplate`**: el push es best-effort; si el usuario no está conectado, no se pierde nada porque la notificación ya está persistida en Mongo y la recupera vía `GET /notifications`.
 - **Cabecera `X-User-Id` confiable** gracias al strip-and-assert del gateway (mismo patrón que el resto de servicios).
+
+---
+
+## Bloque 12 — Fase 10: Frontend del feed social + notificaciones en tiempo real
+
+Este bloque integra en el frontend Angular los servicios de la Fase 9: la página `/feed` con paginación por cursor y la campana de notificaciones con push WebSocket STOMP. También documenta dos trampas del dev-server (Vite) que conviene conocer antes de tocar el proxy.
+
+**Objetivo**: que `/feed` y la campana funcionen contra el stack Docker, con sesión restaurada entre navegaciones (F5/refresh por cookie) y sin colisiones de rutas con el proxy.
+
+### 12.1 — Servicios y modelo
+
+- `@stomp/stompjs` para el cliente WebSocket. `NotificationRealtimeService` se conecta **directo** a `ws://localhost:8087/ws?token=<JWT>` porque el gateway WebMVC **no** proxea WebSockets (ver 11.7). El WS solo admite el origen `http://localhost:4200`.
+- `FeedService.getFeed(cursor, limit)` → `GET /api/feed?limit=&cursor=`; `NotificationService` → `/api/notifications`, `/api/notifications/unread-count`, `POST /api/notifications/read`; `AuthService.userId()` decodifica el claim `uid` del access token sin librería JWT.
+- La página `/feed` enriquece el nombre del actor vía `/profiles/{userId}` con una caché reactiva (`signal<Map<number,string>>`) que evita duplicar llamadas.
+
+### 12.2 — El dev-server proxea ANTES que el fallback SPA (dos trampas)
+
+**Trampa 1 — colisión ruta ↔ clave de proxy.** Vite aplica el proxy antes de servir `index.html`. Con una clave `^/feed`, un F5 a la página `/feed` (navegación de documento, sin `Authorization`) golpeaba el gateway → `401 {"error":"unauthorized","message":"Authentication required"}`. Solución: la API usa un prefijo **sin colisión** con rewrite:
+
+```json
+"^/api/feed(\\?|/|$)": {
+  "target": "http://localhost:8080",
+  "changeOrigin": true,
+  "secure": false,
+  "pathRewrite": { "^/api/feed": "/feed" }
+}
+```
+
+(En el repo, `proxy.conf.json` tiene `\\?|/|$` porque el fichero se parsea como JSON y el valor final del regex debe ser `\?`.)
+
+**Trampa 2 — el query string rompe la frontera `(/|$)`.** Vite matchea `req.url` **incluyendo el query string**: `GET /api/feed?limit=10` no casaba con `^/api/feed(/|$)` (el `?` no es `/` ni fin de línea) → el dev-server servía `index.html` como `text/html` → `HttpClient` fallaba al parsear → *"Failed to load your feed."* Por eso **todas** las claves del proxy usan la frontera `(\?|/|$)`. La frontera antigua habría roto igual a `/books/search?q=…`, `/authors/search?q=…` y `/books/search/full?q=…`.
+
+> El proxy se lee **al arrancar** `ng serve`: tras tocar `proxy.conf.json` hay que reiniciar el dev-server.
+
+### 12.3 — Sesión entre navegaciones (F5 / refresh por cookie)
+
+El access token (TTL 15 min) vive en memoria; un F5 perdía la sesión salvo que la restauración por cookie terminara antes de la navegación. Fix aplicado:
+
+- `provideAppInitializer(() => inject(AuthService).ensureSession())` + `withEnabledBlockingInitialNavigation()`: la restauración (`POST /auth/refresh`, cookie httpOnly `refresh_token`, TTL 7 días) termina **antes** de la primera navegación.
+- `authGuard` asíncrono: `await auth.ensureSession()` antes de decidir → `/login` si no hay sesión.
+- `AuthService.ensureSession()` memoiza la promesa de restauración (no se dispara `refresh` en paralelo).
+- El interceptor `authInterceptor` rejuga la petición con el token renovado tras un `401` (y limpia la sesión si el refresh falla).
+
+### 12.4 — Verificación E2E (dos usuarios)
+
+1. Login con `social1@test.com` en `http://localhost:4200` (usar el puerto por defecto para el STOMP).
+2. En otra terminal, `social2@test.com` deshace y repite el follow contra `/follows/{id}` (script del paso 3 del Bloque 11) → la campana de social1 recibe el push en vivo y el badge sube.
+3. **F5** en `/feed` → la página se sirve como SPA y `GET /api/feed?limit=10` responde `application/json` con la actividad `FOLLOW` en primer lugar (el siguiente `nextCursor` alimenta "Load more").
+
+Estado verificable en el navegador (DevTools → Network): `/feed` → `200 text/html` (documento); `/api/feed?limit=10` → `200 application/json`; `/auth/refresh` → `200 application/json` con `Set-Cookie: refresh_token=…`; `ws://localhost:8087/ws?token=…` → `101 Switching Protocols`.
 
 ---
 

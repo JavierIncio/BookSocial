@@ -60,6 +60,16 @@ export class AuthService {
     });
   }
 
+  private restorePromise: Promise<void> | null = null;
+
+  ensureSession(): Promise<void> {
+    if (this.authenticatedStore()) return Promise.resolve();
+    this.restorePromise ??= this.restoreSession().finally(() => {
+      this.restorePromise = null;
+    });
+    return this.restorePromise;
+  }
+
   async restoreSession(): Promise<void> {
     try {
       await firstValueFrom(this.refresh());
