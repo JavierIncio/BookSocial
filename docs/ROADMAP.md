@@ -931,15 +931,15 @@ Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y 
 
 ### Fase 10.5 — i18n (extracción y traducciones) ✅ Completada
 
-- `ng extract-i18n --output-path src/locale` → **103 trans-units** (115 message occurrences) en `messages.xlf` (+22 respecto a la Fase 9).
+- `ng extract-i18n --output-path src/locale` → **104 trans-units** (116 message occurrences) en `messages.xlf` (+23 respecto a la Fase 9).
 - Traducciones completas añadidas a `messages.es.xlf` y `messages.pt.xlf`. Fix de la fase i18n: los `$localize` de TS usaban `$localize`@@key:Text`` (sin `:` inicial), que muestra el literal `@@key:Text` en runtime — corregidos los 43 usos a `$localize`:@@key:Text```, re-extraídos con IDs con nombre y re-mapeadas las traducciones es/pt.
 - `feedLoadMore` y otros con interpolación preservan `<x id="INTERPOLATION" .../>`.
 
 ### Verificación de la Fase 10
 
 - `ng build` (producción, `localize: true`): **OK sin warnings**, 3 locales `dist/frontend/browser/{en,es,pt}/`.
-- Build dev sin errores; i18n: xlf == es == pt == 103 trans-units (sin faltantes ni extras).
-- Pendiente: **E2E manual en navegador contra el stack Docker** (two-user: feed + push STOMP en vivo) y commit+push.
+- Build dev sin errores; i18n: xlf == es == pt == 104 trans-units (sin faltantes ni extras).
+- Pendiente: **E2E manual en navegador contra el stack Docker** (two-user: feed + push STOMP en vivo). Commit + push hecho (`cc12352`).
 
 ### Cierre de la Fase 10
 
@@ -947,7 +947,8 @@ Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y 
 - [x] Fase 10.2 — `NotificationRealtimeService` con STOMP directo a `:8087` y topic por userId.
 - [x] Fase 10.3 — Página `/feed` con paginación cursor y enriquecimiento de nombres.
 - [x] Fase 10.4 — Campana de notificaciones en nav (badge, lista, mark-all-read, push en vivo).
-- [x] Fase 10.5 — i18n: extracción (103 trans-units) + traducciones es/pt.
+- [x] Fase 10.5 — i18n: extracción + traducciones es/pt. **Fix**: los 43 `$localize` de TS usaban `$localize`@@key:Text`` (mostraban el literal en runtime) → corregidos a `$localize`:@@key:Text```; `feedLoadMore`/`feedLoadingMore` separados en dos trans-units para que el botón se traduzca. **104 trans-units** con es/pt completos.
 - [x] Verificación: build de producción con 3 locales, sin warnings.
 - [ ] E2E manual en navegador contra el stack Docker (feed + push STOMP entre dos usuarios).
-- [ ] Actualizar este documento al cerrar la fase.
+- [x] Commit + push de la Fase 10 (`cc12352`).
+- [x] Actualizar este documento al cerrar la fase.
