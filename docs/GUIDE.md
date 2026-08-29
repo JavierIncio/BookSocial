@@ -18,22 +18,25 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 
 ## Tabla de contenidos
 
-| Bloque                                                                                | Tema                                   | Fase       |
-| ------------------------------------------------------------------------------------- | -------------------------------------- | ---------- |
-| [0. Cimientos](#bloque-0--cimientos-monorepo--infraestructura--ci)                    | Monorepo, Docker, CI                   | —          |
-| [1. Identity Service](#bloque-1--identity-service)                                    | Auth, JWT, OAuth2, roles               | Fase 1     |
-| [2. API Gateway](#bloque-2--api-gateway)                                              | Enrutamiento, JWT, headers             | Fase 1     |
-| [3. Frontend Angular](#bloque-3--frontend-angular)                                    | SPA, signals, OAuth2 flow              | Fase 1     |
-| [4. Contenerización y CI](#bloque-4--contenerización-y-ci-ampliado)                   | Dockerfiles, compose, CI               | Fase 1     |
-| [5. Errores y decisiones](#bloque-5--cierre-errores-resueltos-y-decisiones-de-diseño) | Retrospectiva Fase 1                   | Fase 1     |
-| [6. user-service](#bloque-6--fase-2-user-service-perfil-con-cqrs-dual-write)          | CQRS, follows, RabbitMQ                | Fase 2     |
-| [7. book-service](#bloque-7--book-service-catálogo-de-libros-con-cqrs)                | Catálogo, búsqueda, roles              | Fase 3     |
-| [8. review-service](#bloque-8--review-service-reseñas--primer-evento-cruzado)         | Eventos cruzados, stats                | Fase 4     |
-| [9. shelf-service](#bloque-9--shelf-service-estantería-personal-del-usuario)          | Estantería, dual-write, evento cruzado | Fase 5     |
-| [10. i18n](#bloque-10--i18n-internacionalización-angular)                             | @angular/localize, en/es/pt            | i18n       |
-| [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable)            | JwtService, filtros, config            | Referencia |
-| [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño)                          | Resumen arquitectónico                 | Referencia |
-| [C. Operación](#apéndice-c--operación-despliegue-logs-y-depuración)                   | Despliegue, logs, depuración           | Referencia |
+| Bloque                                                                                                          | Tema                                   | Fase       |
+| --------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------- |
+| [0. Cimientos](#bloque-0--cimientos-monorepo--infraestructura--ci)                                              | Monorepo, Docker, CI                   | —          |
+| [1. Identity Service](#bloque-1--identity-service)                                                              | Auth, JWT, OAuth2, roles               | Fase 1     |
+| [2. API Gateway](#bloque-2--api-gateway)                                                                        | Enrutamiento, JWT, headers             | Fase 1     |
+| [3. Frontend Angular](#bloque-3--frontend-angular)                                                              | SPA, signals, OAuth2 flow              | Fase 1     |
+| [4. Contenerización y CI](#bloque-4--contenerización-y-ci-ampliado)                                             | Dockerfiles, compose, CI               | Fase 1     |
+| [5. Errores y decisiones](#bloque-5--cierre-errores-resueltos-y-decisiones-de-diseño)                           | Retrospectiva Fase 1                   | Fase 1     |
+| [6. user-service](#bloque-6--fase-2-user-service-perfil-con-cqrs-dual-write)                                    | CQRS, follows, RabbitMQ                | Fase 2     |
+| [7. book-service](#bloque-7--book-service-catálogo-de-libros-con-cqrs)                                          | Catálogo, búsqueda, roles              | Fase 3     |
+| [8. review-service](#bloque-8--review-service-reseñas--primer-evento-cruzado)                                   | Eventos cruzados, stats                | Fase 4     |
+| [9. shelf-service](#bloque-9--shelf-service-estantería-personal-del-usuario)                                    | Estantería, dual-write, evento cruzado | Fase 5     |
+| [10. i18n](#bloque-10--i18n-internacionalización-angular)                                                       | @angular/localize, en/es/pt            | i18n       |
+| [11. social + notification](#bloque-11--fase-9-feed-social-social-service--notificaciones-notification-service) | Feed por eventos, notificaciones STOMP | Fase 9     |
+| [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable)                                      | JwtService, filtros, config            | Referencia |
+| [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño)                                                    | Resumen arquitectónico                 | Referencia |
+| [C. Operación](#apéndice-c--operación-despliegue-logs-y-depuración)                                             | Despliegue, logs, depuración           | Referencia |
+| [D. RabbitMQ](#apéndice-d--rabbitmq-del-publisher-al-consumer)                                                  | Broker, eventos, colas                 | Referencia |
+| [E. WebSocket (STOMP)](#apéndice-e--websocket-stomp-del-servidor-al-navegador)                                  | Push en tiempo real, WS                | Referencia |
 
 ---
 
@@ -57,12 +60,17 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
    │  :8081      │ │  :8082      │ │  :8083      │
    └─────────────┘ └─────────────┘ └──────┬──────┘
                                           │
-                 ┌────────────────────────┼────────────────────────┐
-                 │                        │                        │
-          ┌──────▼──────┐         ┌──────▼──────┐         ┌──────▼──────┐
-          │   review    │         │   shelf     │         │  (future)   │
-          │   :8084     │         │   :8085     │         │             │
-          └─────────────┘         └─────────────┘         └─────────────┘
+┌────────────────────────┼────────────────────────┐
+                  │                        │                        │
+           ┌──────▼──────┐         ┌──────▼──────┐         ┌──────▼──────┐
+           │   review    │         │   shelf     │         │   social    │
+           │   :8084     │         │   :8085     │         │   :8086     │
+           └─────────────┘         └─────────────┘         └──────┬──────┘
+                                                                  │
+                                                           ┌──────▼──────┐
+                                                           │notification │
+                                                           │   :8087     │
+                                                           └─────────────┘
 ```
 
 **Infraestructura**: PostgreSQL (datos relacionales), MongoDB (lecturas CQRS), RabbitMQ (eventos asíncronos).
@@ -5290,14 +5298,36 @@ social-service/          :8086   solo Mongo · consume 5 colas · GET /feed
 notification-service/    :8087   solo Mongo + WebSocket · consume 2 colas · REST + push STOMP
 ```
 
+**Ficha de `social-service`**
+
+|                 |                                                                                                     |
+| --------------- | --------------------------------------------------------------------------------------------------- |
+| Puerto          | `8086`                                                                                              |
+| Persistencia    | MongoDB (colecciones `activity_items`, `followers`, `feed_entries`)                                 |
+| Responsabilidad | Feed personal de actividad: materializa cada evento en el feed de cada usuario (fanout-on-write)    |
+| Endpoints clave | `GET /feed?cursor=&limit=` (con `X-User-Id`)                                                        |
+| Mensajería      | Consume `follow.followed`, `follow.unfollowed`, `review.created`, `review.updated`, `shelf.changed` |
+
+**Ficha de `notification-service`**
+
+|                 |                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------- |
+| Puerto          | `8087`                                                                                                          |
+| Persistencia    | MongoDB (colección `notifications`)                                                                             |
+| Responsabilidad | Notificaciones por usuario, persistidas + push en tiempo real vía WebSocket STOMP                               |
+| Endpoints clave | `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/read`; WS `ws://…:8087/ws?token=` |
+| Mensajería      | Consume `follow.followed`; declara cola (sin consumer todavía) para `review.created`                            |
+
 ### 11.1 — Esqueleto de un servicio "solo Mongo" (sin JPA)
 
-Los servicios nuevos no tienen Postgres: sus cambios de estado vienen **exclusivamente por eventos RabbitMQ** (excepto el follow, que los produce user-service). Sus dependencias en el pom:
+Los servicios nuevos no tienen Postgres: sus cambios de estado vienen **exclusivamente por eventos RabbitMQ** (excepto el follow, que lo produce user-service publicando en el mismo exchange). Toda la escritura va a MongoDB; no hay command side, ni entidades JPA, ni repos de Spring Data JPA.
+
+`pom.xml` de social-service (notification-service es idéntico más `spring-boot-starter-websocket`):
 
 ```xml
 <dependency>
     <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-webmvc</artifactId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
 </dependency>
 <dependency>
     <groupId>org.springframework.boot</groupId>
@@ -5307,120 +5337,727 @@ Los servicios nuevos no tienen Postgres: sus cambios de estado vienen **exclusiv
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-security</artifactId>
 </dependency>
-<!-- + starter-validation, actuator, amqp, jjwt (Apéndice A) -->
-```
-
-Puerto `8086` (social) / `8087` (notification), lectura de `spring.mongodb.uri` (`SPRING_MONGODB_URI`), seguridad parse-only del [Apéndice A](#apéndice-a--plantilla-de-seguridad-reutilizable) y los beans de Rabbit. En notification-service se añade además:
-
-```xml
 <dependency>
     <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-websocket</artifactId>
+    <artifactId>spring-boot-starter-validation</artifactId>
 </dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-webmvc</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-amqp</artifactId>
+</dependency>
+<!-- + jjwt-api / jjwt-impl / jjwt-jackson 0.12.6 (Apéndice A) -->
 ```
+
+#### Estructura de paquetes
+
+**social-service**:
+
+```
+social-service/src/main/java/com/booksocial/social/
+├── SocialServiceApplication.java
+├── config/
+│   ├── SecurityConfig.java        # parse-only JWT (Apéndice A)
+│   └── RabbitConfig.java          # exchange + 5 colas + bindings + converter
+├── domain/
+│   └── ActivityType.java          # enum: FOLLOW, REVIEW, SHELF
+├── readmodel/
+│   ├── ActivityItemReadModel.java        # colección activity_items
+│   ├── ActivityItemReadModelRepository.java
+│   ├── FeedEntryReadModel.java           # colección feed_entries
+│   ├── FeedEntryReadModelRepository.java
+│   ├── FollowerIndexReadModel.java       # colección followers
+│   └── FollowerIndexReadModelRepository.java
+├── security/
+│   ├── JwtService.java
+│   ├── JwtAuthFilter.java
+│   └── RestAuthenticationEntryPoint.java
+├── events/
+│   ├── FollowedEvent.java / UnfollowedEvent.java
+│   ├── ReviewEvent.java (sealed) / ReviewCreatedEvent.java / ReviewUpdatedEvent.java
+│   ├── ShelfChangedEvent.java
+│   ├── FollowEventConsumer.java
+│   ├── ReviewEventConsumer.java
+│   └── ShelfEventConsumer.java
+├── service/
+│   └── FeedService.java
+└── web/
+    ├── FeedController.java
+    └── dto/
+        ├── FeedItemResponse.java
+        └── FeedPageResponse.java
+```
+
+**notification-service**:
+
+```
+notification-service/src/main/java/com/booksocial/notification/
+├── NotificationServiceApplication.java
+├── config/
+│   ├── SecurityConfig.java        # parse-only JWT (Apéndice A)
+│   ├── RabbitConfig.java          # exchange + 2 colas
+│   └── WebSocketConfig.java       # @EnableWebSocketMessageBroker (STOMP)
+├── readmodel/
+│   ├── NotificationReadModel.java        # colección notifications
+│   └── NotificationReadModelRepository.java
+├── security/
+│   ├── JwtService.java
+│   ├── JwtAuthFilter.java
+│   ├── RestAuthenticationEntryPoint.java
+│   └── JwtHandshakeInterceptor.java  # ← propio del WebSocket (no va en el Apéndice A)
+├── events/
+│   ├── FollowedEvent.java
+│   └── FollowEventConsumer.java
+├── service/
+│   └── NotificationService.java
+└── web/
+    ├── NotificationController.java
+    └── dto/
+        └── NotificationResponse.java
+```
+
+> La seguridad HTTP son las 4 clases del [Apéndice A](#apéndice-a--plantilla-de-seguridad-reutilizable) sin cambios: `JwtService` parse-only (firma HS256, `requireIssuer("booksocial-identity")`), `JwtAuthFilter` (autoridades `ROLE_*` del claim `roles`), `RestAuthenticationEntryPoint` (401 JSON) y `SecurityConfig` stateless. La única diferencia entre ambos servicios es el `SecurityConfig` (ver abajo).
+
+#### `application.yaml` (ambos servicios)
+
+Son gemelos; cambia `spring.application.name` y `server.port`. Como los demás servicios, importan el `.env`, leen el secreto de `APP_JWT_SECRET` y exponen solo `health`:
+
+```yaml
+spring:
+  application:
+    name: social-service # notification-service en el otro
+
+  config:
+    import: "optional:file:.env[.properties]"
+
+  mongodb:
+    uri: ${SPRING_MONGODB_URI:mongodb://booksocial:booksocial@localhost:27017/booksocial?authSource=admin}
+
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: ${SPRING_RABBITMQ_PORT:5672}
+    username: ${SPRING_RABBITMQ_USERNAME:guest}
+    password: ${SPRING_RABBITMQ_PASSWORD:guest}
+
+server:
+  port: 8086 # 8087 en notification-service
+
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET}
+    issuer: booksocial-identity
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+```
+
+#### `SecurityConfig` — qué se abre en cada servicio
+
+```java
+// social-service (proxy HTTP normal a través del gateway):
+.requestMatchers("/actuator/health").permitAll()
+.requestMatchers(HttpMethod.GET, "/feed").authenticated()
+.anyRequest().authenticated()
+
+// notification-service: además, el handshake WebSocket NO lleva Authorization header
+.requestMatchers("/actuator/health", "/ws/**").permitAll()
+.anyRequest().authenticated()
+```
+
+El handshake `/ws` está exento del filtro JWT HTTP, pero la **autenticación real del WebSocket** la hace `JwtHandshakeInterceptor` en el propio handshake (ver 11.4). Es la diferencia con el resto de servicios: aquí el token viaja en la URL (`?token=…`), no en un header.
 
 ### 11.2 — Nuevos eventos de dominio (Fase 9.2)
 
 Para alimentar el feed hacen falta nuevos eventos. Se añadieron **publicadores** en los servicios de origen (dual-write con Rabbit, misma limitación de outbox documentada en Apéndice B):
 
-| Evento | Publicador | Routing key | Consumidores |
-| ------ | ---------- | ----------- | ------------ |
-| `FollowedEvent` / `UnfollowedEvent` | user-service (ya existía) | `follow.followed` / `follow.unfollowed` | social y notification |
-| `ReviewCreatedEvent` / `ReviewUpdatedEvent` | review-service | `review.created` / `review.updated` | social |
-| `ShelfChangedEvent` | shelf-service | `shelf.changed` | social |
+#### El mensaje es una "copia privada por servicio" (no una clase compartida)
 
-En review-service el `ReviewService.create/update` denormaliza `title`/`authorName`/`authorId` desde los `book_refs` locales antes de publicar el evento. En shelf-service el `ShelfService.create/updateStatus` publica `ShelfChangedEvent` (el `delete` no publica: no hay actividad que mostrar). Sus colas originales (`review-service.books.created`, `shelf-service.books.created`) se conservan intactas.
+Cada consumidor define su propio record del evento en **su** paquete de eventos (`com.booksocial.social.events`, `com.booksocial.notification.events`, …), aunque represente el mismo evento con los mismos nombres de campos. No existe un módulo compartido de eventos entre servicios. En el momento de deserializar, `JacksonJsonMessageConverter` se construye con el **trusted package** de ese servicio (sección 8.2): `new JacksonJsonMessageConverter("com.booksocial.social.events")` en social-service y `...("com.booksocial.notification.events")` en notification-service. Así cada servicio solo acepta clases que él mismo define; el "contrato" entre servicios es **implícito por convención** (mismos nombres de campos → misma serialización JSON), no una dependencia de un módulo compartido.
 
-> **Copias locales de eventos**: cada consumidor define su propio record `Evento(...)` en su paquete (`com.booksocial.social.events`, `com.booksocial.notification.events`). `JacksonJsonMessageConverter` deserializa contra los trusted packages del converter local (ver sección 8.2). En social-service, `ReviewCreatedEvent` y `ReviewUpdatedEvent` implementan una interface común `ReviewEvent` para tratarlos de forma polimórfica.
+#### Publicadores y consumidores
 
-### 11.3 — Feed por fanout-on-write (social-service)
+| Evento                                      | Publicador                              | Routing key                             | Consumidores                                           |
+| ------------------------------------------- | --------------------------------------- | --------------------------------------- | ------------------------------------------------------ |
+| `FollowedEvent` / `UnfollowedEvent`         | user-service (`FollowEventPublisher`)   | `follow.followed` / `follow.unfollowed` | social (ambos) · notification (solo `follow.followed`) |
+| `ReviewCreatedEvent` / `ReviewUpdatedEvent` | review-service (`ReviewEventPublisher`) | `review.created` / `review.updated`     | social                                                 |
+| `ShelfChangedEvent`                         | shelf-service (`ShelfEventPublisher`)   | `shelf.changed`                         | social                                                 |
 
-Dos decisiones de diseño:
-
-1. **Cada actividad se escribe una vez** en `activities` (ActivityItemReadModel, `_id` = UUID generado con `generateActivityId`).
-2. **Cada seguidor tiene su feed "materializado"**: al recibir un evento, `FeedService` escribe la actividad una vez **por cada seguidor** en `feed_entries` (FeedEntryReadModel, `_id` = `feedUserId:activityId` — idempotente). Leer el feed es un `find` por `_id`, sin joins.
-
-`FollowerIndexReadModel` (colección `followers`, `_id` = userId) almacena la lista de `followerIds` del usuario. El `FollowedEvent`/`UnfollowedEvent` **actualiza ese índice** (añade/hermana) y además **hace fanout**: al seguir, escribe la actividad `FOLLOW` en el feed de cada seguidor **nuevo** del usuario seguido (no de todos).
-
-`RabbitConfig` declara 5 colas durables:
-
-| Cola | Key |
-| ---- | --- |
-| `social-service.follows.followed` | `follow.followed` |
-| `social-service.follows.unfollowed` | `follow.unfollowed` |
-| `social-service.reviews.created` | `review.created` |
-| `social-service.reviews.updated` | `review.updated` |
-| `social-service.shelves.changed` | `shelf.changed` |
-
-#### Paginación por cursor (sin `skip`)
+Todos publican al exchange `booksocial.events` con `RabbitTemplate.convertAndSend(EXCHANGE, KEY, event)` y el evento construido con su constructor conveniente (que fija `occurredAt = Instant.now()`):
 
 ```java
-public FeedResponse getFeed(Long userId, String cursor, int limit) {
-    Query query = new Query().limit(limit + 1);
-    query.with(Sort.by(desc("occurredAt"), desc("_id")));
-    // cursor = "<occurredAtMillis>_<id>" → añade $lt sobre occurredAt y _id
-    List<FeedEntryReadModel> entries = mongoTemplate.find(query, FeedEntryReadModel.class, "feed_entries");
-    boolean hasMore = entries.size() > limit;
-    String nextCursor = hasMore ? encodeCursor(entries.get(limit)) : null;
-    return new FeedResponse(trim(entries, limit), nextCursor);
+// user-service → FollowEventPublisher
+rabbitTemplate.convertAndSend(EXCHANGE, FOLLOWED_KEY,   new FollowedEvent(followerId, followeeId));
+rabbitTemplate.convertAndSend(EXCHANGE, UNFOLLOWED_KEY, new UnfollowedEvent(followerId, followeeId));
+
+// review-service → ReviewEventPublisher
+rabbitTemplate.convertAndSend(EXCHANGE, REVIEW_CREATED_KEY, new ReviewCreatedEvent(...));
+rabbitTemplate.convertAndSend(EXCHANGE, REVIEW_UPDATED_KEY, new ReviewUpdatedEvent(...));
+
+// shelf-service → ShelfEventPublisher
+rabbitTemplate.convertAndSend(EXCHANGE, SHELF_CHANGED_KEY, new ShelfChangedEvent(userId, isbn, title, author, status));
+```
+
+#### Contratos de los eventos
+
+```java
+// user-service / social-service / notification-service → copias idénticas
+public record FollowedEvent(Long followerId, Long followeeId, Instant occurredAt) {
+    public FollowedEvent(Long followerId, Long followeeId) {
+        this(followerId, followeeId, Instant.now());
+    }
+}
+// UnfollowedEvent: exactamente la misma forma (y mismo constructor secundario)
+```
+
+```java
+// review-service (público) y social-service (copia privada del mismo shape)
+public record ReviewCreatedEvent(Long reviewId, String bookIsbn, String title,
+                                 String authorName, Integer rating, String comment,
+                                 Long actorUserId, Instant occurredAt) {}
+// ReviewUpdatedEvent: la misma forma
+```
+
+```java
+// social-service: polimorfismo sobre los eventos de review con interface sellada
+public sealed interface ReviewEvent permits ReviewCreatedEvent, ReviewUpdatedEvent {
+    String bookIsbn();
+    String title();
+    String authorName();
+    Integer rating();
+    String comment();
 }
 ```
 
-- Orden `(occurredAt, _id)` **descendente**: `_id` como tiebreaker evita saltos/duplicados cuando dos entradas comparten el mismo instante.
-- Se pide `limit+1` y, si sobra, se recorta y se devuelve `nextCursor` (el cursor del último devuelto). El cliente sigue paginando con `?cursor=nextCursor`.
-- Único endpoint: **`GET /feed?cursor=&limit=`** con `@RequestHeader("X-User-Id")` (lo inyecta el gateway desde el claim `uid`, ver 11.5-error 1).
+> Al declarar `ReviewEvent` como `sealed` con `permits` explícitos, el compilador garantiza que cualquier nueva variante se revise en los `switch`. Gracias a la interface, el payload de review se construye **una sola vez** (método `buildReviewPayload(ReviewEvent)`, ver 11.3) y sirve para created y updated.
+
+```java
+// shelf-service (público) y social-service (copia)
+public record ShelfChangedEvent(Long userId, String bookIsbn, String title,
+                                String authorName, String status, Instant occurredAt) {}
+```
+
+#### Qué publica y qué no publica cada servicio
+
+- review-service denormaliza `title`/`authorName` **desde sus `book_refs` locales** antes de publicar (en el evento **no** viaja `authorId`): el evento es autocontenido para que el feed no necesite mirar otro servicio.
+- shelf-service publica `ShelfChangedEvent` en `create` y en `updateStatus`; el `delete` **no publica** (no hay actividad que mostrar).
+- user-service ya publicaba follow/unfollow desde la Fase 2; aquí solo se **añaden consumidores**. El propio user-service también los consume (patrón dual-write del Bloque 6).
+- Las colas preexistentes (`review-service.books.created`, `shelf-service.books.created`) se conservan intactas: las nuevas colas son independientes, con prefijo del servicio consumidor.
+
+### 11.3 — Feed por fanout-on-write (social-service)
+
+El feed aplica el patrón "escribe una vez, lee barato": en la escritura se replican copias en cada feed afectado, y la lectura es un simple `find` por `_id`, sin joins.
+
+#### Modelo de datos: 3 colecciones MongoDB
+
+| Colección        | Documento                | `_id`                    | Rol                                        |
+| ---------------- | ------------------------ | ------------------------ | ------------------------------------------ |
+| `activity_items` | `ActivityItemReadModel`  | determinista (ver abajo) | la actividad pura, única                   |
+| `followers`      | `FollowerIndexReadModel` | `String.valueOf(userId)` | índice de seguidores del usuario           |
+| `feed_entries`   | `FeedEntryReadModel`     | `feedUserId:activityId`  | copia materializada del feed de un usuario |
+
+##### `ActivityItemReadModel` — la actividad (colección `activity_items`)
+
+```java
+@Document(collection = "activity_items")
+public class ActivityItemReadModel {
+    @Id
+    private String id;                        // véase generateActivityId()
+    private ActivityType type;                // FOLLOW | REVIEW | SHELF
+    private Long actorId;                     // quién la provocó
+    private Map<String, Object> payload;      // detalles específicos por tipo
+    private Instant occurredAt;               // Instant.now() al crearse
+
+    public ActivityItemReadModel(String id, ActivityType type, Long actorId,
+                                 Map<String, Object> payload) {
+        this.id = id;
+        this.type = type;
+        this.actorId = actorId;
+        this.payload = payload;
+        this.occurredAt = Instant.now();
+    }
+}
+```
+
+```java
+public enum ActivityType {   // domain/ActivityType.java
+    FOLLOW, REVIEW, SHELF
+}
+```
+
+El `_id` es **determinista** (`generateActivityId(type, key)` = `type.name() + ":" + key`), no un UUID:
+
+| Tipo     | key del `_id`                | Consecuencia                                                          |
+| -------- | ---------------------------- | --------------------------------------------------------------------- |
+| `FOLLOW` | `followeeId:followerId`      | seguir dos veces → mismo doc (no duplica)                             |
+| `REVIEW` | `reviewId`                   | re-entregas y `review.updated` → mismo doc (update en sitio)          |
+| `SHELF`  | `userId:bookIsbn:occurredAt` | cada cambio de estante → actividad **nueva** (historia, no reemplazo) |
+
+Payload por tipo:
+
+| `type`   | `payload`                                          |
+| -------- | -------------------------------------------------- |
+| `FOLLOW` | `{ "targetUserId": followeeId }`                   |
+| `REVIEW` | `{ bookIsbn, title, authorName, rating, comment }` |
+| `SHELF`  | `{ bookIsbn, title, authorName, shelfStatus }`     |
+
+##### `FeedEntryReadModel` — el feed materializado (colección `feed_entries`)
+
+```java
+@Document(collection = "feed_entries")
+public class FeedEntryReadModel {
+    @Id
+    private String id;             // "feedUserId:activityId" → upsert idempotente
+    private Long feedUserId;       // para quién es esta copia
+    private String activityId;     // apunta a activity_items
+    private Instant occurredAt;    // Instant.now() al hacerse el fanout
+
+    public FeedEntryReadModel(Long feedUserId, String activityId) {
+        this.id = feedUserId + ":" + activityId;
+        this.feedUserId = feedUserId;
+        this.activityId = activityId;
+        this.occurredAt = Instant.now();
+    }
+}
+```
+
+Como el `_id` es `feedUserId:activityId`, escribir dos veces el mismo par es un upsert: las **re-entregas de Rabbit no duplican** entradas en el feed.
+
+##### `FollowerIndexReadModel` — índice de seguidores (colección `followers`)
+
+```java
+@Document(collection = "followers")
+public class FollowerIndexReadModel {
+    @Id
+    private String id;             // String.valueOf(userId)
+    private Long userId;
+    private List<Long> followers;  // lista de followerId
+}
+```
+
+Es el único estado "propio" del servicio (derivado de follow/unfollow) y el que permite saber a qué feeds replicar.
+
+Los repos `ActivityItemReadModelRepository` y `FollowerIndexReadModelRepository` están vacíos (`extends MongoRepository<…, String>`). `FeedEntryReadModelRepository` declara `findByFeedUserIdOrderByOccurredAtDesc(...)`, hoy **sin uso**: `getFeed` usa `MongoTemplate` porque necesita un criterio `$or` con cursor (no un simple orden).
+
+#### `RabbitConfig`: 5 colas durables
+
+```java
+public static final String EXCHANGE = "booksocial.events";
+
+public static final String FOLLOWED_QUEUE   = "social-service.follows.followed";
+public static final String UNFOLLOWED_QUEUE = "social-service.follows.unfollowed";
+public static final String REVIEW_CREATED_QUEUE = "social-service.reviews.created";
+public static final String REVIEW_UPDATED_QUEUE = "social-service.reviews.updated";
+public static final String SHELF_QUEUE          = "social-service.shelves.changed";
+// keys: "follow.followed" · "follow.unfollowed" · "review.created" · "review.updated" · "shelf.changed"
+```
+
+Beans: `TopicExchange(EXCHANGE, true, false)` (durable, sin auto-delete) + una `Queue(name, true)` durable y su `Binding` por cada cola. Topología:
+
+```
+[booksocial.events] (Topic Exchange, durable)
+    ├── "follow.followed"   → [social-service.follows.followed]
+    ├── "follow.unfollowed" → [social-service.follows.unfollowed]
+    ├── "review.created"    → [social-service.reviews.created]
+    ├── "review.updated"    → [social-service.reviews.updated]
+    └── "shelf.changed"     → [social-service.shelves.changed]
+```
+
+> **Una cola por evento** (mismo principio que 6.5): si dos `@RabbitListener` escucharan la misma cola, Rabbit repartiría los mensajes al azar y la deserialización sería insegura. Converter local: `new JacksonJsonMessageConverter("com.booksocial.social.events")`.
+
+#### Consumers: 3 `@RabbitListener`, un solo paquete
+
+```java
+// FollowEventConsumer — las 2 colas de follows
+@Component
+public class FollowEventConsumer {
+    private final FeedService feedService;
+
+    @RabbitListener(queues = RabbitConfig.FOLLOWED_QUEUE)
+    public void handleFollowed(FollowedEvent event) {
+        feedService.handleFollowed(event.followerId(), event.followeeId());
+    }
+
+    @RabbitListener(queues = RabbitConfig.UNFOLLOWED_QUEUE)
+    public void handleUnfollowed(UnfollowedEvent event) {
+        feedService.handleUnfollowed(event.followerId(), event.followeeId());
+    }
+}
+
+// ReviewEventConsumer — las 2 colas de reviews
+@Component
+public class ReviewEventConsumer {
+    private final FeedService feedService;
+
+    @RabbitListener(queues = RabbitConfig.REVIEW_CREATED_QUEUE)
+    public void handleReviewCreated(ReviewCreatedEvent event) {
+        feedService.handleReviewCreated(event);
+    }
+
+    @RabbitListener(queues = RabbitConfig.REVIEW_UPDATED_QUEUE)
+    public void handleReviewUpdated(ReviewUpdatedEvent event) {
+        feedService.handleReviewUpdated(event);
+    }
+}
+
+// ShelfEventConsumer — 1 cola
+@Component
+public class ShelfEventConsumer {
+    private final FeedService feedService;
+
+    @RabbitListener(queues = RabbitConfig.SHELF_QUEUE)
+    public void handleShelfEvent(ShelfChangedEvent event) {
+        feedService.handleShelfChanged(event);
+    }
+}
+```
+
+#### `FeedService`: del evento al feed materializado
+
+Los 3 consumers delegan en estos métodos:
+
+```java
+public void handleFollowed(Long followerId, Long followeeId) {
+    FollowerIndexReadModel idx = followerRepo
+            .findById(String.valueOf(followeeId))
+            .orElse(new FollowerIndexReadModel(String.valueOf(followeeId), followeeId, new ArrayList<>()));
+    if (!idx.getFollowers().contains(followerId))
+        idx.getFollowers().add(followerId);
+    followerRepo.save(idx);
+
+    String activityId = generateActivityId(ActivityType.FOLLOW,
+            String.format("%s:%s", followeeId, followerId));
+    activityRepo.save(new ActivityItemReadModel(
+            activityId, ActivityType.FOLLOW, followerId,
+            Map.of("targetUserId", followeeId)));
+
+    fanout(followerId, activityId);          // feed del actor + seguidores del actor
+    fanoutToUser(followeeId, activityId);    // y feed del usuario seguido
+}
+
+public void handleReviewCreated(ReviewCreatedEvent event) {
+    String activityId = generateActivityId(ActivityType.REVIEW, String.valueOf(event.reviewId()));
+    activityRepo.save(new ActivityItemReadModel(
+            activityId, ActivityType.REVIEW, event.actorUserId(), buildReviewPayload(event)));
+    fanout(event.actorUserId(), activityId);
+}
+
+public void handleShelfChanged(ShelfChangedEvent event) {
+    String activityId = generateActivityId(ActivityType.SHELF,
+            String.format("%s:%s:%s", event.userId(), event.bookIsbn(), event.occurredAt()));
+    activityRepo.save(new ActivityItemReadModel(activityId, ActivityType.SHELF, event.userId(),
+            Map.of("bookIsbn", event.bookIsbn(), "title", event.title(),
+                    "authorName", event.authorName(), "shelfStatus", event.status())));
+    fanout(event.userId(), activityId);
+}
+
+public void handleUnfollowed(Long followerId, Long followeeId) {
+    followerRepo.findById(String.valueOf(followeeId)).ifPresent(idx -> {
+        idx.getFollowers().remove(followerId);   // solo el índice; no toca el feed ya escrito
+        followerRepo.save(idx);
+    });
+}
+
+private void fanout(Long actorId, String activityId) {
+    feedEntryRepo.save(new FeedEntryReadModel(actorId, activityId));        // su propio feed
+    followerRepo.findById(String.valueOf(actorId)).ifPresent(idx ->
+            idx.getFollowers().forEach(followerId ->
+                    feedEntryRepo.save(new FeedEntryReadModel(followerId, activityId))));
+}
+
+private void fanoutToUser(Long userId, String activityId) {
+    feedEntryRepo.save(new FeedEntryReadModel(userId, activityId));
+}
+
+private String generateActivityId(ActivityType type, String key) {
+    return type.name() + ":" + key;
+}
+```
+
+`handleReviewUpdated` es el caso "update en sitio": si la actividad ya existe, solo se **reemplaza el payload** (mismo `_id`, sin re-fanout y sin cambiar `occurredAt`); si no existe (p. ej. `review.updated` llegó antes que `review.created`), se crea y se hace fanout:
+
+```java
+ActivityItemReadModel item = activityRepo.findById(activityId).orElse(null);
+if (item == null) {
+    item = new ActivityItemReadModel(activityId, ActivityType.REVIEW,
+            event.actorUserId(), buildReviewPayload(event));
+    activityRepo.save(item);
+    fanout(event.actorUserId(), activityId);
+} else {
+    item.setPayload(buildReviewPayload(event));
+    activityRepo.save(item);
+}
+```
+
+`buildReviewPayload(ReviewEvent event)` construye `Map.of("bookIsbn", ..., "title", ..., "authorName", ..., "rating", ..., "comment", ...)` y sirve para ambos eventos gracias a la interface `ReviewEvent`.
+
+> **Quién ve cada actividad**: `fanout` deja una copia en el feed del actor y en el de **sus** seguidores. El `FOLLOW` además mete una copia en el feed del usuario seguido (`fanoutToUser`). El `unfollow` no borra copias anteriores (sin retroactividad): solo deja de alimentar futuros fanouts.
+
+#### `FeedController` y DTOs
+
+```java
+@RestController
+@RequestMapping("/feed")
+public class FeedController {
+    private final FeedService feedService;
+
+    @GetMapping
+    public FeedPageResponse getFeed(@RequestHeader("X-User-Id") Long userId,
+                                    @RequestParam(required = false) String cursor,
+                                    @RequestParam(defaultValue = "10") int limit) {
+        return feedService.getFeed(userId, cursor, limit);
+    }
+}
+```
+
+```java
+public record FeedPageResponse(List<FeedItemResponse> items, String nextCursor) {}
+public record FeedItemResponse(String activityId, String type, Long actorId,
+                               Map<String, Object> payload, Instant occurredAt) {}
+```
+
+#### Paginación por cursor (sin `skip`)
+
+La implementación real es `FeedPageResponse getFeed(Long userId, String cursor, int limit)`. Recibe el cursor = `_id` del **último `FeedEntryReadModel`** de la página anterior (no un timestamp codificado):
+
+1. Si llega `cursor`, se busca esa entrada para obtener el punto de corte `(occurredAt, id)`:
+   ```java
+   FeedEntryReadModel lastEntry = feedEntryRepo.findById(cursor).orElse(null);
+   ```
+2. Query sobre `feed_entries` con `$or` que reproduce el mismo orden de la página anterior:
+   ```java
+   query.addCriteria(Criteria.where("feedUserId").is(userId));
+   if (cutOffOccurredAt != null) {
+       query.addCriteria(new Criteria().orOperator(
+               Criteria.where("occurredAt").lt(cutOffOccurredAt),
+               new Criteria().andOperator(
+                       Criteria.where("occurredAt").is(cutOffOccurredAt),
+                       Criteria.where("_id").lt(cutOffId))));
+   }
+   query.with(Sort.by(Sort.Direction.DESC, "occurredAt", "_id"));
+   query.limit(limit + 1);
+   ```
+3. Se piden `limit + 1` entradas: si sobra una, hay más páginas. `nextCursor = pageEntries.getLast().getId()`, o `null` si no hay más.
+4. Por cada entrada se resuelve la actividad con `activityRepo.findById(entry.getActivityId())` y se arma el `FeedItemResponse` (entradas huérfanas — actividad inexistente — simplemente se omiten).
+
+- El `$or` (paso 2) es el equivalente de la cláusula `(occurredAt < X) OR (occurredAt = X AND _id < Y)`: la segunda rama actúa de tiebreaker para que **entradas con el mismo instante no se salten ni se repitan**.
+- El cliente sigue paginando con `?cursor=nextCursor` (`limit` opcional, default `10`).
+- Único endpoint: **`GET /feed?cursor=&limit=`** con `@RequestHeader("X-User-Id")` (lo inyecta el gateway desde el claim `uid`, ver 11.7-error 1).
 
 ### 11.4 — Notificaciones + WebSocket STOMP (notification-service)
 
-#### Read model idempotente
+La notificación es un read model idempotente + un push best-effort: lo crítico (persistir) está garantizado; el push es un extra en tiempo real.
+
+#### Read model y repositorio
 
 ```java
 @Document(collection = "notifications")
 public class NotificationReadModel {
-    @Id private String id;          // "userId:notificationId" → idempotente ante re-entregas
-    private Long userId;
-    private String type;            // "FOLLOW"
-    private String notificationId;  // "FOLLOW:<followerId>"
-    private Map<String, Object> payload;  // followerId, followerEmail, followerName, occurredAt
+    @Id
+    private String id;                // "userId:FOLLOW:followerId" → upsert idempotente
+    private Long userId;              // destinatario
+    private String type;              // "FOLLOW"
+    private Map<String, Object> payload;   // { "followerId": n }
     private boolean read;
-    private Instant occurredAt;
+    private Instant occurredAt;       // Instant.now() al crearse
+
+    public NotificationReadModel(String id, Long userId, String type,
+                                 Map<String, Object> payload, boolean read) {
+        this.id = userId + ":" + id;  // el _id compuesto lo fija el constructor
+        this.userId = userId;
+        this.type = type;
+        this.payload = payload;
+        this.read = read;
+        this.occurredAt = Instant.now();
+    }
 }
 ```
 
-#### REST + push
-
-`NotificationService.createFollowNotification(...)` hace upsert del read model y, si es nuevo, envía **push STOMP**:
+El `_id` es determinista (`userId:notificationId`, con `notificationId = "FOLLOW:" + followerId`): `save()` sobre el mismo `_id` es un **upsert**, así que las re-entregas de Rabbit **no duplican** documentos.
 
 ```java
-simpMessagingTemplate.convertAndSend("/topic/notifications/" + userId, notificationResponse);
+public interface NotificationReadModelRepository extends MongoRepository<NotificationReadModel, String> {
+    List<NotificationReadModel> findByUserIdOrderByOccurredAtDesc(Long userId);
+    long countByUserIdAndReadFalse(Long userId);
+}
 ```
 
-El broker STOMP se configura en `WebSocketConfig` con `@EnableWebSocketMessageBroker`:
+#### `RabbitConfig` y consumidor
 
 ```java
-registry.addEndpoint("/ws").setAllowedOriginPatterns("http://localhost:4200");
-registry.enableSimpleBroker("/topic", "/queue");   // colas para mensajes 1-a-1
-registry.setApplicationDestinationPrefixes("/app");
+public static final String EXCHANGE = "booksocial.events";
+public static final String FOLLOWED_QUEUE = "notification-service.follows.followed";
+public static final String REVIEW_CREATED_QUEUE = "notification-service.reviews.created";
+// keys: "follow.followed" · "review.created"
 ```
 
-El `JwtHandshakeInterceptor` (registrado como `@Component` e inyectado en `registerStompEndpoints`) valida el JWT y guarda el userId en los atributos de la sesión:
+Topología:
+
+```
+[booksocial.events] (Topic Exchange, durable)
+    ├── "follow.followed" → [notification-service.follows.followed]
+    └── "review.created"  → [notification-service.reviews.created]   (cola declarada, sin consumer)
+```
+
+Converter local de notification-service: `new JacksonJsonMessageConverter("com.booksocial.notification.events")`.
 
 ```java
-if (token == null) return false;
-Claims claims = jwtService.parse(token);
-Object uid = claims.get("uid");                     // ← tipado como Number
-attributes.put("userId", ((Number) uid).longValue());
+@Component
+public class FollowEventConsumer {
+    private final NotificationService notificationService;
+
+    @RabbitListener(queues = RabbitConfig.FOLLOWED_QUEUE)
+    public void handleFollowed(FollowedEvent event) {
+        notificationService.createFollowNotification(event.followerId(), event.followeeId());
+    }
+}
+```
+
+#### `NotificationService`: persistir y empujar
+
+```java
+@Service
+public class NotificationService {
+    private final NotificationReadModelRepository notificationRepo;
+    private final SimpMessagingTemplate messagingTemplate;   // empuja al broker STOMP
+    private final MongoTemplate mongoTemplate;               // para el update masivo
+
+    public NotificationResponse createFollowNotification(Long followerId, Long followeeId) {
+        String notificationId = "FOLLOW:" + followerId;
+        NotificationReadModel n = new NotificationReadModel(
+                notificationId, followeeId, "FOLLOW",
+                Map.of("followerId", followerId), false);
+        notificationRepo.save(n);
+        messagingTemplate.convertAndSend("/topic/notifications/" + followeeId, toResponse(n));
+        return toResponse(n);
+    }
+
+    public List<NotificationResponse> listNotifications(Long userId) {
+        return notificationRepo.findByUserIdOrderByOccurredAtDesc(userId).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    public long unreadCount(Long userId) {
+        return notificationRepo.countByUserIdAndReadFalse(userId);
+    }
+
+    public void markAllAsRead(Long userId) {
+        mongoTemplate.updateMulti(Query.query(
+                        Criteria.where("userId").is(userId).and("read").is(false)),
+                new Update().set("read", true),
+                NotificationReadModel.class
+        );
+    }
+}
+```
+
+- `createFollowNotification`: **primero** `save()` (upsert por `_id` determinista) y **después** `messagingTemplate.convertAndSend(...)` — el push se emite siempre (no hay "solo si es nuevo"). Si el usuario está desconectado, el push se pierde en el aire, pero la notificación ya está persistida y la recupera con `GET /notifications`.
+- `listNotifications` / `unreadCount` usan las queries derivadas del repo.
+- `markAllAsRead` es un **bulk** vía `MongoTemplate.updateMulti` (una sola operación, sin cargar documentos): `userId` + `read=false` → `read=true`.
+- El destino del push es `/topic/notifications/{id-del-usuario}` (multicast); el destinatario se suscribe a ese topic exacto.
+
+#### `NotificationController` y DTO
+
+```java
+@RestController
+@RequestMapping("/notifications")
+public class NotificationController {
+    private final NotificationService notificationService;
+
+    @GetMapping
+    public List<NotificationResponse> list(@RequestHeader("X-User-Id") Long userId) {
+        return notificationService.listNotifications(userId);
+    }
+
+    @GetMapping("/unread-count")
+    public Map<String, Long> unreadCount(@RequestHeader("X-User-Id") Long userId) {
+        return Map.of("count", notificationService.unreadCount(userId));
+    }
+
+    @PostMapping("/read")
+    public void markAllAsRead(@RequestHeader("X-User-Id") Long userId) {
+        notificationService.markAllAsRead(userId);
+    }
+}
+```
+
+```java
+public record NotificationResponse(String id, String type, Map<String, Object> payload,
+                                   boolean read, Instant occurredAt) {}
 ```
 
 Endpoints REST (todos con `@RequestHeader("X-User-Id")`):
 
-| Método | Ruta | Descripción |
-| ------ | ---- | ----------- |
-| `GET` | `/notifications` | Lista (más recientes primero) |
-| `GET` | `/notifications/unread-count` | `{ "count": n }` |
-| `POST` | `/notifications/read` | Marcos "read=true" en masa (bulk `MongoTemplate.updateMulti`) |
+| Método | Ruta                          | Descripción                                              |
+| ------ | ----------------------------- | -------------------------------------------------------- |
+| `GET`  | `/notifications`              | Lista (más recientes primero)                            |
+| `GET`  | `/notifications/unread-count` | `{ "count": n }`                                         |
+| `POST` | `/notifications/read`         | Marca todo como leído (bulk `MongoTemplate.updateMulti`) |
 
-`RabbitConfig` declara `notification-service.follows.followed` (consumido por `FollowEventConsumer`) y `notification-service.reviews.created` (cola creada, **sin consumer todavía**).
+#### `WebSocketConfig` y `JwtHandshakeInterceptor`
+
+```java
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+    private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
+
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry registry) {
+        registry.enableSimpleBroker("/topic", "/queue");  // broker simple en memoria (sin Rabbit STOMP)
+        registry.setApplicationDestinationPrefixes("/app"); // clientes → servidor (sin uso todavía)
+    }
+
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.addEndpoint("/ws")
+                .setAllowedOriginPatterns("http://localhost:4200")
+                .addInterceptors(jwtHandshakeInterceptor);
+    }
+}
+```
+
+- Agente simple en memoria (`SimpMessagingTemplate`): `/topic/*` multicast (notificaciones), `/queue/*` 1-a-1. No se usa Rabbit STOMP: es pura infraestructura Spring.
+- El endpoint `/ws` restringe orígenes a Angular (`http://localhost:4200`) y registra el interceptor.
+- En el `SecurityConfig` el path `/ws/**` está `permitAll`, pero eso **no** autentica nada: la autenticación real ocurre en el handshake, con el JWT que el navegador no puede mandar por header HTTP:
+
+```java
+@Component
+public class JwtHandshakeInterceptor implements HandshakeInterceptor {
+    private final JwtService jwtService;
+
+    @Override
+    public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
+                                   WebSocketHandler wsHandler, Map<String, Object> attributes) {
+        String query = request.getURI().getQuery();   // el token llega en la URL: ?token=<jwt>
+        String token = null;
+        if (query != null) {
+            for (String param : query.split("&")) {
+                if (param.startsWith("token=")) { token = param.substring(6); break; }
+            }
+        }
+        if (token == null) return false;              // sin token → se aborta el handshake
+        try {
+            Claims claims = jwtService.parse(token);
+            if (!"access".equals(claims.get("type", String.class))) return false;  // solo access tokens
+            Object uid = claims.get("uid");
+            if (!(uid instanceof Number)) return false;  // el sub es el email; el id va en "uid"
+            attributes.put("userId", ((Number) uid).longValue());
+            return true;
+        } catch (Exception e) {
+            return false;                             // token inválido o issuer distinto
+        }
+    }
+}
+```
+
+> Devolver `false` en `beforeHandshake` aborta la conexión antes de abrir el socket; el token se valida con el mismo `JwtService` parse-only y el mismo `APP_JWT_SECRET` (el `uid` del claim es la clave: ver 11.7-error 2).
 
 #### El cliente STOMP se conecta por URL (no por header)
 
@@ -5428,19 +6065,100 @@ Endpoints REST (todos con `@RequestHeader("X-User-Id")`):
 ws://localhost:8087/ws?token=<jwt>
 ```
 
-### 11.5 — Errores encontrados en la Fase 9 (con solución directa)
+El cliente se suscribe a `/topic/notifications/{userId}` y recibe el push en tiempo real. La conexión es **directa** a `:8087` (el gateway no proxea WebSockets, ver 11.7-error 4).
 
-1. **El gateway reescribe `X-User-Id` (strip-and-assert)**: `UserHeadersRequestWrapper` ignora el `X-User-Id` del cliente y lo reinyecta desde el claim `uid` del JWT. Los E2E que forzaban el header con otro valor recibían los datos del `uid` del token. Regla: contra el gateway, probar con el token del usuario correcto.
-2. **`JwtHandshakeInterceptor` fallaba el handshake**: `Long.valueOf(claims.getSubject())` petaba porque el `sub` del JWT es el **email**. Solución: leer el claim `uid` como `Number` (`((Number) claims.get("uid")).longValue()`).
-3. **El gateway devolvía 401 al handshake `/ws`**: exigía auth en `anyRequest()`, pero el handshake no lleva `Authorization: Bearer`. Solución: `permitAll("/ws/**")` en el SecurityConfig del **gateway** (la validación real la hace el interceptor de notification-service con el mismo `APP_JWT_SECRET`).
-4. **Spring Cloud Gateway (WebMVC) NO proxea WebSockets**: error `Can "Upgrade" only to "WebSocket"`. El proxying de WS solo está en la variante Reactiva del gateway. Decisión para Fase 9: el cliente STOMP se conecta **directo** a `ws://localhost:8087/ws?token=` (la ruta `/ws/**` del gateway se añadió y eliminó). En producción habría que llegar con un proxy con soporte WS (nginx/traefik) o migrar el gateway a WebFlux.
-5. **`/ws-info` fantasmatico**: permitAll huérfano en notification-service (no existe ese endpoint). Eliminado.
+### 11.5 — Integración: gateway y docker-compose
+
+Rutas del gateway (mismo patrón strip-and-assert del Bloque 2: el gateway reinyecta `X-User-Id`/`X-User-Roles` desde el JWT, así que los servicios nunca confían en headers del cliente):
+
+```yaml
+- id: social-service
+  uri: ${SOCIAL_SERVICE_URI:http://localhost:8086}
+  predicates:
+    - Path=/feed/**
+
+- id: notification-service
+  uri: ${NOTIFICATION_SERVICE_URI:http://localhost:8087}
+  predicates:
+    - Path=/notifications/**
+```
+
+En `docker-compose.yml` ambos siguen el mismo molde que el resto (healthchecks con `curl`, `depends_on` a mongodb y rabbitmq ambos `service_healthy`):
+
+| Servicio               | Contenedor                | Puertos     | `env_file`                     | Overrides en compose                                                  | Healthcheck                                     |
+| ---------------------- | ------------------------- | ----------- | ------------------------------ | --------------------------------------------------------------------- | ----------------------------------------------- |
+| `social-service`       | `booksocial-social`       | `8086:8086` | `../social-service/.env`       | `SPRING_MONGODB_URI` → `mongodb`, `SPRING_RABBITMQ_HOST` → `rabbitmq` | `curl -f http://localhost:8086/actuator/health` |
+| `notification-service` | `booksocial-notification` | `8087:8087` | `../notification-service/.env` | ídem                                                                  | `curl -f http://localhost:8087/actuator/health` |
+
+```dockerfile
+# Dockerfile (multi-stage, idéntico al resto de servicios)
+# Stage 1: build
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /workspace
+COPY . .
+RUN chmod +x mvnw && ./mvnw -B -pl social-service -am package -DskipTests
+
+# Stage 2: runtime
+FROM eclipse-temurin:21-jre
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /workspace/social-service/target/social-service-0.1.0-SNAPSHOT.jar app.jar
+EXPOSE 8086
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+> **Cómo sobrevive el arranque local (IDE)**: el default `mongodb://...@localhost:27017/booksocial` de `application.yaml` sirve fuera de Docker; el compose lo sobreescribe con la env `SPRING_MONGODB_URI` apuntando al contenedor `mongodb`. Por eso el default no cambia aunque la URI de compose sea distinta.
+
+### 11.6 — Verificación E2E (Docker)
+
+Con dos cuentas reales (`A` sigue, `B` es el seguido). El gateway es quien inyecta `X-User-Id`, así que se prueba con los tokens correctos:
+
+```
+# 1) PROVISION: A sigue a B → user-service publica FollowedEvent → social + notification consumen
+curl -X POST http://localhost:8080/follows/19 -H "Authorization: Bearer $TOKEN_A"
+
+#    (opcional: B escribe una reseña y cambia su estantería → review.created / shelf.changed)
+
+# 2) FEED de A: contiene la actividad FOLLOW y las actividades de B (review/shelf)
+curl http://localhost:8080/feed -H "Authorization: Bearer $TOKEN_A"
+curl "http://localhost:8080/feed?limit=1" -H "Authorization: Bearer $TOKEN_A"     # ver nextCursor
+curl "http://localhost:8080/feed?cursor=<nextCursor>" -H "Authorization: Bearer $TOKEN_A"   # 2ª página
+
+# 3) NOTIFICACIONES de B: 1 doc FOLLOW persistido + push al topic de B
+curl http://localhost:8080/notifications -H "Authorization: Bearer $TOKEN_B"
+curl http://localhost:8080/notifications/unread-count -H "Authorization: Bearer $TOKEN_B"  # {"count":1}
+curl -X POST http://localhost:8080/notifications/read -H "Authorization: Bearer $TOKEN_B"   # → count 0
+
+# 4) STOMP EN TIEMPO REAL: abrir la conexión y, en otra terminal, ejecutar otro follow
+wscat -c "ws://localhost:8087/ws?token=$TOKEN_B"
+#   → SUBSCRIBE /topic/notifications/19  (espera el mensaje entrante)
+```
+
+Estado verificable en Mongo:
+
+```
+db.activity_items.find()                                # actividades FOLLOW/REVIEW/SHELF
+db.feed_entries.countDocuments({feedUserId: 10})        # copias materializadas en el feed de A
+db.followers.find({_id: "19"})                          # [followerId de A] tras el follow
+db.notifications.find({userId: 19})                     # 1 doc FOLLOW (sin duplicados)
+```
+
+**Idempotencia ante re-entregas**: republicar a mano el mismo `FollowedEvent` contra el exchange (consola de Rabbit, misma routing key `follow.followed`) **no debe** aumentar `feed_entries` ni `notifications`: sus `_id` compuestos (`feedUserId:activityId`, `userId:FOLLOW:followerId`) convierten el re-`save` en un upsert.
+
+### 11.7 — Errores encontrados en la Fase 9 (con solución directa)
+
+1. **`JwtHandshakeInterceptor` fallaba el handshake**: `Long.valueOf(claims.getSubject())` petaba porque el `sub` del JWT es el **email**. Solución: leer el claim `uid` como `Number` (`((Number) claims.get("uid")).longValue()`).
+2. **401 al handshake `/ws`**: exigía auth en `anyRequest()`, pero el handshake no lleva `Authorization: Bearer` (el token va en la URL). Solución: `permitAll("/ws/**")` en el `SecurityConfig` (en notification-service, y también en el gateway mientras estuvo ruteado). La validación real la hace `JwtHandshakeInterceptor` con el mismo `APP_JWT_SECRET`.
+3. **Spring Cloud Gateway (WebMVC) NO proxea WebSockets**: error `Can "Upgrade" only to "WebSocket"`. El proxying de WS solo está en la variante Reactiva del gateway. Decisión para Fase 9: el cliente STOMP se conecta **directo** a `ws://localhost:8087/ws?token=`. En producción habría que llegar con un proxy con soporte WS (nginx/traefik) o migrar el gateway a WebFlux.
 
 ### Decisiones de diseño de la Fase 9
 
 - **Servicios de lectura pura** ("event-sourced read models"): social y notification solo escriben en Mongo y derivan su estado de los eventos; no hay command side propio. El índice de seguidores es el único "estado" que mantienen (derivado de follow/unfollow).
 - **Fanout-on-write** en lugar de leer seguidores en cada petición: la lectura del feed es un `find` simple, a costa de escritura amplificada (`O(seguidores)` por actividad). Correcto para un feed personal con muchos lectores.
+- **`_id` deterministas = upsert idempotente** (activities, feed*entries y notifications): las re-entregas de Rabbit no duplican estado. Para `ACTIVITY` de review, el `_id = reviewId` hace que la actualización sea un \_update en sitio* (mismo `_id`, se reemplaza el payload y se conserva `occurredAt`); para shelf se fuerza una actividad nueva por cambio (incluye `occurredAt` en la key).
+- **`ReviewEvent` sellada** (`sealed ... permits`): el compilador garantiza que una nueva variante fuerza revisión del switch; el payload se construye una sola vez (`buildReviewPayload(ReviewEvent)`) para created y updated.
 - **Follow funciona sin esperar el feed**: el evento `FollowedEvent` lo consume user-service (escrituras propias), social-service (índice + feed) y notification-service (notificación + push). Cada quien, su cola, su copy del evento.
+- **Unfollow no retroactivo**: solo se actualiza el índice de seguidores; el feed ya materializado no se depura.
 - **WebSocket STOMP vía `SimpMessagingTemplate`**: el push es best-effort; si el usuario no está conectado, no se pierde nada porque la notificación ya está persistida en Mongo y la recupera vía `GET /notifications`.
 - **Cabecera `X-User-Id` confiable** gracias al strip-and-assert del gateway (mismo patrón que el resto de servicios).
 
@@ -5704,6 +6422,49 @@ El patrón Outbox resuelve esto escribiendo el evento en una tabla `outbox` **de
 
 Se reconsideraría si el proyecto creciera a >100 eventos/minuto, se añadieran eventos críticos (pagos, notificaciones), o los consumidores dejaran de ser idempotentes.
 
+#### Modelo push: fanout-on-write y notificaciones en tiempo real
+
+BookSocial usa el **modelo push** tanto para el feed como para las notificaciones (Fase 9, Bloque 11): el estado se **replica/empuja hacia el consumidor en el momento de la escritura**, en lugar de calcularse bajo demanda en la lectura.
+
+**Feed: fanout-on-write (push) frente a fanout-on-read (pull)**
+
+Para construir un feed personal hay dos estrategias clásicas (popularizadas en el paper _Timelines at Scale_ de Twitter):
+
+|                     | Fanout-on-write (push)                                                        | Fanout-on-read (pull)                                                             |
+| ------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Cuándo se replica   | En la **escritura** de la actividad                                           | En la **lectura** del feed                                                        |
+| Escritura           | Amplificada: `O(seguidores)` copias por actividad                             | Barata: una sola actividad por autor                                              |
+| Lectura             | Barata: un `find` con índice por `feedUserId`                                 | Cara: consultar la timeline de cada seguido (`O(seguidos)`) y hacer merge + orden |
+| Latencia de lectura | Constante (no depende de cuánta gente sigues)                                 | Crece con el nº de seguidos                                                       |
+| Consistencia        | Eventual: la copia se crea cuando llega el evento                             | Inmediata: se lee de la fuente                                                    |
+| Idempotencia        | Exigida: `_id` compuesto (`feedUserId:activityId`) hace el `save()` un upsert | Natural: no hay copias                                                            |
+
+En nuestra implementación:
+
+- La "escritura" es el momento en que RabbitMQ entrega el evento. El `FeedService` materializa copias en `feed_entries` para el actor, sus seguidores y (en el `FOLLOW`) el usuario seguido. Leer `GET /feed` es una **sola query** indexada con cursor, sin joins ni merges.
+- El coste del push es la escritura amplificada: cada actividad genera `O(seguidores)` documentos. Se asume porque encaja en **pocas escrituras / muchos lectores** — la lectura barata es lo que importa en un feed.
+- El límite conocido es el **hybrid fanout** de las redes grandes (los autores famosos no replican a millones; los seguidores leen contra su timeline con pull). A esta escala no hace falta.
+
+**Notificaciones: push en tiempo real, pull como respaldo**
+
+notification-service aplica la misma filosofía push en dos planos:
+
+| Plano                         | Mecanismo                                                                    | Tipo                                      |
+| ----------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------- |
+| Evento → read model           | `FollowEventConsumer` recibe el evento y `save()` la notificación en Mongo   | Push del _estado_ (conducido por eventos) |
+| Servidor → cliente            | `SimpMessagingTemplate.convertAndSend("/topic/notifications/{userId}", ...)` | Push del _mensaje_ (WebSocket STOMP)      |
+| Cliente → servidor (respaldo) | `GET /notifications` sobre Mongo                                             | Pull (chequeo de la fuente de verdad)     |
+
+El push STOMP es **best-effort**: si el usuario está desconectado el mensaje se pierde. Por eso el `save()` en Mongo es la fuente de verdad y el cliente puede caer siempre en `GET /notifications` (pull). Es decir: **push para la experiencia en tiempo real, pull para no perder nada**.
+
+Frente al **polling REST** (preguntar a `GET /notifications` cada N segundos), el push tiene:
+
+- **latencia mínima**: el evento llega solo cuando hay algo nuevo (sin ventana de espera de N segundos);
+- **menos tráfico ocioso**: no hay peticiones "vacías" periódicas;
+- **persistencia de conexión**: el socket STOMP queda abierto, el servidor empuja cuando toca.
+
+En el conjunto del proyecto, RabbitMQ es el "brazo push" **entre servicios** (event-driven frente a REST síncrono request/response), y STOMP extiende ese mismo concepto hasta el navegador (ver Apéndice E).
+
 ---
 
 ## Apéndice C — Operación: despliegue, logs y depuración
@@ -5712,17 +6473,19 @@ Referencia rápida del día a día con la app ya construida. Todos los comandos 
 
 ### El stack
 
-| Contenedor            | Servicio         | Puerto          |
-| --------------------- | ---------------- | --------------- |
-| `booksocial-postgres` | PostgreSQL 16    | 5432            |
-| `booksocial-mongodb`  | MongoDB 8.0      | 27017           |
-| `booksocial-rabbitmq` | RabbitMQ 4       | 5672 / UI 15672 |
-| `booksocial-gateway`  | gateway          | 8080            |
-| `booksocial-identity` | identity-service | 8081            |
-| `booksocial-user`     | user-service     | 8082            |
-| `booksocial-book`     | book-service     | 8083            |
-| `booksocial-review`   | review-service   | 8084            |
-| `booksocial-shelf`    | shelf-service    | 8085            |
+| Contenedor                | Servicio             | Puerto          |
+| ------------------------- | -------------------- | --------------- |
+| `booksocial-postgres`     | PostgreSQL 16        | 5432            |
+| `booksocial-mongodb`      | MongoDB 8.0          | 27017           |
+| `booksocial-rabbitmq`     | RabbitMQ 4           | 5672 / UI 15672 |
+| `booksocial-gateway`      | gateway              | 8080            |
+| `booksocial-identity`     | identity-service     | 8081            |
+| `booksocial-user`         | user-service         | 8082            |
+| `booksocial-book`         | book-service         | 8083            |
+| `booksocial-review`       | review-service       | 8084            |
+| `booksocial-shelf`        | shelf-service        | 8085            |
+| `booksocial-social`       | social-service       | 8086            |
+| `booksocial-notification` | notification-service | 8087            |
 
 ### Arrancar, parar y estado
 
@@ -5739,7 +6502,7 @@ docker compose -f infrastructure/docker-compose.yml build book-service   # recon
 docker compose -f infrastructure/docker-compose.yml up -d book-service   # recrea el contenedor con la imagen nueva
 ```
 
-Sustituye `book-service` por el servicio modificado (`gateway`, `identity-service`, `user-service`, `review-service`, `shelf-service`). Solo ese servicio se reconstruye; bases de datos y RabbitMQ no se tocan.
+Sustituye `book-service` por el servicio modificado (`gateway`, `identity-service`, `user-service`, `review-service`, `shelf-service`, `social-service`, `notification-service`). Solo ese servicio se reconstruye; bases de datos y RabbitMQ no se tocan.
 
 - El build es incremental por capas: al cambiar código fuente, Docker invalida la capa `COPY` y recompila solo lo necesario.
 - Si sospechas que el contenedor está sirviendo **código antiguo** (síntoma: un bug corregido sigue apareciendo), fuerza rebuild completo con `build --no-cache <servicio>`.
@@ -5808,3 +6571,231 @@ Ojo: si editas `proxy.conf.json` hay que **reiniciar** `ng serve` — el proxy s
 3. Ejecutar `ng extract-i18n` para regenerar `messages.xlf`.
 4. Copiar las nuevas `<trans-unit>` a `messages.es.xlf` y `messages.pt.xlf` con sus `<target>`.
 5. Verificar con `ng build`.
+
+---
+
+## Apéndice D — RabbitMQ: del publisher al consumer
+
+RabbitMQ (broker AMQP 0-9-1) es el **bus de eventos** del proyecto. A lo largo de la guía se construye por partes: el primer evento en 6.5, el patrón converter/trusted package en 8.2, y la generación de eventos sociales en 11.2-11.4. Este apéndice unifica el mapa completo: **qué publica cada servicio, con qué routing key, qué colas lo reciben y qué efecto produce cada consumidor**.
+
+### Conceptos mínimos
+
+| Concepto        | Qué es                                                                         | En BookSocial                                                                           |
+| --------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| **Producer**    | Servicio que publica mensajes                                                  | book, user, review y shelf-service (los que escriben hechos)                            |
+| **Exchange**    | Enrutador central: recibe mensajes y decide destino                            | `booksocial.events` (topic exchange, durable)                                           |
+| **Routing key** | Etiqueta del mensaje; el topic exchange la compara con los bindings            | `book.created`, `follow.followed`, `shelf.changed`, …                                   |
+| **Binding**     | Regla que une una cola al exchange mediante un pattern                         | `BindingBuilder.bind(queue).to(exchange).with(key)` en el `RabbitConfig` del consumidor |
+| **Queue**       | Cola **durable** donde Rabbit guarda el mensaje hasta que el listener confirma | `social-service.reviews.created`, `user-service.follows.followed`, …                    |
+| **Consumer**    | Listener que lee de la cola                                                    | métodos `@RabbitListener` de cada servicio                                              |
+| **ACK**         | Confirmación que libera el mensaje de la cola                                  | ACK automático de Spring al volver del listener                                         |
+
+### El flujo, paso a paso
+
+```
+                          RabbitMQ
+┌──────────────┐        ┌─────────────────────────────────┐
+│ user-service │        │ exchange "booksocial.events"    │
+│              │        │         (topic exchange)        │
+│ FollowEvent  │───────►│                                 │
+│  Publisher   │        └───────────────┬─────────────────┘
+└──────────────┘                        │     publish
+                                        │ "follow.followed"
+                                        │
+                         ┌──────────────┴──────────────┐
+                         │                             │
+                  binding                           binding
+              follow.followed                    follow.followed
+                         │                             │
+                         ▼                             ▼
+             ┌──────────────────────┐      ┌──────────────────────────┐
+             │ queue                │      │ queue                    │
+             │ "user-service.       │      │ "notification-service.   │
+             │  follows.followed"   │      │  follows.followed"       │
+             └──────────┬───────────┘      └────────────┬─────────────┘
+                        │                               │
+                        ▼                               ▼
+             ┌──────────────────────┐      ┌──────────────────────────┐
+             │ FollowEventConsumer  │      │ FollowEventConsumer      │
+             │ user-service         │      │ notification-service     │
+             │                      │      │                          │
+             │ MongoDB: follows     │      │ Notificación + STOMP     │
+             └──────────────────────┘      └──────────────────────────┘
+```
+
+En palabras:
+
+1. El publicador envía `RabbitTemplate.convertAndSend(EXCHANGE, KEY, event)` con la **routing key** aparte del JSON.
+2. El exchange `booksocial.events` (topic) compara la key con los patterns de todos sus bindings.
+3. Por cada binding que coincide, Rabbit **copia el mensaje a esa cola**. N bindings → N copias (publish/subscribe).
+4. Cada consumidor lee de **su** cola. Al terminar, el ACK libera el mensaje y sale de la cola.
+
+### Topología real: 11 colas, 1 exchange
+
+Un solo exchange (`booksocial.events`) y **11 colas**, cada una declarada por el servicio que la consume:
+
+| Dueño                | Colas                                                                                                                                                                        |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| user-service         | `user-service.follows.followed`, `user-service.follows.unfollowed`                                                                                                           |
+| review-service       | `review-service.books.created`                                                                                                                                               |
+| shelf-service        | `shelf-service.books.created`                                                                                                                                                |
+| social-service       | `social-service.follows.followed`, `social-service.follows.unfollowed`, `social-service.reviews.created`, `social-service.reviews.updated`, `social-service.shelves.changed` |
+| notification-service | `notification-service.follows.followed`, `notification-service.reviews.created`                                                                                              |
+
+### El flujo completo, publisher → consumer
+
+**user-service — sigue/deja de seguir (parser: Postgres → evento):**
+
+| Evento            | Routing key         | Cola                                    | Consumidor                                    | Efecto                                                                                    |
+| ----------------- | ------------------- | --------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `FollowedEvent`   | `follow.followed`   | `user-service.follows.followed`         | user-service `FollowEventConsumer.onFollowed` | crea `FollowReadModel` en Mongo + recalcula `followingCount`/`followersCount`             |
+|                   |                     | `social-service.follows.followed`       | social-service `FeedService`                  | materializa la actividad FOLLOW (una copia en el feed del autor y otra en el del seguido) |
+|                   |                     | `notification-service.follows.followed` | notification-service `FollowEventConsumer`    | guarda la notificación en Mongo + push STOMP                                              |
+| `UnfollowedEvent` | `follow.unfollowed` | `user-service.follows.unfollowed`       | user-service `onUnfollowed`                   | borra `FollowReadModel` + recalcula contadores                                            |
+|                   |                     | `social-service.follows.unfollowed`     | social-service                                | elimina las entradas FOLLOW del feed del autor y del seguido                              |
+
+**book-service — alta de un libro:**
+
+| Evento             | Routing key    | Cola                           | Consumidor                                | Efecto                           |
+| ------------------ | -------------- | ------------------------------ | ----------------------------------------- | -------------------------------- |
+| `BookCreatedEvent` | `book.created` | `review-service.books.created` | review-service `BookCreatedEventConsumer` | crea el `BookRef` de `book_refs` |
+|                    |                | `shelf-service.books.created`  | shelf-service `BookCreatedEventConsumer`  | crea el `BookRef` de `book_refs` |
+
+**review-service — reseñas:**
+
+| Evento               | Routing key      | Cola                                   | Consumidor                   | Efecto                                                             |
+| -------------------- | ---------------- | -------------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
+| `ReviewCreatedEvent` | `review.created` | `social-service.reviews.created`       | social-service `FeedService` | materializa la actividad REVIEW (autor + seguidores)               |
+|                      |                  | `notification-service.reviews.created` | **— (sin listener)**         | cola declarada pero nadie la consume aún: los mensajes se acumulan |
+| `ReviewUpdatedEvent` | `review.updated` | `social-service.reviews.updated`       | social-service               | upsert del contenido en las entradas REVIEW existentes             |
+
+**shelf-service — estantería:**
+
+| Evento              | Routing key     | Cola                             | Consumidor                   | Efecto                                                                            |
+| ------------------- | --------------- | -------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- |
+| `ShelfChangedEvent` | `shelf.changed` | `social-service.shelves.changed` | social-service `FeedService` | materializa la actividad SHELF en el feed del autor (leída/nueva según la acción) |
+
+### Reglas que gobiernan el flujo
+
+- **Un exchange, una cola por evento-consumidor.** Cada servicio crea su cola y su binding; Rabbit copia a las colas cuyo pattern coincide (publish/subscribe). Dentro de una cola, solo hay 1 listener por servicio en este proyecto.
+- **Keys jerárquicas `dominio.accion`**: `book.created`, `follow.followed`/`follow.unfollowed`, `review.created`/`review.updated`, `shelf.changed`. Un topic exchange permitiría suscripciones con comodines (`follow.*`), aunque aquí cada cola se ciñe a una key exacta.
+- **Todo durable**: `TopicExchange(EXCHANGE, true, false)` y `new Queue(name, true)`; el mensaje sobrevive reinicios del broker si el consumidor no lo había confirmado.
+- **Declaración idempotente**: no hay app de gestión; cada servicio declara exchange, colas y bindings al arrancar en su `RabbitConfig`. Rabbit devuelve sin error si ya existen (declare-and-check).
+- **Contrato por convención**: el body es JSON; cada servicio declara su trusted package en el converter (`JacksonJsonMessageConverter("com.booksocial.<servicio>.events")`) y define una **copia privada del record** (sección 11.2). La serialización no depende de un módulo compartido.
+- **ACK automático + redelivery**: si el listener lanza una excepción, el mensaje se devuelve a la cola y se reintenta. Por eso todos los consumidores son **idempotentes** (upsert/recalculo, nunca incrementos) — ver Apéndice B.
+
+### Cómo inspeccionarlo en caliente
+
+- **UI de gestión**: `http://localhost:15672` (guest/guest). En _Exchanges → booksocial.events_ ves los bindings; en _Queues_ ves las 11 colas con mensajes `Ready`/`Unacked`.
+- **Estado sano = colas en 0.** Si una cola acumula mensajes `Ready`:
+  - servicio consumidor caído, o
+  - cola declarada sin `@RabbitListener` — el caso real de `notification-service.reviews.created` (se acumula por diseño mientras no exista el consumidor).
+- Para inspección por logs del contenedor y comandos de diagnóstico, remite a Apéndice C (Herramientas de inspección).
+
+---
+
+## Apéndice E — WebSocket (STOMP): del servidor al navegador
+
+WebSocket + STOMP viven en notification-service (:8087) y son el **último tramo del push**: RabbitMQ lleva el evento hasta notification-service (Apéndice D) y STOMP lo empuja de ahí **hasta el navegador**, en tiempo real. Este apéndice mapea ese tramo: cómo se autentica la conexión, cómo se suscribe el cliente y cómo viaja la notificación de Mongo a la pantalla.
+
+### Conceptos mínimos
+
+| Concepto                    | Qué es                                                                                                    | En BookSocial                             |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| **WebSocket**               | Conexión TCP bidireccional y persistente; se abre mediante `HTTP Upgrade`                                 | endpoint `/ws` de notification-service    |
+| **STOMP**                   | Protocolo de mensajería de alto nivel sobre WebSocket (frames `CONNECT`, `SUBSCRIBE`, `SEND`, `MESSAGE`…) | todo el tráfico cliente↔broker            |
+| **Handshake**               | El `HTTP Upgrade` inicial; aquí se valida el JWT                                                          | `JwtHandshakeInterceptor.beforeHandshake` |
+| **Broker simple**           | Registro en memoria que reparte a destinos `*` y `*`                                                      | `enableSimpleBroker("/topic", "/queue")`  |
+| **Topic**                   | Destino multicast: todos los suscritos reciben cada mensaje                                               | `/topic/notifications/{userId}`           |
+| **Suscripción**             | El cliente se registra en un destino para recibirlo                                                       | `SUBSCRIBE /topic/notifications/19`       |
+| **SimpMessagingTemplate**   | API del lado servidor para publicar en el broker                                                          | `convertAndSend(destino, payload)`        |
+| **Application destination** | Envíos del cliente al servidor (`/app/*`)                                                                 | configurado, todavía sin uso              |
+
+### El flujo completo (3 tramos)
+
+```
+ Tramo 1 (Rabbit)        Tramo 2 (servicio)                 Tramo 3 (WebSocket STOMP)
+┌──────────────┐   ┌──────────────────────────────────┐   ┌──────────────────────┐
+│ user-service │──►│ notification-service             │──►│ navegador            │
+│ FollowEvent  │   │  FollowEventConsumer             │   │ SUBSCRIBE            │
+│  Publisher   │   │    │  NotificationService        │   │ /topic/notifications │
+│ follow.      │   │    │  ├─ save()        → Mongo   │   │ /{userId}            │
+│ followed     │   │    │  └─ convertAndSend(topic)───┼──►│ MESSAGE frame        │
+└──────────────┘   └──────────────────────────────────┘   └──────────────────────┘
+   evento               persistir + empujar                          recibir
+```
+
+1. **Evento (Rabbit)**: user-service publica `follow.followed`; `FollowEventConsumer` de notification-service lo recibe (colas, Apéndice D).
+2. **Persistir**: `NotificationService.createFollowNotification(followerId, followeeId)` hace `save()` del `NotificationReadModel` en Mongo → **fuente de verdad**.
+3. **Empujar**: `messagingTemplate.convertAndSend("/topic/notifications/" + followeeId, toResponse(n))`. Spring serializa el DTO a JSON y el broker simple lo entrega como frame `MESSAGE` a los suscriptores de ese topic.
+4. **Recibir**: el cliente suscrito recibe el frame; si nadie está suscrito, el frame se descarta sin pérdida porque la notificación ya quedó persistida (pull: `GET /notifications`).
+
+### El handshake: autenticar sin header
+
+Un navegador no puede poner cabeceras `Authorization` en un `WebSocket` (la API solo permite configurar subprotocols), de ahí que la **autenticación ocurra en el handshake, con el token en la URL**:
+
+```
+ws://localhost:8087/ws?token=<jwt>
+```
+
+`JwtHandshakeInterceptor.beforeHandshake` (mismo `JwtService` parse-only y `APP_JWT_SECRET` que el resto de servicios):
+
+| Comprobación                       | Resultado `false` → se aborta la conexión antes de abrir el socket           |
+| ---------------------------------- | ---------------------------------------------------------------------------- |
+| Hay parámetro `token` en el query  | sin token → abort                                                            |
+| `jwtService.parse(token)` no lanza | token inválido/expirado/otro issuer → abort                                  |
+| `claims.get("type") == "access"`   | un refresh token → abort                                                     |
+| `claims.get("uid")` es `Number`    | sin `uid` numérico → abort                                                   |
+| Si todo ok                         | `attributes.put("userId", uid)` queda disponible para futuros usos del canal |
+
+> En `SecurityConfig` el path `/ws/**` está `permitAll` en el filtro HTTP, pero **eso no autentica nada**: la seguridad real vive en el handshake. Es el mismo patrón que con los GETs públicos del proyecto: `permitAll` solo evita el 401 del filtro, la validación de identidad ocurre donde corresponde (aquí, en el interceptor del handshake).
+
+### El broker y los destinos
+
+- **Broker simple en memoria** de Spring (`/topic`, `/queue`). No se usa el plugin STOMP de RabbitMQ: es pura infraestructura Spring, un broker intra-proceso dentro de notification-service.
+- **`/topic/*`**: multicast (uno → todos los suscritos). Cada notificación se publica en `/topic/notifications/{userId}` — el topic lleva el id del destinatario, así solo su suscripción lo recibe (privacidad por construcción).
+- **`/queue/*`**: 1-a-1, registrado pero sin uso todavía.
+- **`/app`**: prefijo de mensajes cliente→servidor (`SEND`), configurado sin handlers todavía (no hay comandos del cliente hacia el servidor).
+- Envía a través del `WebSocketMessageBrokerConfigurer` (`SimpMessagingTemplate`) sin `@MessageMapping`: no hay endpoints de entrada, solo salida push.
+
+### Dónde vive cada pieza
+
+| Pieza                     | Archivo                                 | Rol                                                                                             |
+| ------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `WebSocketConfig`         | `config/WebSocketConfig.java`           | registro STOMP: broker `/topic`,`/queue`, prefijo `/app`, endpoint `/ws`, orígenes, interceptor |
+| `JwtHandshakeInterceptor` | `security/JwtHandshakeInterceptor.java` | autenticación en el handshake (token en query, parse-only, guarda `userId`)                     |
+| `NotificationService`     | `service/NotificationService.java`      | dispara `convertAndSend` después del `save()`                                                   |
+| `FollowEventConsumer`     | `events/FollowEventConsumer.java`       | bridge Rabbit → `NotificationService`                                                           |
+| `NotificationController`  | `web/NotificationController.java`       | REST de respaldo (pull): list, unread-count, mark-all-read                                      |
+| `NotificationReadModel`   | `readmodel/`                            | fuente de verdad (Mongo)                                                                        |
+| `SecurityConfig`          | `config/SecurityConfig.java`            | `/ws/**` `permitAll` (la seguridad es el handshake)                                             |
+
+### Push vs pull: el respaldo REST
+
+| Operación          | Push (STOMP)                                       | Pull (REST)                                              |
+| ------------------ | -------------------------------------------------- | -------------------------------------------------------- |
+| Nueva notificación | frame `MESSAGE` en `/topic/notifications/{userId}` | `GET /notifications` (lista, `occurredAt` desc)          |
+| No leídas          | —                                                  | `GET /notifications/unread-count`                        |
+| Marcar leídas      | —                                                  | `POST /notifications/read` (`updateMulti` → `read=true`) |
+
+### Inspección y problemas típicos
+
+```powershell
+# Cliente de prueba: abre la conexión y espera el push
+wscat -c "ws://localhost:8087/ws?token=$TOKEN_B"
+#   → SUBSCRIBE /topic/notifications/19   (entonces provocar un follow en otra terminal)
+```
+
+| Síntoma                                             | Causa probable                                                                                                                                |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Handshake rechazado (501/log de abort)              | token ausente, expirado, tipo distinto de `access`, issuer distinto u **origen no permitido** (la App solo acepta `http://localhost:4200`)    |
+| La notificación está en Mongo pero no llega el push | conexión no abierta, o suscrito a un topic con `userId` distinto                                                                              |
+| El mensaje llega a `wscat` pero no a Angular        | el cliente STOMP está conectado a otro origen/puerto; recordar que el gateway **no** proxea WS (conexión directa a `:8087`, ver 11.7-error 4) |
+| Siempre puedes recuperar                            | `GET /notifications` desde el gateway (pull)                                                                                                  |
+
+### Qué no se usa (decisiones conscientes)
+
+- **Sin RabbitMQ STOMP**: el broker es el simple en memoria de Spring; Rabbit solo entrega el evento hasta el servicio (Apéndice D).
+- **Sin SockJS fallback**: `addEndpoint("/ws")` sin `.withSockJS()` → conexión directa `ws://`. Si se quisiera soporte de proxies/proxies sin WS, sería el siguiente paso.
+- **Sin destinos globales**: todos los topics llevan el `userId` del destinatario; no hay broadcast sin identidad.
+- **El `userId` del handshake queda en `attributes`** pero de momento no se usa contra la suscripción: la segmentación por topic ya impide cruzarse notificaciones.
