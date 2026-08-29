@@ -15,7 +15,7 @@ public class FeedEntryReadModel {
 
     public FeedEntryReadModel() {}
 
-    public FeedEntryReadModel(String id, Long feedUserId, String activityId) {
+    public FeedEntryReadModel(Long feedUserId, String activityId) {
         this.id = feedUserId + ":" + activityId;
         this.feedUserId = feedUserId;
         this.activityId = activityId;

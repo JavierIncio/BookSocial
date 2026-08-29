@@ -5281,6 +5281,171 @@ frontend/
 
 ---
 
+## Bloque 11 — Fase 9: feed social (social-service) + notificaciones (notification-service)
+
+**Objetivo**: dos nuevos servicios de **proyección de lectura pura**: `social-service` (:8086) mantiene el feed de actividad por **fanout-on-write**, y `notification-service` (:8087) crea notificaciones y las empuja al usuario en **tiempo real** vía WebSocket STOMP. Ambos son consumidores de eventos RabbitMQ y usan **MongoDB como única base de datos** (sin JPA/Postgres).
+
+```
+social-service/          :8086   solo Mongo · consume 5 colas · GET /feed
+notification-service/    :8087   solo Mongo + WebSocket · consume 2 colas · REST + push STOMP
+```
+
+### 11.1 — Esqueleto de un servicio "solo Mongo" (sin JPA)
+
+Los servicios nuevos no tienen Postgres: sus cambios de estado vienen **exclusivamente por eventos RabbitMQ** (excepto el follow, que los produce user-service). Sus dependencias en el pom:
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-webmvc</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-mongodb</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security</artifactId>
+</dependency>
+<!-- + starter-validation, actuator, amqp, jjwt (Apéndice A) -->
+```
+
+Puerto `8086` (social) / `8087` (notification), lectura de `spring.mongodb.uri` (`SPRING_MONGODB_URI`), seguridad parse-only del [Apéndice A](#apéndice-a--plantilla-de-seguridad-reutilizable) y los beans de Rabbit. En notification-service se añade además:
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-websocket</artifactId>
+</dependency>
+```
+
+### 11.2 — Nuevos eventos de dominio (Fase 9.2)
+
+Para alimentar el feed hacen falta nuevos eventos. Se añadieron **publicadores** en los servicios de origen (dual-write con Rabbit, misma limitación de outbox documentada en Apéndice B):
+
+| Evento | Publicador | Routing key | Consumidores |
+| ------ | ---------- | ----------- | ------------ |
+| `FollowedEvent` / `UnfollowedEvent` | user-service (ya existía) | `follow.followed` / `follow.unfollowed` | social y notification |
+| `ReviewCreatedEvent` / `ReviewUpdatedEvent` | review-service | `review.created` / `review.updated` | social |
+| `ShelfChangedEvent` | shelf-service | `shelf.changed` | social |
+
+En review-service el `ReviewService.create/update` denormaliza `title`/`authorName`/`authorId` desde los `book_refs` locales antes de publicar el evento. En shelf-service el `ShelfService.create/updateStatus` publica `ShelfChangedEvent` (el `delete` no publica: no hay actividad que mostrar). Sus colas originales (`review-service.books.created`, `shelf-service.books.created`) se conservan intactas.
+
+> **Copias locales de eventos**: cada consumidor define su propio record `Evento(...)` en su paquete (`com.booksocial.social.events`, `com.booksocial.notification.events`). `JacksonJsonMessageConverter` deserializa contra los trusted packages del converter local (ver sección 8.2). En social-service, `ReviewCreatedEvent` y `ReviewUpdatedEvent` implementan una interface común `ReviewEvent` para tratarlos de forma polimórfica.
+
+### 11.3 — Feed por fanout-on-write (social-service)
+
+Dos decisiones de diseño:
+
+1. **Cada actividad se escribe una vez** en `activities` (ActivityItemReadModel, `_id` = UUID generado con `generateActivityId`).
+2. **Cada seguidor tiene su feed "materializado"**: al recibir un evento, `FeedService` escribe la actividad una vez **por cada seguidor** en `feed_entries` (FeedEntryReadModel, `_id` = `feedUserId:activityId` — idempotente). Leer el feed es un `find` por `_id`, sin joins.
+
+`FollowerIndexReadModel` (colección `followers`, `_id` = userId) almacena la lista de `followerIds` del usuario. El `FollowedEvent`/`UnfollowedEvent` **actualiza ese índice** (añade/hermana) y además **hace fanout**: al seguir, escribe la actividad `FOLLOW` en el feed de cada seguidor **nuevo** del usuario seguido (no de todos).
+
+`RabbitConfig` declara 5 colas durables:
+
+| Cola | Key |
+| ---- | --- |
+| `social-service.follows.followed` | `follow.followed` |
+| `social-service.follows.unfollowed` | `follow.unfollowed` |
+| `social-service.reviews.created` | `review.created` |
+| `social-service.reviews.updated` | `review.updated` |
+| `social-service.shelves.changed` | `shelf.changed` |
+
+#### Paginación por cursor (sin `skip`)
+
+```java
+public FeedResponse getFeed(Long userId, String cursor, int limit) {
+    Query query = new Query().limit(limit + 1);
+    query.with(Sort.by(desc("occurredAt"), desc("_id")));
+    // cursor = "<occurredAtMillis>_<id>" → añade $lt sobre occurredAt y _id
+    List<FeedEntryReadModel> entries = mongoTemplate.find(query, FeedEntryReadModel.class, "feed_entries");
+    boolean hasMore = entries.size() > limit;
+    String nextCursor = hasMore ? encodeCursor(entries.get(limit)) : null;
+    return new FeedResponse(trim(entries, limit), nextCursor);
+}
+```
+
+- Orden `(occurredAt, _id)` **descendente**: `_id` como tiebreaker evita saltos/duplicados cuando dos entradas comparten el mismo instante.
+- Se pide `limit+1` y, si sobra, se recorta y se devuelve `nextCursor` (el cursor del último devuelto). El cliente sigue paginando con `?cursor=nextCursor`.
+- Único endpoint: **`GET /feed?cursor=&limit=`** con `@RequestHeader("X-User-Id")` (lo inyecta el gateway desde el claim `uid`, ver 11.5-error 1).
+
+### 11.4 — Notificaciones + WebSocket STOMP (notification-service)
+
+#### Read model idempotente
+
+```java
+@Document(collection = "notifications")
+public class NotificationReadModel {
+    @Id private String id;          // "userId:notificationId" → idempotente ante re-entregas
+    private Long userId;
+    private String type;            // "FOLLOW"
+    private String notificationId;  // "FOLLOW:<followerId>"
+    private Map<String, Object> payload;  // followerId, followerEmail, followerName, occurredAt
+    private boolean read;
+    private Instant occurredAt;
+}
+```
+
+#### REST + push
+
+`NotificationService.createFollowNotification(...)` hace upsert del read model y, si es nuevo, envía **push STOMP**:
+
+```java
+simpMessagingTemplate.convertAndSend("/topic/notifications/" + userId, notificationResponse);
+```
+
+El broker STOMP se configura en `WebSocketConfig` con `@EnableWebSocketMessageBroker`:
+
+```java
+registry.addEndpoint("/ws").setAllowedOriginPatterns("http://localhost:4200");
+registry.enableSimpleBroker("/topic", "/queue");   // colas para mensajes 1-a-1
+registry.setApplicationDestinationPrefixes("/app");
+```
+
+El `JwtHandshakeInterceptor` (registrado como `@Component` e inyectado en `registerStompEndpoints`) valida el JWT y guarda el userId en los atributos de la sesión:
+
+```java
+if (token == null) return false;
+Claims claims = jwtService.parse(token);
+Object uid = claims.get("uid");                     // ← tipado como Number
+attributes.put("userId", ((Number) uid).longValue());
+```
+
+Endpoints REST (todos con `@RequestHeader("X-User-Id")`):
+
+| Método | Ruta | Descripción |
+| ------ | ---- | ----------- |
+| `GET` | `/notifications` | Lista (más recientes primero) |
+| `GET` | `/notifications/unread-count` | `{ "count": n }` |
+| `POST` | `/notifications/read` | Marcos "read=true" en masa (bulk `MongoTemplate.updateMulti`) |
+
+`RabbitConfig` declara `notification-service.follows.followed` (consumido por `FollowEventConsumer`) y `notification-service.reviews.created` (cola creada, **sin consumer todavía**).
+
+#### El cliente STOMP se conecta por URL (no por header)
+
+```
+ws://localhost:8087/ws?token=<jwt>
+```
+
+### 11.5 — Errores encontrados en la Fase 9 (con solución directa)
+
+1. **El gateway reescribe `X-User-Id` (strip-and-assert)**: `UserHeadersRequestWrapper` ignora el `X-User-Id` del cliente y lo reinyecta desde el claim `uid` del JWT. Los E2E que forzaban el header con otro valor recibían los datos del `uid` del token. Regla: contra el gateway, probar con el token del usuario correcto.
+2. **`JwtHandshakeInterceptor` fallaba el handshake**: `Long.valueOf(claims.getSubject())` petaba porque el `sub` del JWT es el **email**. Solución: leer el claim `uid` como `Number` (`((Number) claims.get("uid")).longValue()`).
+3. **El gateway devolvía 401 al handshake `/ws`**: exigía auth en `anyRequest()`, pero el handshake no lleva `Authorization: Bearer`. Solución: `permitAll("/ws/**")` en el SecurityConfig del **gateway** (la validación real la hace el interceptor de notification-service con el mismo `APP_JWT_SECRET`).
+4. **Spring Cloud Gateway (WebMVC) NO proxea WebSockets**: error `Can "Upgrade" only to "WebSocket"`. El proxying de WS solo está en la variante Reactiva del gateway. Decisión para Fase 9: el cliente STOMP se conecta **directo** a `ws://localhost:8087/ws?token=` (la ruta `/ws/**` del gateway se añadió y eliminó). En producción habría que llegar con un proxy con soporte WS (nginx/traefik) o migrar el gateway a WebFlux.
+5. **`/ws-info` fantasmatico**: permitAll huérfano en notification-service (no existe ese endpoint). Eliminado.
+
+### Decisiones de diseño de la Fase 9
+
+- **Servicios de lectura pura** ("event-sourced read models"): social y notification solo escriben en Mongo y derivan su estado de los eventos; no hay command side propio. El índice de seguidores es el único "estado" que mantienen (derivado de follow/unfollow).
+- **Fanout-on-write** en lugar de leer seguidores en cada petición: la lectura del feed es un `find` simple, a costa de escritura amplificada (`O(seguidores)` por actividad). Correcto para un feed personal con muchos lectores.
+- **Follow funciona sin esperar el feed**: el evento `FollowedEvent` lo consume user-service (escrituras propias), social-service (índice + feed) y notification-service (notificación + push). Cada quien, su cola, su copy del evento.
+- **WebSocket STOMP vía `SimpMessagingTemplate`**: el push es best-effort; si el usuario no está conectado, no se pierde nada porque la notificación ya está persistida en Mongo y la recupera vía `GET /notifications`.
+- **Cabecera `X-User-Id` confiable** gracias al strip-and-assert del gateway (mismo patrón que el resto de servicios).
+
+---
+
 ## Apéndice A — Plantilla de seguridad reutilizable
 
 Los servicios downstream (user-service, book-service, review-service, shelf-service) comparten la misma configuración de seguridad: **solo validan JWT, no los generan**. El identity-service es el único que emite tokens. Esta sección consolida el patrón para evitar repetirlo en cada bloque.

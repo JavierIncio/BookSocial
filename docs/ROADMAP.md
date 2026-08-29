@@ -838,3 +838,59 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 - [x] Fase D — Archivos de traducción creados (es + pt).
 - [x] Fase E — Build de producción con 3 locales verificado.
 - [x] Actualizar este documento al cerrar la fase.
+
+## Fase 9 — Feed social + Notificaciones ✅ Completada
+
+Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y las **notificaciones en tiempo real** (`notification-service`, :8087), ambos como proyecciones de lectura puras sobre **MongoDB + RabbitMQ**, con push **WebSocket STOMP**.
+
+### Fase 9.1 — Esqueleto del social-service ✅ Completada
+
+- Proyecto en `social-service/` **solo Mongo** (sin JPA): starters `spring-webmvc`, `spring-data-mongodb`, `spring-security`, `spring-validation`, `actuator`, `amqp`; parent `booksocial-parent` + jjwt.
+- Puerto **8086**, seguridad parse-only (sin autenticación de sesión, solo decode JWT para el gateway), Dockerfile multi-stage documentado.
+- Gateway: ruta `Path=/feed/**` → `${SOCIAL_SERVICE_URI:http://localhost:8086}`.
+- Compose: bloque `social-service` (8086) con mongodb+rabbitmq, depends_on y healthcheck.
+
+### Fase 9.2 — Eventos de dominio en review-service y shelf-service ✅ Completada
+
+- **review-service**: `ReviewCreatedEvent`/`ReviewUpdatedEvent` + `ReviewEventPublisher` + hooks en `ReviewService.create/update` (denormalizan `title`/`authorName`/`authorId` desde los `book_refs`). Keys: `review.created`, `review.updated`.
+- **shelf-service**: `ShelfChangedEvent` + `ShelfEventPublisher` + hooks en `create` y `updateStatus` (no en `delete`). Key: `shelf.changed`. La cola original `shelf-service.books.created` (`book.created`) se conserva.
+- Ambos compilan y mantienen sus consumers previos intactos.
+
+### Fase 9.3 — Feed social con fanout-on-write ✅ Completada
+
+- Read models en Mongo: `ActivityItemReadModel`, `FollowerIndexReadModel` (colección `followers`, `_id` = userId, lista de followerIds), `FeedEntryReadModel` (colección `feed_entries`, `_id` = `feedUserId:activityId`).
+- Copias locales de eventos (desacoplamiento): `FollowedEvent`, `UnfollowedEvent`, `ReviewCreatedEvent`, `ReviewUpdatedEvent`, `ShelfChangedEvent`. Interface `ReviewEvent` compartida por los dos records de review.
+- `RabbitConfig` con 5 colas de consumo: `social-service.follows.followed`, `.follows.unfollowed`, `social-service.reviews.created`, `.reviews.updated`, `social-service.shelves.changed`.
+- `FeedService`: `handleFollowed/Unfollowed/ReviewCreated/ReviewUpdated/ShelfChanged`, `fanout`/`fanoutToUser` (escribe actividad + copia en feed de cada seguidor), `generateActivityId` (UUID) y `getFeed(userId, cursor, limit)` con paginación cursor (`occurredAt` + `_id` descendentes, limit+1).
+- Consumers: `FollowEventConsumer`, `ReviewEventConsumer`, `ShelfEventConsumer`.
+- `FeedController`: `GET /feed?cursor=&limit=` con `X-User-Id` (el gateway hace strip-and-assert y lo reinyecta desde el claim `uid`).
+- E2E verificado: follow social2→social1 pobló `followers` (`8:[9]`), actividades y `feed_entries`; la estantería generó entradas `SHELF`; `GET /feed` (vía gateway) devuelve ordenado y con paginación.
+
+### Fase 9.4 — Notificaciones con WebSocket STOMP ✅ Completada
+
+- Proyecto en `notification-service/` (solo Mongo, puerto **8087**), starter extra `spring-boot-starter-websocket`.
+- `NotificationReadModel` (colección `notifications`, `_id` = `userId:notificationId`, **idempotente**) + repositorio (`findByUserIdOrderByOccurredAtDesc`, `countByUserIdAndReadFalse`).
+- `NotificationService`: `createFollowNotification` (`notificationId = "FOLLOW:" + followerId`), `listNotifications`, `unreadCount`, `markAllAsRead` (bulk `MongoTemplate.updateMulti`).
+- `RabbitConfig`: colas `notification-service.follows.followed` + `notification-service.reviews.created` (esta última sin consumer aún).
+- `FollowEventConsumer`: consume `follow.followed` → crea notificación + **push STOMP** a `/topic/notifications/{userId}` vía `SimpMessagingTemplate`.
+- `WebSocketConfig` (`@EnableWebSocketMessageBroker`): endpoint `/ws`, broker `/topic`+`/queue`, app prefix `/app`.
+- `JwtHandshakeInterceptor` (`@Component` inyectado): valida el JWT del query string `?token=`, extrae el claim **`uid`** y lo guarda en los atributos de sesión.
+- `NotificationController`: `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/read` — todos con `@RequestHeader("X-User-Id")`.
+- Gateway: ruta `/notifications/**` → `${NOTIFICATION_SERVICE_URI:http://localhost:8087}`.
+
+#### Errores encontrados y corregidos en la Fase 9 (con solución directa)
+
+1. **El gateway reescribe `X-User-Id`** (strip-and-assert): descarta el header del cliente y lo reinyecta desde el claim `uid` del JWT. Los E2E que forzaban el header a mano recibían los datos del `uid` del token, no del header. Regla: contra el gateway hay que usar el token del usuario correcto.
+2. **`JwtHandshakeInterceptor` fallaba el handshake**: `Long.valueOf(claims.getSubject())` petaba porque el `sub` del JWT es el **email**. Solución: leer el claim `uid` como `Number`.
+3. **El gateway devolvía 401 al handshake `/ws`**: SecurityConfig del gateway exigía auth en `anyRequest()`, pero el handshake WS no lleva `Authorization`. Solución: `permitAll("/ws/**")` en gateway (la validación real la hace notification-service con el mismo `APP_JWT_SECRET`).
+4. **Spring Cloud Gateway (WebMVC) NO proxea WebSockets** (`Can "Upgrade" only to "WebSocket"`): el routing reactivo es imprescindible para WS. Decisión: el cliente STOMP se conecta **directo** a `ws://localhost:8087/ws?token=` (sin pasar por el gateway); la ruta `/ws/**` del gateway se eliminó. En producción haría falta un proxy con soporte WS (nginx/traefik) o SCG reactivo.
+5. **`/ws-info` fantasmatico**: permitAll huérfano en notification-service (endpoint inexistente). Eliminado.
+
+#### Cierre de la Fase 9
+
+- [x] Fase 9.1 — Esqueleto social-service (solo Mongo, :8086) + compose + gateway.
+- [x] Fase 9.2 — Eventos de dominio en review (created/updated) y shelf (changed).
+- [x] Fase 9.3 — Feed con fanout-on-write, índice de seguidores y paginación cursor.
+- [x] Fase 9.4 — Notificaciones: read model + consumer + REST + WebSocket STOMP con push.
+- [x] E2E: REST vía gateway (`/notifications`, `/unread-count`, `/read`) y push STOMP en tiempo real (cliente Node con paquete `ws`).
+- [x] Actualizar este documento al cerrar la fase.

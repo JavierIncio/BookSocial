@@ -46,5 +46,6 @@
         <module>review-service</module>
         <module>shelf-service</module>
         <module>social-service</module>
+        <module>notification-service</module>
     </modules>
 </project>

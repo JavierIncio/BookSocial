@@ -160,17 +160,17 @@ public class FeedService {
     }
 
     private void fanout(Long actorId, String activityId) {
-        feedEntryRepo.save(new FeedEntryReadModel(null, actorId, activityId));
+        feedEntryRepo.save(new FeedEntryReadModel(actorId, activityId));
 
         followerRepo.findById(String.valueOf(actorId)).ifPresent(idx -> {
             idx.getFollowers().forEach(followerId -> {
-                feedEntryRepo.save(new FeedEntryReadModel(null, followerId, activityId));
+                feedEntryRepo.save(new FeedEntryReadModel(followerId, activityId));
             });
         });
     }
 
     private void fanoutToUser(Long followeeId, String activityId) {
-        feedEntryRepo.save(new FeedEntryReadModel(null, followeeId, activityId));
+        feedEntryRepo.save(new FeedEntryReadModel(followeeId, activityId));
     }
 
     private String generateActivityId(ActivityType type, String key) {

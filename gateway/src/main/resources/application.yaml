@@ -44,6 +44,11 @@ spring:
               predicates:
                 - Path=/feed/**
 
+            - id: notification-service
+              uri: ${NOTIFICATION_SERVICE_URI:http://localhost:8087}
+              predicates:
+                - Path=/notifications/**
+
 server:
   port: 8080
 
