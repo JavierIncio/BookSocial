@@ -10,7 +10,7 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-9 están completadas** (1-8 
 
 - El usuario escribe todo el código (VS Code); el asistente guía, revisa y verifica.
 - Repositorio: monorepo, branch `main`, remoto `https://github.com/JavierIncio/BookSocial.git`.
-- Commits: Fase 6.0 = `249de08`, Fase 6.1-6.2 = `fb57d02`, Fase 8 = `5af355e`..`6f171c6` (8.1 servicios, 9581f9e/f995124 fixes+catálogo, 143a1b0 detalle, ce6d872 retry Google, 4b496b1 estantería+nav, 6f171c6 formulario reseña), 8.6 = `e04f4bb` (backend author PK+Mongo-first), `37dba17` (frontend author-detail+proxy regex), Fase 9.1-9.3 = `f264a34` (feed social), Fase 9.4 = pendiente de commit/push (notification-service + WebSocket STOMP).
+- Commits: Fase 6.0 = `249de08`, Fase 6.1-6.2 = `fb57d02`, Fase 8 = `5af355e`..`6f171c6` (8.1 servicios, 9581f9e/f995124 fixes+catálogo, 143a1b0 detalle, ce6d872 retry Google, 4b496b1 estantería+nav, 6f171c6 formulario reseña), 8.6 = `e04f4bb` (backend author PK+Mongo-first), `37dba17` (frontend author-detail+proxy regex), Fase 9.1-9.3 = `f264a34` (feed social), Fase 9.4 = `353e095` (notification-service + WebSocket STOMP).
 - Runtime: Java 21, Spring Boot 4.1.0, Spring Cloud WebMVC 2025.1.2, Angular 21.2.21, Node 24, Maven wrapper, jjwt 0.12.6.
 - Stack Docker Compose: postgres:16-alpine, mongodb:8.0, rabbitmq:4-management, identity (:8081), gateway (:8080), user-service (:8082), book-service (:8083), review-service (:8084), shelf-service (:8085), social-service (:8086), notification-service (:8087) — 11 contenedores.
 - Secretos en `.env` por módulo; todos comparten `APP_JWT_SECRET`.
