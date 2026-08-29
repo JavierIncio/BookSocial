@@ -52,15 +52,15 @@
           <context context-type="linenumber">51,53</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="5433152631410523926" datatype="html">
-        <source>@@loginErrorInvalidCredentials:Invalid email or password.</source>
+      <trans-unit id="loginErrorInvalidCredentials" datatype="html">
+        <source>Invalid email or password.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/login/login.ts</context>
           <context context-type="linenumber">43</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="5560488800524559300" datatype="html">
-        <source>@@loginErrorUnexpected:Unexpected error. Please try again.</source>
+      <trans-unit id="loginErrorUnexpected" datatype="html">
+        <source>Unexpected error. Please try again.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/login/login.ts</context>
           <context context-type="linenumber">44</context>
@@ -80,15 +80,15 @@
           <context context-type="linenumber">13,15</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="7250769950717349963" datatype="html">
-        <source>@@oauthCanceled:You have canceled the Google login.</source>
+      <trans-unit id="oauthCanceled" datatype="html">
+        <source>You have canceled the Google login.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/oauth2-callback/oauth2-callback.ts</context>
           <context context-type="linenumber">32</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="7813505524648728181" datatype="html">
-        <source>@@oauthFailed:Failed to login with Google.</source>
+      <trans-unit id="oauthFailed" datatype="html">
+        <source>Failed to login with Google.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/oauth2-callback/oauth2-callback.ts</context>
           <context context-type="linenumber">33</context>
@@ -179,22 +179,22 @@
           <context context-type="linenumber">78,80</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="926160303379686273" datatype="html">
-        <source>@@registerErrorDuplicate:There is already an account with that email.</source>
+      <trans-unit id="registerErrorDuplicate" datatype="html">
+        <source>There is already an account with that email.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.ts</context>
           <context context-type="linenumber">56</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="1507666601307176700" datatype="html">
-        <source>@@registerErrorInvalidForm:Please check the form data.</source>
+      <trans-unit id="registerErrorInvalidForm" datatype="html">
+        <source>Please check the form data.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.ts</context>
           <context context-type="linenumber">58</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="8155575573745951705" datatype="html">
-        <source>@@registerErrorUnexpected:Unexpected error. Please try again.</source>
+      <trans-unit id="registerErrorUnexpected" datatype="html">
+        <source>Unexpected error. Please try again.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.ts</context>
           <context context-type="linenumber">59</context>
@@ -235,22 +235,22 @@
           <context context-type="linenumber">56,58</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="4516810951255629378" datatype="html">
-        <source>@@authorDetailErrorInvalid:Invalid author.</source>
+      <trans-unit id="authorDetailErrorInvalid" datatype="html">
+        <source>Invalid author.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/author-detail/author-detail.ts</context>
           <context context-type="linenumber">27</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="3819101932562741573" datatype="html">
-        <source>@@authorDetailErrorNotFound:Author not found.</source>
+      <trans-unit id="authorDetailErrorNotFound" datatype="html">
+        <source>Author not found.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/author-detail/author-detail.ts</context>
           <context context-type="linenumber">35</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="7988628194152954468" datatype="html">
-        <source>@@authorDetailErrorLoad:Could not load the author.</source>
+      <trans-unit id="authorDetailErrorLoad" datatype="html">
+        <source>Could not load the author.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/author-detail/author-detail.ts</context>
           <context context-type="linenumber">45</context>
@@ -347,11 +347,15 @@
           <context context-type="linenumber">148,150</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="4585103578469857437" datatype="html">
-        <source>@@shelfStatusWantToRead:Want to read</source>
+      <trans-unit id="shelfStatusWantToRead" datatype="html">
+        <source>Want to read</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">32</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">85</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.ts</context>
@@ -362,11 +366,15 @@
           <context context-type="linenumber">24</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="2053725654388917142" datatype="html">
-        <source>@@shelfStatusReading:Reading</source>
+      <trans-unit id="shelfStatusReading" datatype="html">
+        <source>Reading</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">33</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">86</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.ts</context>
@@ -377,11 +385,15 @@
           <context context-type="linenumber">25</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="6275990226815159665" datatype="html">
-        <source>@@shelfStatusRead:Read</source>
+      <trans-unit id="shelfStatusRead" datatype="html">
+        <source>Read</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">34</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">87</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.ts</context>
@@ -392,50 +404,50 @@
           <context context-type="linenumber">26</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="244877613500872663" datatype="html">
-        <source>@@bookDetailErrorIsbn:ISBN not found in route.</source>
+      <trans-unit id="bookDetailErrorIsbn" datatype="html">
+        <source>ISBN not found in route.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">58</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="3726131187933198968" datatype="html">
-        <source>@@bookDetailErrorNotFound:Book not found.</source>
+      <trans-unit id="bookDetailErrorNotFound" datatype="html">
+        <source>Book not found.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">78</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="1803458147303936927" datatype="html">
-        <source>@@bookDetailErrorRating:Select a rating between 1 and 5 stars.</source>
+      <trans-unit id="bookDetailErrorRating" datatype="html">
+        <source>Select a rating between 1 and 5 stars.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">116</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="8622311554682597830" datatype="html">
-        <source>@@bookDetailErrorSaveReview:Could not save your review. Try again.</source>
+      <trans-unit id="bookDetailErrorSaveReview" datatype="html">
+        <source>Could not save your review. Try again.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">138</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="7491860068479360839" datatype="html">
-        <source>@@bookDetailErrorUpdateShelf:Could not update your shelf. Try again.</source>
+      <trans-unit id="bookDetailErrorUpdateShelf" datatype="html">
+        <source>Could not update your shelf. Try again.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">173</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="7829004267656082036" datatype="html">
-        <source>@@bookDetailErrorUpdateStatus:Could not update status. Try again.</source>
+      <trans-unit id="bookDetailErrorUpdateStatus" datatype="html">
+        <source>Could not update status. Try again.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">191</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="4094095205360034304" datatype="html">
-        <source>@@bookDetailErrorRemove:Could not remove the book. Try again.</source>
+      <trans-unit id="bookDetailErrorRemove" datatype="html">
+        <source>Could not remove the book. Try again.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">208</context>
@@ -490,18 +502,127 @@
           <context context-type="linenumber">46,50</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="3788233496831763060" datatype="html">
-        <source>@@catalogErrorLoad:Failed to load the catalog.</source>
+      <trans-unit id="catalogErrorLoad" datatype="html">
+        <source>Failed to load the catalog.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/catalog/catalog.ts</context>
           <context context-type="linenumber">41</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="5473748851031838508" datatype="html">
-        <source>@@catalogErrorSearch:Search failed. Try again.</source>
+      <trans-unit id="catalogErrorSearch" datatype="html">
+        <source>Search failed. Try again.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/catalog/catalog.ts</context>
           <context context-type="linenumber">62</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedTitle" datatype="html">
+        <source>Your feed</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">4,6</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedLoading" datatype="html">
+        <source>Loading your feed…</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">7,9</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedEmpty" datatype="html">
+        <source>No activity yet. Follow other readers to see their updates.</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">16,19</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedVerbFollowedYou" datatype="html">
+        <source>started following you</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">27,29</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedVerbFollowedOther" datatype="html">
+        <source>started following another reader</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">30,33</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedVerbReviewed" datatype="html">
+        <source>reviewed</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">34,35</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedRatingAriaLabel" datatype="html">
+        <source>Rating</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">48</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedVerbShelved" datatype="html">
+        <source>added</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">58,59</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedVerbShelvedTo" datatype="html">
+        <source>to</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">68,69</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedLoadingMore" datatype="html">
+        <source>Loading more…</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">85,88</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedLoadMore" datatype="html">
+        <source>Load more</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">93,97</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedErrorLoad" datatype="html">
+        <source>Failed to load your feed.</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">46</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedErrorMore" datatype="html">
+        <source>Failed to load more activity.</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">65</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedActorYou" datatype="html">
+        <source>You</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">73</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedActorUser" datatype="html">
+        <source>A reader</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">75</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">111</context>
         </context-group>
       </trans-unit>
       <trans-unit id="homeLoading" datatype="html">
@@ -532,8 +653,8 @@
           <context context-type="linenumber">17,19</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="150910401688732049" datatype="html">
-        <source>@@homeErrorLoad:Failed to load your profile.</source>
+      <trans-unit id="homeErrorLoad" datatype="html">
+        <source>Failed to load your profile.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/home/home.ts</context>
           <context context-type="linenumber">29</context>
@@ -574,18 +695,75 @@
           <context context-type="linenumber">29,32</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="3511175603395015542" datatype="html">
-        <source>@@shelfFilterAll:All</source>
+      <trans-unit id="shelfFilterAll" datatype="html">
+        <source>All</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.ts</context>
           <context context-type="linenumber">17</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="4258762155849603582" datatype="html">
-        <source>@@shelfErrorLoad:Failed to load your shelf.</source>
+      <trans-unit id="shelfErrorLoad" datatype="html">
+        <source>Failed to load your shelf.</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.ts</context>
           <context context-type="linenumber">48</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifBellAriaLabel" datatype="html">
+        <source>Notifications</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.html</context>
+          <context context-type="linenumber">8,9</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifLoading" datatype="html">
+        <source>Loading notifications…</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.html</context>
+          <context context-type="linenumber">37,39</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifEmpty" datatype="html">
+        <source>No notifications yet.</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.html</context>
+          <context context-type="linenumber">46,49</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifVerbFollowed" datatype="html">
+        <source>started following you</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.html</context>
+          <context context-type="linenumber">53,56</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifMarkAllRead" datatype="html">
+        <source>Mark all as read</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.html</context>
+          <context context-type="linenumber">63,67</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifErrorLoad" datatype="html">
+        <source>Failed to load notifications.</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.ts</context>
+          <context context-type="linenumber">50</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifActorUser" datatype="html">
+        <source>Another reader</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.ts</context>
+          <context context-type="linenumber">78</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.ts</context>
+          <context context-type="linenumber">79</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.ts</context>
+          <context context-type="linenumber">101</context>
         </context-group>
       </trans-unit>
       <trans-unit id="navCatalog" datatype="html">
@@ -595,25 +773,32 @@
           <context context-type="linenumber">10,11</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="navFeed" datatype="html">
+        <source>Feed</source>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/shared/components/nav/nav.html</context>
+          <context context-type="linenumber">16</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="navMyShelf" datatype="html">
         <source>My shelf</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/shared/components/nav/nav.html</context>
-          <context context-type="linenumber">15,17</context>
+          <context context-type="linenumber">20,22</context>
         </context-group>
       </trans-unit>
       <trans-unit id="navLogout" datatype="html">
         <source>Logout</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/shared/components/nav/nav.html</context>
-          <context context-type="linenumber">20,22</context>
+          <context context-type="linenumber">25,27</context>
         </context-group>
       </trans-unit>
       <trans-unit id="navLogin" datatype="html">
         <source>Log in</source>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/shared/components/nav/nav.html</context>
-          <context context-type="linenumber">25,28</context>
+          <context context-type="linenumber">30,33</context>
         </context-group>
       </trans-unit>
     </body>

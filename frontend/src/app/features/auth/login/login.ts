@@ -40,8 +40,8 @@ export class Login implements OnInit {
         this.loading.set(false);
         this.errorMessage.set(
           error.status === 401
-            ? $localize`@@loginErrorInvalidCredentials:Invalid email or password.`
-            : $localize`@@loginErrorUnexpected:Unexpected error. Please try again.`,
+            ? $localize`:@@loginErrorInvalidCredentials:Invalid email or password.`
+            : $localize`:@@loginErrorUnexpected:Unexpected error. Please try again.`,
         );
       },
     });

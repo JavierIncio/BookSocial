@@ -4,11 +4,11 @@ Documento de handoff para retomar el trabajo en cualquier momento. Se actualiza 
 
 ## Objective
 
-Continuar el monorepo **BookSocial**. Las **Fases 1-9 están completadas** (1-8 con 8.6 + i18n + **Fase 9: feed social + notificaciones**): identity + gateway + frontend auth + user-service + book-service + review-service + shelf-service + backend integración Google Books + APIs públicas + Author entity + Open Library + frontend catálogo/reseñas/estanterías/página autor + internacionalización Angular con 3 idiomas + **social-service** (feed por eventos) + **notification-service** (notificaciones REST + push WebSocket STOMP). CI verde. El siguiente paso es la **integración en el frontend** (página de feed + campana de notificaciones + suscripción STOMP).
+Continuar el monorepo **BookSocial**. Las **Fases 1-10 están completadas** (1-9 + i18n + **Fase 10: integración frontend del feed social + notificaciones STOMP**): identity + gateway + frontend auth + user-service + book-service + review-service + shelf-service + backend integración Google Books + APIs públicas + Author entity + Open Library + frontend catálogo/reseñas/estanterías/página autor + internacionalización Angular con 3 idiomas + **social-service** (feed por eventos) + **notification-service** (notificaciones REST + push WebSocket STOMP) + **frontend**: página `/feed` con paginación por cursor, campana de notificaciones con badge/unread-count/marcar leídas y suscripción **STOMP** directa a `ws://localhost:8087/ws?token=`. CI verde. Siguiente paso: **verificación E2E manual contra el stack Docker** y commit/push.
 
 ## Important Details
 
-- El usuario escribe todo el código (VS Code); el asistente guía, revisa y verifica.
+- El usuario escribe todo el código (VS Code); el asistente guía, revisa y verifica. **Excepción puntual**: la Fase 10 (frontend feed + notificaciones) la implementó el asistente a petición del usuario.
 - Repositorio: monorepo, branch `main`, remoto `https://github.com/JavierIncio/BookSocial.git`.
 - Commits: Fase 6.0 = `249de08`, Fase 6.1-6.2 = `fb57d02`, Fase 8 = `5af355e`..`6f171c6` (8.1 servicios, 9581f9e/f995124 fixes+catálogo, 143a1b0 detalle, ce6d872 retry Google, 4b496b1 estantería+nav, 6f171c6 formulario reseña), 8.6 = `e04f4bb` (backend author PK+Mongo-first), `37dba17` (frontend author-detail+proxy regex), Fase 9.1-9.3 = `f264a34` (feed social), Fase 9.4 = `353e095` (notification-service + WebSocket STOMP).
 - Runtime: Java 21, Spring Boot 4.1.0, Spring Cloud WebMVC 2025.1.2, Angular 21.2.21, Node 24, Maven wrapper, jjwt 0.12.6.
@@ -27,11 +27,12 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-9 están completadas** (1-8 
 - **Open Library API** (sin API key): `https://openlibrary.org`, rate limit ~3 req/s con User-Agent. Endpoints: `/search/authors.json?q=`, `/authors/{id}.json`, `/authors/{id}/works.json`. Cache local en Postgres `authors` + Mongo `authors`.
 - **Author entity**: `Author` en Postgres (`authors`) + Mongo (`authors`), con `openLibraryId` como clave de cache. Se crea bajo demanda desde Google Books, Open Library o manualmente.
 - **`Book.authorId`** (Long FK → `authors.id`): campo `author` (String) eliminado, migrado a `authorId`+`authorName` en todos los servicios.
-- **i18n**: `@angular/localize` v21.2.21, 87 messages extraídos, traducciones en `src/locale/messages.{es,pt}.xlf`. Build produce `dist/frontend/browser/{en,es,pt}/`. Polyfill `@angular/localize/init` en `angular.json`. Strings en templates anotados con `i18n="@@key"`, strings en TypeScript con `$localize`. Categorías de libros (dato de BD) no traducidas intencionalmente.
+- **i18n**: `@angular/localize` v21.2.21, **103 trans-units** (115 message occurrences) en `src/locale/messages.xlf`, traducciones en `src/locale/messages.{es,pt}.xlf`. Build produce `dist/frontend/browser/{en,es,pt}/`. Polyfill `@angular/localize/init` en `angular.json`. Strings en templates anotados con `i18n="@@key"`, strings en TypeScript con `$localize`. Categorías de libros (dato de BD) no traducidas intencionalmente.
 - **social-service** (:8086, solo Mongo, sin JPA): feed por **fanout-on-write**. Colecciones `activities` (ActivityItemReadModel), `followers` (FollowerIndexReadModel, `_id`={userId} → lista de followerIds), `feed_entries` (FeedEntryReadModel, `_id`=`feedUserId:activityId`). Consume 5 colas: `social-service.follows.followed/unfollowed`, `social-service.reviews.created/updated`, `social-service.shelves.changed` (con copias locales de eventos). `GET /feed?cursor=&limit=` con paginación cursor (orden `(occurredAt,_id)` desc, limit+1). Activity types: `FOLLOW`, `REVIEW`, `SHELF`.
 - **notification-service** (:8087, solo Mongo + WebSocket): colección `notifications`, `_id` idempotente = `userId:notificationId`, `notificationId="FOLLOW:"+followerId`. Consume `follow.followed` (1 consumer verificado) + `review.created` (sin consumer aún). Push STOMP a `/topic/notifications/{userId}`. REST: `GET /notifications`, `GET /notifications/unread-count`, `POST /notifications/read` (todos con `X-User-Id`).
 - **WebSocket STOMP** (notification-service): endpoint `/ws` autenticado con query `?token=<jwt>` (el handshake no admite `Authorization`; el `JwtHandshakeInterceptor` valida y lee el claim **`uid`** — NO `sub`, que es el email). Broker `/topic` + `/queue`, app prefix `/app`, `allowedOriginPatterns("http://localhost:4200")`.
 - **SCG WebMVC no proxea WebSockets** (`Can "Upgrade" only to "WebSocket"`): el cliente STOMP se conecta **directo** a `ws://localhost:8087/ws?token=`. La ruta `/ws/**` del gateway se añadió y luego se eliminó (innecesaria).
+- **Fase 10 (frontend feed + notificaciones)**: deps `@stomp/stompjs` + `websocket` (+ `@types/websocket` dev) con `allowedCommonJsDependencies` en `angular.json` (evita el WARN de CommonJS). `proxy.conf.json` añade `^/feed(/|$)` y `^/notifications(/|$)` → gateway :8080. `AuthService.userId()` decodifica el claim **`uid`** del JWT (base64url, sin librería). `NotificationRealtimeService` (STOMP): `Client` de `@stomp/stompjs` con `brokerURL=ws://localhost:8087/ws?token=<jwt>` y suscripción a `/topic/notifications/{userId}`; `connected()`/`disconnect()`; el bell lo conecta en `ngOnInit` y desconecta en `ngOnDestroy`. **Enriquecimiento de nombres**: feed y campana resuelven `displayName` vía `GET /profiles/{userId}` con caché reactiva (`signal<Map<number,string>>`, obligatorio en zoneless). Los `$localize` de TS usan IDs explícitos con la sintaxis correcta `$localize`:@@key:Text``` (el `:` inicial; el formato antiguo sin `:` mostraba el literal `@@key:Text` en runtime); la extracción con `ng extract-i18n --output-path src/locale` regenera `messages.xlf`.
 - Usuarios E2E feed/notificaciones: `social1@test.com/Test123456` (id 8), `social2@test.com/Test123456` (id 9).
 
 ## Resumen de APIs disponibles (vía gateway :8080)
@@ -82,6 +83,15 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-9 están completadas** (1-8 
 - `GET /follows/{userId}/followers` — seguidores
 - `GET /follows/{userId}/following` — siguiendo
 
+### Feed (social-service) — auth requerida
+- `GET /feed?cursor=&limit=` — actividad de los seguidos (FOLLOW/REVIEW/SHELF), paginación cursor
+
+### Notifications (notification-service) — auth requerida
+- `GET /notifications` — lista de notificaciones
+- `GET /notifications/unread-count` — `{ count }`
+- `POST /notifications/read` — marcar todas como leídas
+- Push STOMP (WS directo, sin gateway): `ws://localhost:8087/ws?token=<jwt>` → `/topic/notifications/{userId}`
+
 ## Work State
 
 ### Completed
@@ -99,10 +109,11 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-9 están completadas** (1-8 
 - **Fase 9.1-9.2 cerrada**: esqueleto `social-service/` (solo Mongo) + compose + gateway `/feed/**`; eventos de dominio en review (`ReviewCreatedEvent`/`ReviewUpdatedEvent` + publisher + hooks en create/update) y shelf (`ShelfChangedEvent` + publisher en create/updateStatus).
 - **Fase 9.3 cerrada (feed social)**: fanout-on-write, índice de seguidores (`followers`), `FeedEntryReadModel` con `_id`=`feedUserId:activityId`, paginación cursor, 3 consumers + 5 colas, `GET /feed` vía gateway. E2E verificado (follow → feed con entrada `FOLLOW`; estantería → `SHELF`). Commit local `f264a34`.
 - **Fase 9.4 cerrada (notificaciones)**: notification-service con read model idempotente, REST (`/notifications`, `/unread-count`, `/read`), consumer `follow.followed` y push WebSocket STOMP a `/topic/notifications/{userId}`. Gateway ruta `/notifications/**`. E2E: REST vía gateway y push en tiempo real (cliente Node con paquete `ws`). Bugs corregidos: leer claim `uid` (no `sub`), `permitAll("/ws/**")` en gateway, WS directo sin pasar por el gateway (SCG WebMVC).
+- **Fase 10 cerrada (frontend feed + notificaciones)**: página `/feed` (`features/feed/`, authGuard, cards por tipo con enlace a `/book/:isbn`, "Load more" con cursor, actor names enriquecidos vía `/profiles/{userId}` con caché reactiva), campana en nav (`features/notifications/notification-bell/`, badge unread-count, dropdown con lista, "Mark all as read", suscripción STOMP en tiempo real) y enlace "Feed" en `nav`. Nuevos models/services (`feed.models.ts`, `notification.models.ts`, `FeedService`, `NotificationService` REST, `NotificationRealtimeService` STOMP, `ProfileResponse` en `user.models.ts` + `UserService.profile()`), `AuthService.userId()` (claim `uid`), `proxy.conf.json` con `/feed` y `/notifications`. i18n: +22 trans-units (103 total) con es/pt. Build de producción OK (3 locales), sin warnings (CommonJS silenciado en `angular.json`).
 
 ### Active
 
-- Ninguno bloqueado. Siguiente: **integrar feed + notificaciones en el frontend** (página de actividad, campana de notificaciones, suscripción STOMP) y cerrar commits/docs pendientes (Fase 9.4).
+- Ninguno bloqueado. Siguiente: **verificación E2E manual en el navegador contra el stack Docker** (login, feed con actividad FOLLOW/REVIEW/SHELF, campana con badge y push en tiempo real entre dos usuarios) y **commit + push** de la Fase 10.
 
 ### Blocked
 
@@ -110,13 +121,13 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-9 están completadas** (1-8 
 
 ## Next Move
 
-Tras cerrar la **Fase 9** (backend de feed + notificaciones):
+Tras cerrar la **Fase 10** (frontend feed + notificaciones):
 
 | Opción | Descripción |
 |--------|-------------|
-| **Frontend Fase 10** | Página `/feed` (actividad de los usuarios seguidos, paginación) + campana de notificaciones (lista, unread-count, marcar leídas) + suscripción **STOMP** directa a `ws://localhost:8087/ws?token=` (cliente `@stomp/stompjs` + `websocket`). Añadir `feed` y `notifications` a `proxy.conf.json`. |
-| Backend opcional | Consumer de `review.created` en notification-service; reconciliar `review.updated` como notificación; despliegue cloud (el WS requiere proxy con soporte WebSocket: nginx/traefik o SCG reactivo). |
-| Pendiente inmediato | Commit + push (`f264a34` + Fase 9.4); documentos ya actualizados (GUIDE/ROADMAP/SESSION_STATE). |
+| **Verificación + cierre** | E2E manual en navegador contra el stack Docker (usuarios `social1`/`social2`): login → `/feed` con entradas FOLLOW/REVIEW/SHELF y "Load more"; campana con contador y push en tiempo real al dar follow desde la otra cuenta; marcar leídas. Luego commit + push de la Fase 10. |
+| Backend opcional | Consumer de `review.created` en notification-service (ya declarada la cola); reconciliar `review.updated` como notificación; mostrar `targetUserId`/actor con nombre real en vez de "A reader" (enriquecimiento ya resuelto para nombres de actor); despliegue cloud (el WS requiere proxy con soporte WebSocket: nginx/traefik o SCG reactivo). |
+| Nota | El `package.json` raíz (untracked) es basura heredada sin uso; no trackear. |
 
 ## Relevant Files
 
@@ -131,7 +142,7 @@ Tras cerrar la **Fase 9** (backend de feed + notificaciones):
 - `gateway/` — Fase 1 + 6.1 + 6.3 + 7.1 + 9: JWT filter, 7 rutas (añade `/feed/**` → social-service y `/notifications/**` → notification-service), headers strip-then-assert, SecurityConfig con GETs públicos. (WS al gateway NO soportado por SCG WebMVC.)
 - `infrastructure/docker-compose.yml` — 11 servicios.
 
-### Frontend (Fase 8 + i18n completados)
+### Frontend (Fases 8 + i18n + 10 completadas)
 - `frontend/` — Angular 21.2.21, login/registro/OAuth2/guardas/interceptor JWT + home con profile.
 - `features/home/` — signals para user/loading/error, llama a `GET /users/me`.
 - `features/auth/login/`, `features/auth/register/` — signals + Reactive Forms.
@@ -139,15 +150,17 @@ Tras cerrar la **Fase 9** (backend de feed + notificaciones):
 - `features/book-detail/` — 8.3+8.5: detalle `/book/:isbn` público; reseñas y estantería solo autenticado; formulario de reseña con estrellas (create/update).
 - `features/my-shelf/` — 8.4: estantería propia `/shelf` con authGuard y filtros por estado (`computed()`).
 - `features/author-detail/` — 8.6: ficha de autor `/author/:id` pública (foto/iniciales, bio, works); linkado desde book-detail.
-- `shared/components/nav/` — nav standalone compartido en todas las páginas (brand, Catalog, My shelf/Logout o Log in según sesión).
-- `core/models/` + `core/services/` — book/author/review/shelf alineados 1:1 con DTOs backend.
-- `proxy.conf.json` — enruta auth, users, profiles, follows, books, authors, reviews, shelves → gateway :8080 (claves regex con frontera).
-- `src/locale/messages.xlf` — archivo fuente de traducciones (87 messages).
-- `src/locale/messages.es.xlf` — traducciones al español.
-- `src/locale/messages.pt.xlf` — traducciones al portugués.
+- `features/feed/` — **Fase 10**: página `/feed` con authGuard, tarjetas por tipo (FOLLOW/REVIEW/SHELF), enlaces a `/book/:isbn`, "Load more" con cursor, fecha con `DatePipe`, actor names enriquecidos vía `/profiles/{userId}` con caché reactiva.
+- `features/notifications/notification-bell/` — **Fase 10**: campana en nav con badge unread-count, dropdown con lista, enriquecimiento del follower name, "Mark all as read"; conecta `NotificationRealtimeService` en `ngOnInit` y desconecta en `ngOnDestroy`.
+- `shared/components/nav/` — nav standalone compartido (brand, Catalog, Feed, campana, My shelf/Logout o Log in según sesión).
+- `core/models/` + `core/services/` — book/author/review/shelf alineados 1:1 con DTOs backend; **Fase 10**: `feed.models.ts` (`FeedItemResponse`/`FeedPageResponse`/`FeedPayload`), `notification.models.ts` (`NotificationResponse`), `ProfileResponse` en `user.models.ts`; services `FeedService` (cursor), `NotificationService` (list/unreadCount/markAllAsRead), `NotificationRealtimeService` (STOMP `@stomp/stompjs`), `AuthService.userId()` (claim `uid`).
+- `proxy.conf.json` — enruta auth, users, profiles, follows, books, authors, reviews, shelves, **feed, notifications** → gateway :8080 (claves regex con frontera).
+- `src/locale/messages.xlf` — archivo fuente de traducciones (**103 trans-units**).
+- `src/locale/messages.es.xlf` — traducciones al español (103).
+- `src/locale/messages.pt.xlf` — traducciones al portugués (103).
 - Convenciones: **signals** + `inject()` (standalone, sin constructor). Obligatorio en zoneless. UI multilingüe (en/es/pt) con `@angular/localize`.
 
 ### Docs
 - `docs/GUIDE.md` — Bloques 0-9, Apéndices A-C (C: operación — despliegue, logs, depuración).
-- `docs/ROADMAP.md` — Fases 1-9 documentadas (8.1-8.6 + i18n + Fase 9.1-9.4).
+- `docs/ROADMAP.md` — Fases 1-10 documentadas (8.1-8.6 + i18n + Fase 9.1-9.4 + Fase 10).
 - `docs/SESSION_STATE.md` — Este archivo.

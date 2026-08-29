@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { UserResponse } from '@core/models/user.models';
+import { ProfileResponse, UserResponse } from '@core/models/user.models';
 import { Observable } from 'rxjs';
 
 @Injectable({
@@ -11,5 +11,9 @@ export class UserService {
 
   me(): Observable<UserResponse> {
     return this.http.get<UserResponse>('/users/me');
+  }
+
+  profile(userId: number): Observable<ProfileResponse> {
+    return this.http.get<ProfileResponse>(`/profiles/${userId}`);
   }
 }

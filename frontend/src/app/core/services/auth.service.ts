@@ -37,6 +37,20 @@ export class AuthService {
       .pipe(tap(() => this.clearSession()));
   }
 
+  userId(): number | null {
+    const token = this.accessTokenStore();
+    if (!token) return null;
+    try {
+      const payload = token.split('.')[1];
+      const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as {
+        uid?: number;
+      };
+      return typeof decoded.uid === 'number' ? decoded.uid : null;
+    } catch {
+      return null;
+    }
+  }
+
   applyOAuthToken(accessToken: string): void {
     this.applyToken({
       accessToken,

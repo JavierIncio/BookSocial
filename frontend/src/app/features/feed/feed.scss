@@ -1,0 +1,93 @@
+:host {
+  display: block;
+}
+
+main {
+  max-width: 40rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.375rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.95rem;
+
+  .actor {
+    font-weight: 600;
+  }
+
+  .link {
+    font-weight: 600;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  .rating {
+    padding: 0.05rem 0.5rem;
+    border-radius: 999px;
+    background: #fff8e1;
+    color: #b26a00;
+    font-size: 0.85rem;
+  }
+
+  .status {
+    padding: 0.05rem 0.5rem;
+    border-radius: 999px;
+    background: #e3f2fd;
+    color: #1565c0;
+    font-size: 0.85rem;
+  }
+
+  .comment {
+    width: 100%;
+    color: #555;
+    font-style: italic;
+  }
+
+  .date {
+    margin-left: auto;
+    font-size: 0.8rem;
+    color: #999;
+  }
+}
+
+.more {
+  margin-top: 1rem;
+  width: 100%;
+  padding: 0.65rem;
+  border: 1px solid #1976d2;
+  border-radius: 4px;
+  background: #fff;
+  color: #1976d2;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+}
+
+.error {
+  color: #c62828;
+}
+
+.empty {
+  color: #666;
+}

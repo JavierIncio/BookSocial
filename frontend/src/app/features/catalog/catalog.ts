@@ -38,7 +38,7 @@ export class Catalog implements OnInit {
       },
       error: () => {
         this.loading.set(false);
-        this.error.set($localize`@@catalogErrorLoad:Failed to load the catalog.`);
+        this.error.set($localize`:@@catalogErrorLoad:Failed to load the catalog.`);
       },
     });
   }
@@ -59,7 +59,7 @@ export class Catalog implements OnInit {
       },
       error: () => {
         this.searching.set(false);
-        this.error.set($localize`@@catalogErrorSearch:Search failed. Try again.`);
+        this.error.set($localize`:@@catalogErrorSearch:Search failed. Try again.`);
       },
     });
   }

@@ -1,10 +1,11 @@
 import { Component, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '@core/services/auth.service';
+import { NotificationBell } from '@features/notifications/notification-bell/notification-bell';
 
 @Component({
   selector: 'app-nav',
-  imports: [RouterLink],
+  imports: [RouterLink, NotificationBell],
   templateUrl: './nav.html',
   styleUrl: './nav.scss',
 })

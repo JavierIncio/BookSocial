@@ -26,6 +26,7 @@
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
             "polyfills": ["@angular/localize/init"],
+            "allowedCommonJsDependencies": ["@stomp/stompjs", "websocket"],
             "assets": [
               {
                 "glob": "**/*",

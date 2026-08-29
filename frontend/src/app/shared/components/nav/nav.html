@@ -10,6 +10,11 @@
     >Catalog</a>
     @if (isAuthenticated()) {
     <a
+      routerLink="/feed"
+      i18n="@@navFeed"
+    >Feed</a>
+    <app-notification-bell />
+    <a
       routerLink="/shelf"
       i18n="@@navMyShelf"
     >My shelf</a>

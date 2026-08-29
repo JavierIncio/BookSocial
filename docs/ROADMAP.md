@@ -894,3 +894,60 @@ Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y 
 - [x] Fase 9.4 — Notificaciones: read model + consumer + REST + WebSocket STOMP con push.
 - [x] E2E: REST vía gateway (`/notifications`, `/unread-count`, `/read`) y push STOMP en tiempo real (cliente Node con paquete `ws`).
 - [x] Actualizar este documento al cerrar la fase.
+
+---
+
+## Fase 10 — Frontend: feed social + notificaciones en tiempo real ✅ Completada
+
+**Objetivo**: integrar en el frontend Angular el **feed social** (página `/feed` con la actividad de los usuarios seguidos y paginación por cursor) y las **notificaciones en tiempo real** (campana en el nav con badge de no leídas, lista desplegable, marcar leídas y suscripción **STOMP** directa a `ws://localhost:8087/ws?token=`). Se desvía puntualmente de la convención "el usuario escribe el código": esta fase la implementa el asistente a petición del usuario.
+
+### Fase 10.1 — Dependencias, proxy y base de datos de modelo ❌→✅
+
+- **Deps**: `@stomp/stompjs` (cliente STOMP) + `websocket` (+ `@types/websocket` dev) en `frontend/package.json`.
+- **angular.json**: `allowedCommonJsDependencies: ["@stomp/stompjs", "websocket"]` en build options para silenciar el WARN de CommonJS (el paquete no es ESM).
+- **proxy.conf.json**: añadidas claves `^/feed(/|$)` y `^/notifications(/|$)` → gateway `:8080`.
+- **`AuthService.userId()`**: decodifica el claim **`uid`** del JWT (base64url, sin librería externa) — necesario para el topic STOMP `/topic/notifications/{userId}`.
+- **Models 1:1 con DTOs**: `core/models/feed.models.ts` (`FeedActivityType`, `FeedPayload`, `FeedItemResponse`, `FeedPageResponse`), `core/models/notification.models.ts` (`NotificationResponse`), `ProfileResponse` añadido a `user.models.ts`.
+- **Services**: `FeedService.getFeed(cursor?, limit?)` (GET `/feed`), `NotificationService.list()/unreadCount()/markAllAsRead()` (GET `/notifications`, `/unread-count`, POST `/read`), `UserService.profile(userId)` (GET `/profiles/{userId}`).
+
+### Fase 10.2 — Suscripción STOMP en tiempo real ✅ Completada
+
+- `core/services/notification.realtime.service.ts` (`NotificationRealtimeService`): `Client` de `@stomp/stompjs` con `brokerURL = ws://localhost:8087/ws?token=<jwt>` (WS directo, sin gateway — SCG WebMVC no proxea WebSockets), `reconnectDelay: 5000`, `onConnect` suscribe a `/topic/notifications/{userId}` y parsea `NotificationResponse`.
+- Señales `connected()`; `connect(onNotification)` gestiona el ciclo de vida (disconnect previo, activate) y `disconnect()` lo cierra en teardown.
+- El token se URL-encodea; los frames malformados se ignoran.
+
+### Fase 10.3 — Página de feed ✅ Completada
+
+- `features/feed/` — ruta `/feed` (lazy) protegida con `authGuard`.
+- Carga inicial (`limit=10`) y **"Load more"** con `nextCursor`; estados loading/error/empty.
+- Tarjetas por tipo: `FOLLOW` (te siguió / siguió a otro lector), `REVIEW` (título + rating ★ + comentario) y `SHELF` (título + estado con badges reutilizando keys `shelfStatus*`); enlaces a `/book/:isbn`; fecha con `DatePipe`.
+- **Enriquecimiento de nombres de actor**: `GET /profiles/{userId}` por actor distinto con caché **reactiva** (`signal<Map<number,string>>`) porque zoneless no redibuja con mutaciones ajenas a signals; "You"/"Tú" cuando `actorId === userId`.
+
+### Fase 10.4 — Campana de notificaciones ✅ Completada
+
+- `features/notifications/notification-bell/` integrada en el nav (solo autenticado): badge con `unread-count`, dropdown con lista (nombre del follower enriquecido vía `/profiles/{id}`), botón **"Mark all as read"** (optimista: POST `/notifications/read` + reset local) y **push en tiempo real** que antepone la notificación entrante y sube el contador.
+- Ciclo de vida: `ngOnInit` → `load()` + `realtime.connect()`; `ngOnDestroy` → `realtime.disconnect()`.
+- Nav: nuevo enlace "Feed" (`@@navFeed`) y `<app-notification-bell />`.
+
+### Fase 10.5 — i18n (extracción y traducciones) ✅ Completada
+
+- `ng extract-i18n --output-path src/locale` → **103 trans-units** (115 message occurrences) en `messages.xlf` (+22 respecto a la Fase 9).
+- Traducciones completas añadidas a `messages.es.xlf` y `messages.pt.xlf`. Fix de la fase i18n: los `$localize` de TS usaban `$localize`@@key:Text`` (sin `:` inicial), que muestra el literal `@@key:Text` en runtime — corregidos los 43 usos a `$localize`:@@key:Text```, re-extraídos con IDs con nombre y re-mapeadas las traducciones es/pt.
+- `feedLoadMore` y otros con interpolación preservan `<x id="INTERPOLATION" .../>`.
+
+### Verificación de la Fase 10
+
+- `ng build` (producción, `localize: true`): **OK sin warnings**, 3 locales `dist/frontend/browser/{en,es,pt}/`.
+- Build dev sin errores; i18n: xlf == es == pt == 103 trans-units (sin faltantes ni extras).
+- Pendiente: **E2E manual en navegador contra el stack Docker** (two-user: feed + push STOMP en vivo) y commit+push.
+
+### Cierre de la Fase 10
+
+- [x] Fase 10.1 — Deps STOMP + proxy (`/feed`, `/notifications`) + models/services + `AuthService.userId()`.
+- [x] Fase 10.2 — `NotificationRealtimeService` con STOMP directo a `:8087` y topic por userId.
+- [x] Fase 10.3 — Página `/feed` con paginación cursor y enriquecimiento de nombres.
+- [x] Fase 10.4 — Campana de notificaciones en nav (badge, lista, mark-all-read, push en vivo).
+- [x] Fase 10.5 — i18n: extracción (103 trans-units) + traducciones es/pt.
+- [x] Verificación: build de producción con 3 locales, sin warnings.
+- [ ] E2E manual en navegador contra el stack Docker (feed + push STOMP entre dos usuarios).
+- [ ] Actualizar este documento al cerrar la fase.

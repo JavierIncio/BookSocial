@@ -53,10 +53,10 @@ export class Register {
         this.loading.set(false);
         this.errorMessage.set(
           error.status === 409
-            ? $localize`@@registerErrorDuplicate:There is already an account with that email.`
+            ? $localize`:@@registerErrorDuplicate:There is already an account with that email.`
             : error.status === 400
-              ? $localize`@@registerErrorInvalidForm:Please check the form data.`
-              : $localize`@@registerErrorUnexpected:Unexpected error. Please try again.`,
+              ? $localize`:@@registerErrorInvalidForm:Please check the form data.`
+              : $localize`:@@registerErrorUnexpected:Unexpected error. Please try again.`,
         );
       },
     });

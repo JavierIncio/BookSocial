@@ -24,7 +24,7 @@ export class AuthorDetail implements OnInit {
     const id = Number(raw);
     if (!raw || !Number.isInteger(id) || id <= 0) {
       this.loading.set(false);
-      this.error.set($localize`@@authorDetailErrorInvalid:Invalid author.`);
+      this.error.set($localize`:@@authorDetailErrorInvalid:Invalid author.`);
       return;
     }
 
@@ -32,7 +32,7 @@ export class AuthorDetail implements OnInit {
       next: (author) => {
         this.loading.set(false);
         if (!author) {
-          this.error.set($localize`@@authorDetailErrorNotFound:Author not found.`);
+          this.error.set($localize`:@@authorDetailErrorNotFound:Author not found.`);
           return;
         }
         this.author.set(author);
@@ -42,7 +42,7 @@ export class AuthorDetail implements OnInit {
       },
       error: () => {
         this.loading.set(false);
-        this.error.set($localize`@@authorDetailErrorLoad:Could not load the author.`);
+        this.error.set($localize`:@@authorDetailErrorLoad:Could not load the author.`);
       },
     });
   }

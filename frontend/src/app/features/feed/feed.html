@@ -1,0 +1,97 @@
+<app-nav />
+
+<main>
+  <h1 i18n="@@feedTitle">Your feed</h1>
+
+  @if (loading()) {
+  <p i18n="@@feedLoading">Loading your feed…</p>
+  }
+  @else if (error()) {
+  <p class="error">{{ error() }}</p>
+  }
+  @else if (items().length === 0) {
+  <p
+    class="empty"
+    i18n="@@feedEmpty"
+  >No activity yet. Follow other readers to see their updates.</p>
+  }
+  @else {
+  <section class="timeline">
+    @for (item of items(); track item.activityId) {
+    <article class="entry">
+      <span class="actor">{{ actorName(item) }}</span>
+
+      @switch (item.type) {
+        @case ('FOLLOW') {
+          @if (followedYou(item)) {
+          <span i18n="@@feedVerbFollowedYou">started following you</span>
+          }
+          @else {
+          <span i18n="@@feedVerbFollowedOther">started following another reader</span>
+          }
+        }
+        @case ('REVIEW') {
+          <span i18n="@@feedVerbReviewed">reviewed</span>
+          @if (item.payload.bookIsbn) {
+          <a
+            class="link"
+            [routerLink]="['/book', item.payload.bookIsbn]"
+          >{{ item.payload.title }}</a>
+          }
+          @else {
+          <span class="link">{{ item.payload.title }}</span>
+          }
+          @if (item.payload.rating) {
+          <span
+            class="rating"
+            aria-label="Rating"
+            i18n-aria-label="@@feedRatingAriaLabel"
+          >★ {{ item.payload.rating }}</span>
+          }
+          @if (item.payload.comment) {
+          <span class="comment">
+            <q>{{ item.payload.comment }}</q>
+          </span>
+          }
+        }
+        @case ('SHELF') {
+          <span i18n="@@feedVerbShelved">added</span>
+          @if (item.payload.bookIsbn) {
+          <a
+            class="link"
+            [routerLink]="['/book', item.payload.bookIsbn]"
+          >{{ item.payload.title }}</a>
+          }
+          @else {
+          <span class="link">{{ item.payload.title }}</span>
+          }
+          <span i18n="@@feedVerbShelvedTo">to</span>
+          <span class="status">{{ shelfLabel(item.payload.shelfStatus) }}</span>
+        }
+      }
+
+      <time class="date">{{ item.occurredAt | date: 'medium' }}</time>
+    </article>
+    }
+  </section>
+
+  @if (nextCursor()) {
+    @if (loadingMore()) {
+    <button
+      type="button"
+      class="more"
+      [disabled]="true"
+      i18n="@@feedLoadingMore"
+    >Loading more…</button>
+    }
+    @else {
+    <button
+      type="button"
+      class="more"
+      (click)="loadMore()"
+      i18n="@@feedLoadMore"
+    >Load more</button>
+    }
+  }
+  }
+</main>

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
-  <file source-language="en" target-language="pt" datatype="plaintext" original="ng2.template">
+  <file source-language="en" datatype="plaintext" original="ng2.template">
     <body>
       <trans-unit id="loginTitle" datatype="html">
         <source>Login</source>
-        <target>Entrar</target>
+      <target state="translated">Entrar</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/login/login.html</context>
           <context context-type="linenumber">6,8</context>
@@ -16,7 +16,7 @@
       formControlName=&quot;email&quot;
       autocomplete=&quot;email&quot;
     &gt;"/></source>
-        <target> E-mail <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      <target state="translated"> E-mail <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
       type=&quot;email&quot;
       formControlName=&quot;email&quot;
       autocomplete=&quot;email&quot;
@@ -32,7 +32,7 @@
       formControlName=&quot;password&quot;
       autocomplete=&quot;current-password&quot;
     &gt;"/></source>
-        <target> Senha <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      <target state="translated"> Senha <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
       type=&quot;password&quot;
       formControlName=&quot;password&quot;
       autocomplete=&quot;current-password&quot;
@@ -44,7 +44,7 @@
       </trans-unit>
       <trans-unit id="loginSubmitButton" datatype="html">
         <source> <x id="INTERPOLATION" equiv-text="{{ loading() ? &apos;Logging in...&apos; : &apos;Login&apos; }}"/> </source>
-        <target> <x id="INTERPOLATION" equiv-text="{{ loading() ? &apos;Logging in...&apos; : &apos;Login&apos; }}"/> </target>
+      <target state="translated"> <x id="INTERPOLATION" equiv-text="{{ loading() ? &apos;Logging in...&apos; : &apos;Login&apos; }}"/> </target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/login/login.html</context>
           <context context-type="linenumber">35,38</context>
@@ -52,7 +52,7 @@
       </trans-unit>
       <trans-unit id="loginGoogleButton" datatype="html">
         <source> Login with Google </source>
-        <target> Entrar com Google </target>
+      <target state="translated"> Entrar com Google </target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/login/login.html</context>
           <context context-type="linenumber">44,48</context>
@@ -60,23 +60,23 @@
       </trans-unit>
       <trans-unit id="loginSwitch" datatype="html">
         <source> Don&apos;t have an account? <x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/register&quot;&gt;"/>Sign up<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></source>
-        <target> Não tem uma conta? <x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/register&quot;&gt;"/>Criar conta<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></target>
+      <target state="translated"> Não tem uma conta? <x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/register&quot;&gt;"/>Criar conta<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/login/login.html</context>
           <context context-type="linenumber">51,53</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="5433152631410523926" datatype="html">
-        <source>@@loginErrorInvalidCredentials:Invalid email or password.</source>
-        <target>E-mail ou senha inválidos.</target>
+      <trans-unit id="loginErrorInvalidCredentials" datatype="html">
+        <source>Invalid email or password.</source>
+      <target state="translated">E-mail ou senha inválidos.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/login/login.ts</context>
           <context context-type="linenumber">43</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="5560488800524559300" datatype="html">
-        <source>@@loginErrorUnexpected:Unexpected error. Please try again.</source>
-        <target>Erro inesperado. Por favor, tente novamente.</target>
+      <trans-unit id="loginErrorUnexpected" datatype="html">
+        <source>Unexpected error. Please try again.</source>
+      <target state="translated">Erro inesperado. Por favor, tente novamente.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/login/login.ts</context>
           <context context-type="linenumber">44</context>
@@ -84,7 +84,7 @@
       </trans-unit>
       <trans-unit id="oauthReturnToLogin" datatype="html">
         <source>Return to Login</source>
-        <target>Voltar ao Login</target>
+      <target state="translated">Voltar ao Login</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/oauth2-callback/oauth2-callback.html</context>
           <context context-type="linenumber">7,11</context>
@@ -92,23 +92,23 @@
       </trans-unit>
       <trans-unit id="oauthCompleting" datatype="html">
         <source>Completing login…</source>
-        <target>Finalizando login…</target>
+      <target state="translated">Finalizando login…</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/oauth2-callback/oauth2-callback.html</context>
           <context context-type="linenumber">13,15</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="7250769950717349963" datatype="html">
-        <source>@@oauthCanceled:You have canceled the Google login.</source>
-        <target>Você cancelou o login com Google.</target>
+      <trans-unit id="oauthCanceled" datatype="html">
+        <source>You have canceled the Google login.</source>
+      <target state="translated">Você cancelou o login com Google.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/oauth2-callback/oauth2-callback.ts</context>
           <context context-type="linenumber">32</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="7813505524648728181" datatype="html">
-        <source>@@oauthFailed:Failed to login with Google.</source>
-        <target>Falha ao entrar com Google.</target>
+      <trans-unit id="oauthFailed" datatype="html">
+        <source>Failed to login with Google.</source>
+      <target state="translated">Falha ao entrar com Google.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/oauth2-callback/oauth2-callback.ts</context>
           <context context-type="linenumber">33</context>
@@ -116,7 +116,7 @@
       </trans-unit>
       <trans-unit id="registerTitle" datatype="html">
         <source>Create Account</source>
-        <target>Criar conta</target>
+      <target state="translated">Criar conta</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.html</context>
           <context context-type="linenumber">6,9</context>
@@ -128,7 +128,7 @@
         formControlName=&quot;firstName&quot;
         autocomplete=&quot;given-name&quot;
       /&gt;"/></source>
-        <target> Nome <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      <target state="translated"> Nome <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
         type=&quot;text&quot;
         formControlName=&quot;firstName&quot;
         autocomplete=&quot;given-name&quot;
@@ -144,7 +144,7 @@
         formControlName=&quot;lastName&quot;
         autocomplete=&quot;family-name&quot;
       /&gt;"/></source>
-        <target> Sobrenome <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      <target state="translated"> Sobrenome <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
         type=&quot;text&quot;
         formControlName=&quot;lastName&quot;
         autocomplete=&quot;family-name&quot;
@@ -160,7 +160,7 @@
       formControlName=&quot;email&quot;
       autocomplete=&quot;email&quot;
     /&gt;"/></source>
-        <target> E-mail <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      <target state="translated"> E-mail <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
       type=&quot;email&quot;
       formControlName=&quot;email&quot;
       autocomplete=&quot;email&quot;
@@ -172,7 +172,7 @@
       </trans-unit>
       <trans-unit id="registerPasswordLabel" datatype="html">
         <source>Password</source>
-        <target>Senha</target>
+      <target state="translated">Senha</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.html</context>
           <context context-type="linenumber">38,40</context>
@@ -180,7 +180,7 @@
       </trans-unit>
       <trans-unit id="registerPasswordHint" datatype="html">
         <source>Minimum 8 characters.</source>
-        <target>Mínimo de 8 caracteres.</target>
+      <target state="translated">Mínimo de 8 caracteres.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.html</context>
           <context context-type="linenumber">44,47</context>
@@ -191,7 +191,7 @@
       type=&quot;date&quot;
       formControlName=&quot;birthDate&quot;
     /&gt;"/></source>
-        <target> Data de nascimento <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      <target state="translated"> Data de nascimento <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
       type=&quot;date&quot;
       formControlName=&quot;birthDate&quot;
     /&gt;"/></target>
@@ -202,7 +202,7 @@
       </trans-unit>
       <trans-unit id="registerSubmitButton" datatype="html">
         <source> <x id="INTERPOLATION" equiv-text="{{ loading() ? &apos;Creating…&apos; : &apos;Create Account&apos; }}"/> </source>
-        <target> <x id="INTERPOLATION" equiv-text="{{ loading() ? &apos;Creating…&apos; : &apos;Create Account&apos; }}"/> </target>
+      <target state="translated"> <x id="INTERPOLATION" equiv-text="{{ loading() ? &apos;Creating…&apos; : &apos;Create Account&apos; }}"/> </target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.html</context>
           <context context-type="linenumber">64,67</context>
@@ -210,7 +210,7 @@
       </trans-unit>
       <trans-unit id="registerGoogleButton" datatype="html">
         <source>Continue with Google</source>
-        <target>Continuar com Google</target>
+      <target state="translated">Continuar com Google</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.html</context>
           <context context-type="linenumber">72,76</context>
@@ -218,31 +218,31 @@
       </trans-unit>
       <trans-unit id="registerSwitch" datatype="html">
         <source> Already have an account? <x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/login&quot;&gt;"/>Sign in<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></source>
-        <target> Já tem uma conta? <x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/login&quot;&gt;"/>Entrar<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></target>
+      <target state="translated"> Já tem uma conta? <x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/login&quot;&gt;"/>Entrar<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.html</context>
           <context context-type="linenumber">78,80</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="926160303379686273" datatype="html">
-        <source>@@registerErrorDuplicate:There is already an account with that email.</source>
-        <target>Já existe uma conta com esse e-mail.</target>
+      <trans-unit id="registerErrorDuplicate" datatype="html">
+        <source>There is already an account with that email.</source>
+      <target state="translated">Já existe uma conta com esse e-mail.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.ts</context>
           <context context-type="linenumber">56</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="1507666601307176700" datatype="html">
-        <source>@@registerErrorInvalidForm:Please check the form data.</source>
-        <target>Por favor, verifique os dados do formulário.</target>
+      <trans-unit id="registerErrorInvalidForm" datatype="html">
+        <source>Please check the form data.</source>
+      <target state="translated">Por favor, verifique os dados do formulário.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.ts</context>
           <context context-type="linenumber">58</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="8155575573745951705" datatype="html">
-        <source>@@registerErrorUnexpected:Unexpected error. Please try again.</source>
-        <target>Erro inesperado. Por favor, tente novamente.</target>
+      <trans-unit id="registerErrorUnexpected" datatype="html">
+        <source>Unexpected error. Please try again.</source>
+      <target state="translated">Erro inesperado. Por favor, tente novamente.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/auth/register/register.ts</context>
           <context context-type="linenumber">59</context>
@@ -250,7 +250,7 @@
       </trans-unit>
       <trans-unit id="authorDetailBack" datatype="html">
         <source>← Back to catalog</source>
-        <target>← Voltar ao catálogo</target>
+      <target state="translated">← Voltar ao catálogo</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/author-detail/author-detail.html</context>
           <context context-type="linenumber">8,11</context>
@@ -258,7 +258,7 @@
       </trans-unit>
       <trans-unit id="authorDetailLoading" datatype="html">
         <source>Loading author…</source>
-        <target>Carregando autor…</target>
+      <target state="translated">Carregando autor…</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/author-detail/author-detail.html</context>
           <context context-type="linenumber">11,13</context>
@@ -266,7 +266,7 @@
       </trans-unit>
       <trans-unit id="authorDetailWorksMeta" datatype="html">
         <source>works in Open Library</source>
-        <target>obras no Open Library</target>
+      <target state="translated">obras no Open Library</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/author-detail/author-detail.html</context>
           <context context-type="linenumber">33,36</context>
@@ -274,7 +274,7 @@
       </trans-unit>
       <trans-unit id="authorDetailWorksTitle" datatype="html">
         <source>Works</source>
-        <target>Obras</target>
+      <target state="translated">Obras</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/author-detail/author-detail.html</context>
           <context context-type="linenumber">51,52</context>
@@ -282,31 +282,31 @@
       </trans-unit>
       <trans-unit id="authorDetailNoWorks" datatype="html">
         <source>No works information available.</source>
-        <target>Nenhuma informação de obras disponível.</target>
+      <target state="translated">Nenhuma informação de obras disponível.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/author-detail/author-detail.html</context>
           <context context-type="linenumber">56,58</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="4516810951255629378" datatype="html">
-        <source>@@authorDetailErrorInvalid:Invalid author.</source>
-        <target>Autor inválido.</target>
+      <trans-unit id="authorDetailErrorInvalid" datatype="html">
+        <source>Invalid author.</source>
+      <target state="translated">Autor inválido.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/author-detail/author-detail.ts</context>
           <context context-type="linenumber">27</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="3819101932562741573" datatype="html">
-        <source>@@authorDetailErrorNotFound:Author not found.</source>
-        <target>Autor não encontrado.</target>
+      <trans-unit id="authorDetailErrorNotFound" datatype="html">
+        <source>Author not found.</source>
+      <target state="translated">Autor não encontrado.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/author-detail/author-detail.ts</context>
           <context context-type="linenumber">35</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="7988628194152954468" datatype="html">
-        <source>@@authorDetailErrorLoad:Could not load the author.</source>
-        <target>Não foi possível carregar o autor.</target>
+      <trans-unit id="authorDetailErrorLoad" datatype="html">
+        <source>Could not load the author.</source>
+      <target state="translated">Não foi possível carregar o autor.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/author-detail/author-detail.ts</context>
           <context context-type="linenumber">45</context>
@@ -314,7 +314,7 @@
       </trans-unit>
       <trans-unit id="bookDetailBack" datatype="html">
         <source>← Back to catalog</source>
-        <target>← Voltar ao catálogo</target>
+      <target state="translated">← Voltar ao catálogo</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">8,11</context>
@@ -322,7 +322,7 @@
       </trans-unit>
       <trans-unit id="bookDetailLoading" datatype="html">
         <source>Loading book…</source>
-        <target>Carregando livro…</target>
+      <target state="translated">Carregando livro…</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">11,13</context>
@@ -330,7 +330,7 @@
       </trans-unit>
       <trans-unit id="bookDetailLoginHint" datatype="html">
         <source>Log in</source>
-        <target>Entrar</target>
+      <target state="translated">Entrar</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">65</context>
@@ -338,7 +338,7 @@
       </trans-unit>
       <trans-unit id="bookDetailLoginHintText" datatype="html">
         <source>to add this book to your shelf and write reviews.</source>
-        <target>para adicionar este livro à sua estante e escrever resenhas.</target>
+      <target state="translated">para adicionar este livro à sua estante e escrever resenhas.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">65,67</context>
@@ -346,7 +346,7 @@
       </trans-unit>
       <trans-unit id="bookDetailMyShelf" datatype="html">
         <source>My shelf</source>
-        <target>Minha estante</target>
+      <target state="translated">Minha estante</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">68,69</context>
@@ -354,7 +354,7 @@
       </trans-unit>
       <trans-unit id="bookDetailCurrentStatus" datatype="html">
         <source>Current status:</source>
-        <target>Status atual:</target>
+      <target state="translated">Status atual:</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">71</context>
@@ -362,7 +362,7 @@
       </trans-unit>
       <trans-unit id="bookDetailRemoveButton" datatype="html">
         <source>Remove</source>
-        <target>Remover</target>
+      <target state="translated">Remover</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">90,93</context>
@@ -370,7 +370,7 @@
       </trans-unit>
       <trans-unit id="bookDetailReviewsTitle" datatype="html">
         <source>Reviews</source>
-        <target>Resenhas</target>
+      <target state="translated">Resenhas</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">103,106</context>
@@ -378,7 +378,7 @@
       </trans-unit>
       <trans-unit id="bookDetailReviewHeading" datatype="html">
         <source><x id="INTERPOLATION" equiv-text="{{ myReview() ? &apos;Edit your review&apos; : &apos;Write a review&apos; }}"/></source>
-        <target><x id="INTERPOLATION" equiv-text="{{ myReview() ? &apos;Edit your review&apos; : &apos;Write a review&apos; }}"/></target>
+      <target state="translated"><x id="INTERPOLATION" equiv-text="{{ myReview() ? &apos;Edit your review&apos; : &apos;Write a review&apos; }}"/></target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">106,107</context>
@@ -386,7 +386,7 @@
       </trans-unit>
       <trans-unit id="bookDetailRatingAria" datatype="html">
         <source>Rating</source>
-        <target>Avaliação</target>
+      <target state="translated">Avaliação</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">115</context>
@@ -394,7 +394,7 @@
       </trans-unit>
       <trans-unit id="bookDetailCommentPlaceholder" datatype="html">
         <source>Share your thoughts (optional)</source>
-        <target>Compartilhe suas ideias (opcional)</target>
+      <target state="translated">Compartilhe suas ideias (opcional)</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">129,130</context>
@@ -402,7 +402,7 @@
       </trans-unit>
       <trans-unit id="bookDetailSubmitReview" datatype="html">
         <source><x id="INTERPOLATION" equiv-text="{{ submittingReview() ? &apos;Saving…&apos; : myReview() ? &apos;Update review&apos; : &apos;Submit review&apos; }}"/></source>
-        <target><x id="INTERPOLATION" equiv-text="{{ submittingReview() ? &apos;Saving…&apos; : myReview() ? &apos;Update review&apos; : &apos;Submit review&apos; }}"/></target>
+      <target state="translated"><x id="INTERPOLATION" equiv-text="{{ submittingReview() ? &apos;Saving…&apos; : myReview() ? &apos;Update review&apos; : &apos;Submit review&apos; }}"/></target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">137,138</context>
@@ -410,18 +410,22 @@
       </trans-unit>
       <trans-unit id="bookDetailNoReviews" datatype="html">
         <source>No reviews yet.</source>
-        <target>Nenhuma resenha ainda.</target>
+      <target state="translated">Nenhuma resenha ainda.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.html</context>
           <context context-type="linenumber">148,150</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="4585103578469857437" datatype="html">
-        <source>@@shelfStatusWantToRead:Want to read</source>
-        <target>Quero ler</target>
+      <trans-unit id="shelfStatusWantToRead" datatype="html">
+        <source>Want to read</source>
+      <target state="translated">Quero ler</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">32</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">85</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.ts</context>
@@ -432,12 +436,16 @@
           <context context-type="linenumber">24</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="2053725654388917142" datatype="html">
-        <source>@@shelfStatusReading:Reading</source>
-        <target>Lendo</target>
+      <trans-unit id="shelfStatusReading" datatype="html">
+        <source>Reading</source>
+      <target state="translated">Lendo</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">33</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">86</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.ts</context>
@@ -448,12 +456,16 @@
           <context context-type="linenumber">25</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="6275990226815159665" datatype="html">
-        <source>@@shelfStatusRead:Read</source>
-        <target>Lido</target>
+      <trans-unit id="shelfStatusRead" datatype="html">
+        <source>Read</source>
+      <target state="translated">Lido</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">34</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">87</context>
         </context-group>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.ts</context>
@@ -464,57 +476,57 @@
           <context context-type="linenumber">26</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="244877613500872663" datatype="html">
-        <source>@@bookDetailErrorIsbn:ISBN not found in route.</source>
-        <target>ISBN não encontrado na rota.</target>
+      <trans-unit id="bookDetailErrorIsbn" datatype="html">
+        <source>ISBN not found in route.</source>
+      <target state="translated">ISBN não encontrado na rota.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">58</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="3726131187933198968" datatype="html">
-        <source>@@bookDetailErrorNotFound:Book not found.</source>
-        <target>Livro não encontrado.</target>
+      <trans-unit id="bookDetailErrorNotFound" datatype="html">
+        <source>Book not found.</source>
+      <target state="translated">Livro não encontrado.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">78</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="1803458147303936927" datatype="html">
-        <source>@@bookDetailErrorRating:Select a rating between 1 and 5 stars.</source>
-        <target>Selecione uma avaliação entre 1 e 5 estrelas.</target>
+      <trans-unit id="bookDetailErrorRating" datatype="html">
+        <source>Select a rating between 1 and 5 stars.</source>
+      <target state="translated">Selecione uma avaliação entre 1 e 5 estrelas.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">116</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="8622311554682597830" datatype="html">
-        <source>@@bookDetailErrorSaveReview:Could not save your review. Try again.</source>
-        <target>Não foi possível salvar sua resenha. Tente novamente.</target>
+      <trans-unit id="bookDetailErrorSaveReview" datatype="html">
+        <source>Could not save your review. Try again.</source>
+      <target state="translated">Não foi possível salvar sua resenha. Tente novamente.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">138</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="7491860068479360839" datatype="html">
-        <source>@@bookDetailErrorUpdateShelf:Could not update your shelf. Try again.</source>
-        <target>Não foi possível atualizar sua estante. Tente novamente.</target>
+      <trans-unit id="bookDetailErrorUpdateShelf" datatype="html">
+        <source>Could not update your shelf. Try again.</source>
+      <target state="translated">Não foi possível atualizar sua estante. Tente novamente.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">173</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="7829004267656082036" datatype="html">
-        <source>@@bookDetailErrorUpdateStatus:Could not update status. Try again.</source>
-        <target>Não foi possível atualizar o status. Tente novamente.</target>
+      <trans-unit id="bookDetailErrorUpdateStatus" datatype="html">
+        <source>Could not update status. Try again.</source>
+      <target state="translated">Não foi possível atualizar o status. Tente novamente.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">191</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="4094095205360034304" datatype="html">
-        <source>@@bookDetailErrorRemove:Could not remove the book. Try again.</source>
-        <target>Não foi possível remover o livro. Tente novamente.</target>
+      <trans-unit id="bookDetailErrorRemove" datatype="html">
+        <source>Could not remove the book. Try again.</source>
+      <target state="translated">Não foi possível remover o livro. Tente novamente.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/book-detail/book-detail.ts</context>
           <context context-type="linenumber">208</context>
@@ -522,7 +534,7 @@
       </trans-unit>
       <trans-unit id="catalogSearchPlaceholder" datatype="html">
         <source>Search by title or author…</source>
-        <target>Buscar por título ou autor…</target>
+      <target state="translated">Buscar por título ou autor…</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/catalog/catalog.html</context>
           <context context-type="linenumber">12,13</context>
@@ -530,7 +542,7 @@
       </trans-unit>
       <trans-unit id="catalogSearchAriaLabel" datatype="html">
         <source>Search books</source>
-        <target>Buscar livros</target>
+      <target state="translated">Buscar livros</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/catalog/catalog.html</context>
           <context context-type="linenumber">14,15</context>
@@ -538,7 +550,7 @@
       </trans-unit>
       <trans-unit id="catalogSearchButton" datatype="html">
         <source> <x id="INTERPOLATION" equiv-text="{{ searching() ? &apos;Searching…&apos; : &apos;Search&apos; }}"/> </source>
-        <target> <x id="INTERPOLATION" equiv-text="{{ searching() ? &apos;Searching…&apos; : &apos;Search&apos; }}"/> </target>
+      <target state="translated"> <x id="INTERPOLATION" equiv-text="{{ searching() ? &apos;Searching…&apos; : &apos;Search&apos; }}"/> </target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/catalog/catalog.html</context>
           <context context-type="linenumber">22,24</context>
@@ -546,7 +558,7 @@
       </trans-unit>
       <trans-unit id="catalogClearButton" datatype="html">
         <source>Clear</source>
-        <target>Limpar</target>
+      <target state="translated">Limpar</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/catalog/catalog.html</context>
           <context context-type="linenumber">30,34</context>
@@ -554,7 +566,7 @@
       </trans-unit>
       <trans-unit id="catalogLoading" datatype="html">
         <source>Loading catalog…</source>
-        <target>Carregando catálogo…</target>
+      <target state="translated">Carregando catálogo…</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/catalog/catalog.html</context>
           <context context-type="linenumber">35,37</context>
@@ -562,7 +574,7 @@
       </trans-unit>
       <trans-unit id="catalogNoResults" datatype="html">
         <source>No results found.</source>
-        <target>Nenhum resultado encontrado.</target>
+      <target state="translated">Nenhum resultado encontrado.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/catalog/catalog.html</context>
           <context context-type="linenumber">43,46</context>
@@ -570,31 +582,155 @@
       </trans-unit>
       <trans-unit id="catalogEmpty" datatype="html">
         <source>The catalog is empty.</source>
-        <target>O catálogo está vazio.</target>
+      <target state="translated">O catálogo está vazio.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/catalog/catalog.html</context>
           <context context-type="linenumber">46,50</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="3788233496831763060" datatype="html">
-        <source>@@catalogErrorLoad:Failed to load the catalog.</source>
-        <target>Falha ao carregar o catálogo.</target>
+      <trans-unit id="catalogErrorLoad" datatype="html">
+        <source>Failed to load the catalog.</source>
+      <target state="translated">Falha ao carregar o catálogo.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/catalog/catalog.ts</context>
           <context context-type="linenumber">41</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="5473748851031838508" datatype="html">
-        <source>@@catalogErrorSearch:Search failed. Try again.</source>
-        <target>Busca falhou. Tente novamente.</target>
+      <trans-unit id="catalogErrorSearch" datatype="html">
+        <source>Search failed. Try again.</source>
+      <target state="translated">Busca falhou. Tente novamente.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/catalog/catalog.ts</context>
           <context context-type="linenumber">62</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="feedTitle" datatype="html">
+        <source>Your feed</source>
+      <target state="translated">Seu feed</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">4,6</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedLoading" datatype="html">
+        <source>Loading your feed…</source>
+      <target state="translated">Carregando seu feed…</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">7,9</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedEmpty" datatype="html">
+        <source>No activity yet. Follow other readers to see their updates.</source>
+      <target state="translated">Ainda não há atividade. Siga outros leitores para ver as novidades.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">16,19</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedVerbFollowedYou" datatype="html">
+        <source>started following you</source>
+      <target state="translated">começou a seguir você</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">27,29</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedVerbFollowedOther" datatype="html">
+        <source>started following another reader</source>
+      <target state="translated">começou a seguir outro leitor</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">30,33</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedVerbReviewed" datatype="html">
+        <source>reviewed</source>
+      <target state="translated">avaliou</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">34,35</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedRatingAriaLabel" datatype="html">
+        <source>Rating</source>
+      <target state="translated">Avaliação</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">48</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedVerbShelved" datatype="html">
+        <source>added</source>
+      <target state="translated">adicionou</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">58,59</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedVerbShelvedTo" datatype="html">
+        <source>to</source>
+      <target state="translated">a</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">68,69</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedLoadingMore" datatype="html">
+        <source>Loading more…</source>
+      <target state="translated">A carregar maisâ€¦</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">85,88</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedLoadMore" datatype="html">
+        <source>Load more</source>
+      <target state="translated">Carregar mais</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.html</context>
+          <context context-type="linenumber">93,97</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedErrorLoad" datatype="html">
+        <source>Failed to load your feed.</source>
+      <target state="translated">Erro ao carregar seu feed.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">46</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedErrorMore" datatype="html">
+        <source>Failed to load more activity.</source>
+      <target state="translated">Erro ao carregar mais atividades.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">65</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedActorYou" datatype="html">
+        <source>You</source>
+      <target state="translated">Você</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">73</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="feedActorUser" datatype="html">
+        <source>A reader</source>
+      <target state="translated">Um leitor</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">75</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/feed/feed.ts</context>
+          <context context-type="linenumber">111</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="homeLoading" datatype="html">
         <source>Loading profile…</source>
-        <target>Carregando perfil…</target>
+      <target state="translated">Carregando perfil…</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/home/home.html</context>
           <context context-type="linenumber">5,6</context>
@@ -602,7 +738,7 @@
       </trans-unit>
       <trans-unit id="homeEmailLabel" datatype="html">
         <source>Email</source>
-        <target>E-mail</target>
+      <target state="translated">E-mail</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/home/home.html</context>
           <context context-type="linenumber">13,14</context>
@@ -610,7 +746,7 @@
       </trans-unit>
       <trans-unit id="homeAgeLabel" datatype="html">
         <source>Age</source>
-        <target>Idade</target>
+      <target state="translated">Idade</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/home/home.html</context>
           <context context-type="linenumber">16</context>
@@ -618,15 +754,15 @@
       </trans-unit>
       <trans-unit id="homeRolesLabel" datatype="html">
         <source>Roles</source>
-        <target>Papéis</target>
+      <target state="translated">Papéis</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/home/home.html</context>
           <context context-type="linenumber">17,19</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="150910401688732049" datatype="html">
-        <source>@@homeErrorLoad:Failed to load your profile.</source>
-        <target>Falha ao carregar seu perfil.</target>
+      <trans-unit id="homeErrorLoad" datatype="html">
+        <source>Failed to load your profile.</source>
+      <target state="translated">Falha ao carregar seu perfil.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/home/home.ts</context>
           <context context-type="linenumber">29</context>
@@ -634,7 +770,7 @@
       </trans-unit>
       <trans-unit id="shelfTitle" datatype="html">
         <source>My shelf</source>
-        <target>Minha estante</target>
+      <target state="translated">Minha estante</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.html</context>
           <context context-type="linenumber">5,6</context>
@@ -642,7 +778,7 @@
       </trans-unit>
       <trans-unit id="shelfLoading" datatype="html">
         <source>Loading your shelf…</source>
-        <target>Carregando sua estante…</target>
+      <target state="translated">Carregando sua estante…</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.html</context>
           <context context-type="linenumber">18,19</context>
@@ -650,7 +786,7 @@
       </trans-unit>
       <trans-unit id="shelfEmpty" datatype="html">
         <source>Your shelf is empty.</source>
-        <target>Sua estante está vazia.</target>
+      <target state="translated">Sua estante está vazia.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.html</context>
           <context context-type="linenumber">24,25</context>
@@ -658,7 +794,7 @@
       </trans-unit>
       <trans-unit id="shelfBrowseCatalog" datatype="html">
         <source>Browse the catalog</source>
-        <target>Explorar o catálogo</target>
+      <target state="translated">Explorar o catálogo</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.html</context>
           <context context-type="linenumber">27,29</context>
@@ -666,58 +802,130 @@
       </trans-unit>
       <trans-unit id="shelfEmptyStatus" datatype="html">
         <source>No books with this status.</source>
-        <target>Nenhum livro com este status.</target>
+      <target state="translated">Nenhum livro com este status.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.html</context>
           <context context-type="linenumber">29,32</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="3511175603395015542" datatype="html">
-        <source>@@shelfFilterAll:All</source>
-        <target>Todas</target>
+      <trans-unit id="shelfFilterAll" datatype="html">
+        <source>All</source>
+      <target state="translated">Todas</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.ts</context>
           <context context-type="linenumber">17</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="4258762155849603582" datatype="html">
-        <source>@@shelfErrorLoad:Failed to load your shelf.</source>
-        <target>Falha ao carregar sua estante.</target>
+      <trans-unit id="shelfErrorLoad" datatype="html">
+        <source>Failed to load your shelf.</source>
+      <target state="translated">Falha ao carregar sua estante.</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/features/my-shelf/my-shelf.ts</context>
           <context context-type="linenumber">48</context>
         </context-group>
       </trans-unit>
+      <trans-unit id="notifBellAriaLabel" datatype="html">
+        <source>Notifications</source>
+      <target state="translated">Notificações</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.html</context>
+          <context context-type="linenumber">8,9</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifLoading" datatype="html">
+        <source>Loading notifications…</source>
+      <target state="translated">Carregando notificações…</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.html</context>
+          <context context-type="linenumber">37,39</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifEmpty" datatype="html">
+        <source>No notifications yet.</source>
+      <target state="translated">Você ainda não tem notificações.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.html</context>
+          <context context-type="linenumber">46,49</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifVerbFollowed" datatype="html">
+        <source>started following you</source>
+      <target state="translated">começou a seguir você</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.html</context>
+          <context context-type="linenumber">53,56</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifMarkAllRead" datatype="html">
+        <source>Mark all as read</source>
+      <target state="translated">Marcar tudo como lido</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.html</context>
+          <context context-type="linenumber">63,67</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifErrorLoad" datatype="html">
+        <source>Failed to load notifications.</source>
+      <target state="translated">Erro ao carregar as notificações.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.ts</context>
+          <context context-type="linenumber">50</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="notifActorUser" datatype="html">
+        <source>Another reader</source>
+      <target state="translated">Outro leitor</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.ts</context>
+          <context context-type="linenumber">78</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.ts</context>
+          <context context-type="linenumber">79</context>
+        </context-group>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/notifications/notification-bell/notification-bell.ts</context>
+          <context context-type="linenumber">101</context>
+        </context-group>
+      </trans-unit>
       <trans-unit id="navCatalog" datatype="html">
         <source>Catalog</source>
-        <target>Catálogo</target>
+      <target state="translated">Catálogo</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/shared/components/nav/nav.html</context>
           <context context-type="linenumber">10,11</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="navMyShelf" datatype="html">
-        <source>My shelf</source>
-        <target>Minha estante</target>
+      <trans-unit id="navFeed" datatype="html">
+        <source>Feed</source>
+      <target state="translated">Feed</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/shared/components/nav/nav.html</context>
-          <context context-type="linenumber">15,17</context>
+          <context context-type="linenumber">16</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="navLogout" datatype="html">
-        <source>Logout</source>
-        <target>Sair</target>
+      <trans-unit id="navMyShelf" datatype="html">
+        <source>My shelf</source>
+      <target state="translated">Minha estante</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/shared/components/nav/nav.html</context>
           <context context-type="linenumber">20,22</context>
         </context-group>
       </trans-unit>
-      <trans-unit id="navLogin" datatype="html">
-        <source>Log in</source>
-        <target>Entrar</target>
+      <trans-unit id="navLogout" datatype="html">
+        <source>Logout</source>
+      <target state="translated">Sair</target>
         <context-group purpose="location">
           <context context-type="sourcefile">src/app/shared/components/nav/nav.html</context>
-          <context context-type="linenumber">25,28</context>
+          <context context-type="linenumber">25,27</context>
+        </context-group>
+      </trans-unit>
+      <trans-unit id="navLogin" datatype="html">
+        <source>Log in</source>
+      <target state="translated">Entrar</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/shared/components/nav/nav.html</context>
+          <context context-type="linenumber">30,33</context>
         </context-group>
       </trans-unit>
     </body>
