@@ -928,6 +928,422 @@
           <context context-type="linenumber">30,33</context>
         </context-group>
       </trans-unit>
+    <trans-unit id="forgotTitleSent" datatype="html">
+        <source>Check your email</source>
+      <target state="translated">Revisa tu correo</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/forgot-password/forgot-password.html</context>
+          <context context-type="linenumber">7,10</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="forgotSentInfo" datatype="html">
+        <source>If an account exists for that email, we sent you a link to reset your password.</source>
+      <target state="translated">Si existe una cuenta con ese correo, te hemos enviado un enlace para restablecer tu contraseÃ±a.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/forgot-password/forgot-password.html</context>
+          <context context-type="linenumber">11,14</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="forgotBackToLogin" datatype="html">
+        <source><x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/login&quot;&gt;"/>Back to login<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></source>
+      <target state="translated"><x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/login&quot;&gt;"/>Volver a iniciar sesiÃ³n<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/forgot-password/forgot-password.html</context>
+          <context context-type="linenumber">15,17</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="forgotTitle" datatype="html">
+        <source>Forgot password</source>
+      <target state="translated">Â¿Olvidaste tu contraseÃ±a?</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/forgot-password/forgot-password.html</context>
+          <context context-type="linenumber">18,20</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="forgotEmailLabel" datatype="html">
+        <source> Email <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      type=&quot;email&quot;
+      formControlName=&quot;email&quot;
+      autocomplete=&quot;email&quot;
+    &gt;"/></source>
+      <target state="translated"> Correo electrÃ³nico <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      type=&quot;email&quot;
+      formControlName=&quot;email&quot;
+      autocomplete=&quot;email&quot;
+    &gt;"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/forgot-password/forgot-password.html</context>
+          <context context-type="linenumber">21,29</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="forgotSubmitButton" datatype="html">
+        <source> <x id="INTERPOLATION" equiv-text="{{ loading() ? &apos;Sending...&apos; : &apos;Send reset link&apos; }}"/> </source>
+      <target state="translated"> <x id="INTERPOLATION" equiv-text="{{ loading() ? &apos;Sending...&apos; : &apos;Send reset link&apos; }}"/> </target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/forgot-password/forgot-password.html</context>
+          <context context-type="linenumber">38,41</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="forgotBackToLogin2" datatype="html">
+        <source><x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/login&quot;&gt;"/>Back to login<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></source>
+      <target state="translated"><x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/login&quot;&gt;"/>Volver a iniciar sesiÃ³n<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/forgot-password/forgot-password.html</context>
+          <context context-type="linenumber">44,46</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="forgotErrorUnexpected" datatype="html">
+        <source>Unexpected error. Please try again.</source>
+      <target state="translated">Error inesperado. IntÃ©ntalo de nuevo.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/forgot-password/forgot-password.ts</context>
+          <context context-type="linenumber">37</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="loginForgotPassword" datatype="html">
+        <source>Forgot password?</source>
+      <target state="translated">Â¿Olvidaste tu contraseÃ±a?</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/login/login.html</context>
+          <context context-type="linenumber">30,33</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetTitleDone" datatype="html">
+        <source>Password updated</source>
+      <target state="translated">ContraseÃ±a actualizada</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">7,10</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetDoneInfo" datatype="html">
+        <source>Your password has been reset. You can now log in with your new password.</source>
+      <target state="translated">Tu contraseÃ±a se ha restablecido. Ya puedes iniciar sesiÃ³n con tu nueva contraseÃ±a.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">11,13</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetGoToLogin" datatype="html">
+        <source><x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/login&quot;&gt;"/>Go to login<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></source>
+      <target state="translated"><x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/login&quot;&gt;"/>Ir a iniciar sesiÃ³n<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">15,17</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetTitleInvalid" datatype="html">
+        <source>Link not valid</source>
+      <target state="translated">Enlace no vÃ¡lido</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">18,21</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetInvalidInfo" datatype="html">
+        <source>This password reset link is not valid. Please request a new one.</source>
+      <target state="translated">Este enlace de restablecimiento no es vÃ¡lido. Solicita uno nuevo.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">22,25</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetGoForgot" datatype="html">
+        <source><x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/forgot-password&quot;&gt;"/>Request a new link<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></source>
+      <target state="translated"><x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/forgot-password&quot;&gt;"/>Solicitar un nuevo enlace<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">26,28</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetTitle" datatype="html">
+        <source>Set a new password</source>
+      <target state="translated">Establece una nueva contraseÃ±a</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">29,31</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetPasswordLabel" datatype="html">
+        <source> New password <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      type=&quot;password&quot;
+      formControlName=&quot;password&quot;
+      autocomplete=&quot;new-password&quot;
+    &gt;"/></source>
+      <target state="translated"> Nueva contraseÃ±a <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      type=&quot;password&quot;
+      formControlName=&quot;password&quot;
+      autocomplete=&quot;new-password&quot;
+    &gt;"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">32,40</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetConfirmLabel" datatype="html">
+        <source> Confirm password <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      type=&quot;password&quot;
+      formControlName=&quot;confirm&quot;
+      autocomplete=&quot;new-password&quot;
+    &gt;"/></source>
+      <target state="translated"> Confirma la contraseÃ±a <x id="TAG_INPUT" ctype="x-input" equiv-text="&lt;input
+      type=&quot;password&quot;
+      formControlName=&quot;confirm&quot;
+      autocomplete=&quot;new-password&quot;
+    &gt;"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">41,49</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetMismatch" datatype="html">
+        <source>Passwords do not match.</source>
+      <target state="translated">Las contraseÃ±as no coinciden.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">53,56</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetSubmitButton" datatype="html">
+        <source> <x id="INTERPOLATION" equiv-text="{{ loading() ? &apos;Updating...&apos; : &apos;Update password&apos; }}"/> </source>
+      <target state="translated"> <x id="INTERPOLATION" equiv-text="{{ loading() ? &apos;Updating...&apos; : &apos;Update password&apos; }}"/> </target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">65,68</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetBackToLogin" datatype="html">
+        <source><x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/login&quot;&gt;"/>Back to login<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></source>
+      <target state="translated"><x id="START_LINK" ctype="x-a" equiv-text="&lt;a routerLink=&quot;/login&quot;&gt;"/>Volver a iniciar sesiÃ³n<x id="CLOSE_LINK" ctype="x-a" equiv-text="&lt;/a&gt;"/></target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.html</context>
+          <context context-type="linenumber">71,73</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetErrorExpired" datatype="html">
+        <source>This link has expired. Please request a new one.</source>
+      <target state="translated">Este enlace ha caducado. Solicita uno nuevo.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.ts</context>
+          <context context-type="linenumber">61</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetErrorUsed" datatype="html">
+        <source>This link has already been used. Please request a new one.</source>
+      <target state="translated">Este enlace ya se ha utilizado. Solicita uno nuevo.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.ts</context>
+          <context context-type="linenumber">63</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="resetErrorUnexpected" datatype="html">
+        <source>Unexpected error. Please try again.</source>
+      <target state="translated">Error inesperado. IntÃ©ntalo de nuevo.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/auth/reset-password/reset-password.ts</context>
+          <context context-type="linenumber">66</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="profileLoading" datatype="html">
+        <source>Loading profile…</source>
+      <target state="translated">Cargando perfil…</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/user-profile/user-profile.html</context>
+          <context context-type="linenumber">5,7</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="profileFollowersCount" datatype="html">
+        <source><x id="INTERPOLATION" equiv-text="{{ profile.followersCount }}"/> followers</source>
+      <target state="translated"><x id="INTERPOLATION" equiv-text="{{ profile.followersCount }}"/> seguidores</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/user-profile/user-profile.html</context>
+          <context context-type="linenumber">28,30</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="profileFollowingCount" datatype="html">
+        <source><x id="INTERPOLATION" equiv-text="{{ profile.followingCount }}"/> following</source>
+      <target state="translated"><x id="INTERPOLATION" equiv-text="{{ profile.followingCount }}"/> siguiendo</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/user-profile/user-profile.html</context>
+          <context context-type="linenumber">30,33</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="profileTabFollowers" datatype="html">
+        <source>Followers</source>
+      <target state="translated">Seguidores</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/user-profile/user-profile.html</context>
+          <context context-type="linenumber">39,41</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="profileTabFollowing" datatype="html">
+        <source>Following</source>
+      <target state="translated">Siguiendo</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/user-profile/user-profile.html</context>
+          <context context-type="linenumber">45,48</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="profileLoadingList" datatype="html">
+        <source>Loading…</source>
+      <target state="translated">Cargando…</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/user-profile/user-profile.html</context>
+          <context context-type="linenumber">49,51</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="profileNoFollowers" datatype="html">
+        <source>No followers yet.</source>
+      <target state="translated">AÃºn no tiene seguidores.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/user-profile/user-profile.html</context>
+          <context context-type="linenumber">55,57</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="profileNoFollowing" datatype="html">
+        <source>Not following anyone yet.</source>
+      <target state="translated">TodavÃ­a no sigue a nadie.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/user-profile/user-profile.html</context>
+          <context context-type="linenumber">61,64</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="profileErrorId" datatype="html">
+        <source>User not found.</source>
+      <target state="translated">Usuario no encontrado.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/user-profile/user-profile.ts</context>
+          <context context-type="linenumber">47</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="profileErrorNotFound" datatype="html">
+        <source>User not found.</source>
+      <target state="translated">Usuario no encontrado.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/user-profile/user-profile.ts</context>
+          <context context-type="linenumber">65</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="profileActorUser" datatype="html">
+        <source>A reader</source>
+      <target state="translated">Un lector</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/user-profile/user-profile.ts</context>
+          <context context-type="linenumber">100</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="usersTitle" datatype="html">
+        <source>People</source>
+      <target state="translated">Personas</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/users/users.html</context>
+          <context context-type="linenumber">4,7</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="usersSearchPlaceholder" datatype="html">
+        <source>Search by name or email…</source>
+      <target state="translated">Buscar por nombre o correo…</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/users/users.html</context>
+          <context context-type="linenumber">14,15</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="usersSearchAriaLabel" datatype="html">
+        <source>Search people</source>
+      <target state="translated">Buscar personas</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/users/users.html</context>
+          <context context-type="linenumber">16,17</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="usersSearchButton" datatype="html">
+        <source> <x id="INTERPOLATION" equiv-text="{{ searching() ? &apos;Searching…&apos; : &apos;Search&apos; }}"/> </source>
+      <target state="translated"> <x id="INTERPOLATION" equiv-text="{{ searching() ? &apos;Searching…&apos; : &apos;Search&apos; }}"/> </target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/users/users.html</context>
+          <context context-type="linenumber">24,26</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="usersLoading" datatype="html">
+        <source>Loading people…</source>
+      <target state="translated">Cargando personas…</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/users/users.html</context>
+          <context context-type="linenumber">29,31</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="usersEmpty" datatype="html">
+        <source>No people found.</source>
+      <target state="translated">No se encontraron personas.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/users/users.html</context>
+          <context context-type="linenumber">38,41</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="usersFollowersCount" datatype="html">
+        <source><x id="INTERPOLATION" equiv-text="{{ profile.followersCount }}"/> followers</source>
+      <target state="translated"><x id="INTERPOLATION" equiv-text="{{ profile.followersCount }}"/> seguidores</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/users/users.html</context>
+          <context context-type="linenumber">53,54</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="usersFollowingCount" datatype="html">
+        <source><x id="INTERPOLATION" equiv-text="{{ profile.followingCount }}"/> following</source>
+      <target state="translated"><x id="INTERPOLATION" equiv-text="{{ profile.followingCount }}"/> siguiendo</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/users/users.html</context>
+          <context context-type="linenumber">55,56</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="usersErrorLoad" datatype="html">
+        <source>Failed to load users.</source>
+      <target state="translated">No se pudieron cargar los usuarios.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/users/users.ts</context>
+          <context context-type="linenumber">40</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="usersErrorSearch" datatype="html">
+        <source>Search failed. Try again.</source>
+      <target state="translated">La bÃºsqueda fallÃ³. IntÃ©ntalo de nuevo.</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/features/users/users.ts</context>
+          <context context-type="linenumber">60</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="followBusy" datatype="html">
+        <source>…</source>
+      <target state="translated">…</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/shared/components/follow-button/follow-button.html</context>
+          <context context-type="linenumber">11,12</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="followUnfollow" datatype="html">
+        <source>Unfollow</source>
+      <target state="translated">Dejar de seguir</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/shared/components/follow-button/follow-button.html</context>
+          <context context-type="linenumber">13,16</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="followFollow" datatype="html">
+        <source>Follow</source>
+      <target state="translated">Seguir</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/shared/components/follow-button/follow-button.html</context>
+          <context context-type="linenumber">16,20</context>
+        </context-group>
+      </trans-unit>
+<trans-unit id="navPeople" datatype="html">
+        <source>People</source>
+      <target state="translated">Personas</target>
+        <context-group purpose="location">
+          <context context-type="sourcefile">src/app/shared/components/nav/nav.html</context>
+          <context context-type="linenumber">19,20</context>
+        </context-group>
+      </trans-unit>
     </body>
   </file>
 </xliff>
