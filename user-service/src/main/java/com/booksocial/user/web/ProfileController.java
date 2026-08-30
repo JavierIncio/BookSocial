@@ -6,6 +6,8 @@ import com.booksocial.user.web.dto.UpdateProfileRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/profiles")
 public class ProfileController {
@@ -32,6 +34,11 @@ public class ProfileController {
     @GetMapping("/{userId}")
     public ProfileResponse byUserId(@PathVariable("userId") Long userId) {
         return profileService.getByUserId(userId);
+    }
+
+    @GetMapping("/search")
+    public List<ProfileResponse> searchUsers(@RequestParam("q") String q) {
+        return profileService.searchProfiles(q);
     }
 
 }

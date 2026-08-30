@@ -6,11 +6,12 @@ import { UserService } from '@core/services/user.service';
 import { AuthService } from '@core/services/auth.service';
 import { FeedItemResponse } from '@core/models/feed.models';
 import { Nav } from '@shared/components/nav/nav';
+import { FollowButton } from '@shared/components/follow-button/follow-button';
 import { firstValueFrom } from 'rxjs';
 
 @Component({
   selector: 'app-feed',
-  imports: [RouterLink, DatePipe, Nav],
+  imports: [RouterLink, DatePipe, Nav, FollowButton],
   templateUrl: './feed.html',
   styleUrl: './feed.scss',
 })

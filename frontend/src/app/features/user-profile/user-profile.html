@@ -1,0 +1,77 @@
+<app-nav />
+
+<main>
+  @if (loading()) {
+  <p i18n="@@profileLoading">Loading profile…</p>
+  }
+  @else if (error()) {
+  <p class="error">{{ error() }}</p>
+  }
+  @else if (profile(); as profile) {
+  <section class="header">
+    <div class="identity">
+      <h1>{{ profile.displayName || profile.email }}</h1>
+      @if (profile.displayName && profile.email) {
+      <p class="email">{{ profile.email }}</p>
+      }
+      @if (profile.location) {
+      <p class="location">{{ profile.location }}</p>
+      }
+      @if (profile.bio) {
+      <p class="bio">{{ profile.bio }}</p>
+      }
+    </div>
+    <app-follow-button [userId]="profile.userId" />
+  </section>
+
+  <p class="counts">
+    <span i18n="@@profileFollowersCount">{{ profile.followersCount }} followers</span>
+    ·
+    <span i18n="@@profileFollowingCount">{{ profile.followingCount }} following</span>
+  </p>
+
+  <div class="tabs">
+    <button
+      type="button"
+      [class.active]="activeTab() === 'followers'"
+      (click)="switchTab('followers')"
+      i18n="@@profileTabFollowers"
+    >Followers</button>
+    <button
+      type="button"
+      [class.active]="activeTab() === 'following'"
+      (click)="switchTab('following')"
+      i18n="@@profileTabFollowing"
+    >Following</button>
+  </div>
+
+  @if (loadingList()) {
+  <p i18n="@@profileLoadingList">Loading…</p>
+  }
+  @else if (activeTab() === 'followers' && followers().length === 0) {
+  <p
+    class="empty"
+    i18n="@@profileNoFollowers"
+  >No followers yet.</p>
+  }
+  @else if (activeTab() === 'following' && following().length === 0) {
+  <p
+    class="empty"
+    i18n="@@profileNoFollowing"
+  >Not following anyone yet.</p>
+  }
+  @else {
+  <ul class="list">
+    @for (user of activeTab() === 'followers' ? followers() : following(); track user.id) {
+    <li class="user">
+      <a
+        class="name"
+        [routerLink]="['/users', user.id]"
+      >{{ user.name }}</a>
+      <app-follow-button [userId]="user.id" />
+    </li>
+    }
+  </ul>
+  }
+  }
+</main>

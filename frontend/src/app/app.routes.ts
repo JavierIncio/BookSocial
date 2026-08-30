@@ -6,6 +6,8 @@ import { bookDetailRoutes } from '@features/book-detail/routes';
 import { myShelfRoutes } from '@features/my-shelf/routes';
 import { authorDetailRoutes } from '@features/author-detail/routes';
 import { feedRoutes } from '@features/feed/routes';
+import { usersRoutes } from '@features/users/routes';
+import { userProfileRoutes } from '@features/user-profile/routes';
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'home' },
@@ -16,5 +18,7 @@ export const routes: Routes = [
   ...myShelfRoutes,
   ...authorDetailRoutes,
   ...feedRoutes,
+  ...usersRoutes,
+  ...userProfileRoutes,
   { path: '**', redirectTo: 'home' },
 ];

@@ -20,6 +20,7 @@
     @for (item of items(); track item.activityId) {
     <article class="entry">
       <span class="actor">{{ actorName(item) }}</span>
+      <app-follow-button [userId]="item.actorId" />
 
       @switch (item.type) {
         @case ('FOLLOW') {

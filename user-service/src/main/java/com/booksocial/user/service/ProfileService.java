@@ -9,6 +9,8 @@ import com.booksocial.user.web.dto.UpdateProfileRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 @Service
 @Transactional
 public class ProfileService {
@@ -37,24 +39,51 @@ public class ProfileService {
 
     public ProfileResponse getByUserId(Long userId) {
         ProfileReadModel readModel = readModelRepository.findByUserId(userId)
-                .orElseGet(() -> upsertReadModel(
-                        profileRepository.findByUserId(userId)
-                                .orElseGet(() -> createSyntheticProfile(userId))));
+                .orElseGet(() -> {
+                    Profile profile = profileRepository.findByUserId(userId).orElse(null);
+                    if (profile == null) {
+                        return placeholderReadModel(userId);
+                    }
+                    return upsertReadModel(profile);
+                });
+
+        if (isSyntheticEmail(readModel.getEmail())) {
+            readModel.setEmail(null);
+            readModelRepository.save(readModel);
+        }
 
         return toResponse(readModel);
     }
 
-    private Profile createSyntheticProfile(Long userId) {
-        Profile profile = new Profile();
-        profile.setUserId(userId);
-        profile.setEmail("user-" + userId + "@booksocial.local");
-        profile.setDisplayName("user-" + userId);
-        return profileRepository.save(profile);
+    public List<ProfileResponse> searchProfiles(String query) {
+        return readModelRepository.findByDisplayNameContainingIgnoreCaseOrEmailContainingIgnoreCase(query, query)
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    private ProfileReadModel placeholderReadModel(Long userId) {
+        ProfileReadModel readModel = new ProfileReadModel(userId, null);
+        readModel.setDisplayName("user-" + userId);
+        return readModel;
     }
 
     private Profile findOrCreateProfile(Long userId, String email) {
-        return profileRepository.findByUserId(userId)
+        Profile profile = profileRepository.findByUserId(userId)
                 .orElseGet(() -> createProfile(userId, email));
+
+        if (email != null && !email.isBlank()
+                && (profile.getEmail() == null || profile.getEmail().isBlank()
+                || isSyntheticEmail(profile.getEmail()))) {
+            profile.setEmail(email);
+            if (("user-" + userId).equals(profile.getDisplayName())) {
+                profile.setDisplayName(null);
+            }
+            profile.touch();
+            profileRepository.save(profile);
+            upsertReadModel(profile);
+        }
+        return profile;
     }
 
     private Profile createProfile(Long userId, String email) {
@@ -82,7 +111,7 @@ public class ProfileService {
         ProfileReadModel readModel = readModelRepository.findByUserId(profile.getUserId())
                 .orElseGet(() -> new ProfileReadModel(profile.getUserId(), profile.getEmail()));
         readModel.setUserId(profile.getUserId());
-        readModel.setEmail(profile.getEmail());
+        readModel.setEmail(isSyntheticEmail(profile.getEmail()) ? null : profile.getEmail());
         readModel.setDisplayName(deriveDisplayName(profile.getDisplayName(), profile.getEmail()));
         readModel.setBio(profile.getBio());
         readModel.setLocation(profile.getLocation());
@@ -101,12 +130,17 @@ public class ProfileService {
     }
 
     private ProfileResponse toResponse(ProfileReadModel rm) {
+        String email = isSyntheticEmail(rm.getEmail()) ? null : rm.getEmail();
         return new ProfileResponse(
-                rm.getUserId(), rm.getEmail(),
-                deriveDisplayName(rm.getDisplayName(), rm.getEmail()),
+                rm.getUserId(), email,
+                deriveDisplayName(rm.getDisplayName(), email),
                 rm.getBio(),
                 rm.getLocation(), rm.getAvatarUrl(), rm.getFollowersCount(),
                 rm.getFollowingCount(), rm.getPostsCount(), rm.getCreatedAt(), rm.getUpdatedAt()
         );
+    }
+
+    private boolean isSyntheticEmail(String email) {
+        return email != null && email.endsWith("@booksocial.local");
     }
 }

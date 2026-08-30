@@ -10,10 +10,14 @@ export class UserService {
   private readonly http = inject(HttpClient);
 
   me(): Observable<UserResponse> {
-    return this.http.get<UserResponse>('/users/me');
+    return this.http.get<UserResponse>('/api/users/me');
   }
 
   profile(userId: number): Observable<ProfileResponse> {
     return this.http.get<ProfileResponse>(`/profiles/${userId}`);
+  }
+
+  myProfile(): Observable<ProfileResponse> {
+    return this.http.get<ProfileResponse>('/profiles/me');
   }
 }

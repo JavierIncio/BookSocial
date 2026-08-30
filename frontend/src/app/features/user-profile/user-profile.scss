@@ -1,0 +1,103 @@
+:host {
+  display: block;
+}
+
+main {
+  max-width: 40rem;
+  margin: 2rem auto;
+  padding: 0 1rem 3rem;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+
+  h1 {
+    margin: 0 0 0.35rem;
+    font-size: 1.4rem;
+  }
+
+  .email,
+  .location {
+    margin: 0;
+    color: #888;
+    font-size: 0.9rem;
+  }
+
+  .bio {
+    margin: 0.5rem 0 0;
+    color: #444;
+  }
+}
+
+.counts {
+  margin: 0.75rem 0 1rem;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+
+  button {
+    padding: 0.5rem 1.25rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fff;
+    color: #555;
+    font-weight: 600;
+    cursor: pointer;
+
+    &.active {
+      border-color: #1976d2;
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+  }
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.user {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+
+  .name {
+    font-weight: 600;
+    text-decoration: none;
+    color: inherit;
+  }
+
+  .name:hover {
+    text-decoration: underline;
+  }
+}
+
+.error {
+  color: #c62828;
+}
+
+.empty {
+  color: #666;
+}

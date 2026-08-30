@@ -14,7 +14,7 @@ public class Profile {
     @Column(nullable = false)
     private Long userId;
 
-    @Column(nullable = false)
+    @Column
     private String email;
 
     private String displayName;

@@ -1,0 +1,63 @@
+<app-nav />
+
+<main>
+  <h1 i18n="@@usersTitle">People</h1>
+
+  <form
+    class="search"
+    [formGroup]="searchForm"
+    (ngSubmit)="doSearch()"
+  >
+    <input
+      type="text"
+      formControlName="q"
+      placeholder="Search by name or email…"
+      i18n-placeholder="@@usersSearchPlaceholder"
+      aria-label="Search people"
+      i18n-aria-label="@@usersSearchAriaLabel"
+    />
+    <button
+      type="submit"
+      [disabled]="searching()"
+      i18n="@@usersSearchButton"
+    >
+      {{ searching() ? 'Searching…' : 'Search' }}
+    </button>
+  </form>
+
+  @if (loading()) {
+  <p i18n="@@usersLoading">Loading people…</p>
+  }
+  @else if (error()) {
+  <p class="error">{{ error() }}</p>
+  }
+  @else if (profiles().length === 0) {
+  <p
+    class="empty"
+    i18n="@@usersEmpty"
+  >No people found.</p>
+  }
+  @else {
+  <ul class="list">
+    @for (profile of profiles(); track profile.userId) {
+    <li class="user">
+      <a
+        class="info"
+        [routerLink]="['/users', profile.userId]"
+      >
+        <span class="name">{{ profile.displayName || profile.email }}</span>
+        @if (profile.displayName && profile.email) {
+        <span class="email">{{ profile.email }}</span>
+        }
+        <span class="meta">
+          <span i18n="@@usersFollowersCount">{{ profile.followersCount }} followers</span>
+          ·
+          <span i18n="@@usersFollowingCount">{{ profile.followingCount }} following</span>
+        </span>
+      </a>
+      <app-follow-button [userId]="profile.userId" />
+    </li>
+    }
+  </ul>
+  }
+</main>

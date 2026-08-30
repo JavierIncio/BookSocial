@@ -4,10 +4,11 @@
     "changeOrigin": true,
     "secure": false
   },
-  "^/users(\\?|/|$)": {
+  "^/api/users(\\?|/|$)": {
     "target": "http://localhost:8080",
     "changeOrigin": true,
-    "secure": false
+    "secure": false,
+    "pathRewrite": { "^/api/users": "/users" }
   },
   "^/profiles(\\?|/|$)": {
     "target": "http://localhost:8080",

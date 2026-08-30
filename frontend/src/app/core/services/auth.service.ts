@@ -7,11 +7,13 @@ import {
   ResetPasswordRequest,
   TokenResponse,
 } from '@core/models/auth.models';
+import { UserService } from '@core/services/user.service';
 import { firstValueFrom, Observable, tap } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly http = inject(HttpClient);
+  private readonly userService = inject(UserService);
 
   private readonly accessTokenStore = signal<string | null>(null);
   private readonly authenticatedStore = signal<boolean>(false);
@@ -95,6 +97,11 @@ export class AuthService {
   private applyToken(tokens: TokenResponse): void {
     this.accessTokenStore.set(tokens.accessToken);
     this.authenticatedStore.set(true);
+    this.materializeProfile();
+  }
+
+  private materializeProfile(): void {
+    this.userService.myProfile().subscribe({ error: () => {} });
   }
 
   clearSession(): void {

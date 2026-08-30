@@ -20,3 +20,9 @@ export interface ProfileResponse {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface FollowResponse {
+  followerId: number;
+  followeeId: number;
+  createdAt: string;
+}

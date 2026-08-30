@@ -1,0 +1,19 @@
+@if (!isSelf) {
+<button
+  type="button"
+  class="follow"
+  [class.following]="isFollowing"
+  [disabled]="busy()"
+  (click)="onClick()"
+>
+  @if (busy()) {
+  <span i18n="@@followBusy">…</span>
+  }
+  @else if (isFollowing) {
+  <span i18n="@@followUnfollow">Unfollow</span>
+  }
+  @else {
+  <span i18n="@@followFollow">Follow</span>
+  }
+</button>
+}
