@@ -448,10 +448,10 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 **Objetivo**: perfil de usuario con escrituras en Postgres y lecturas desde Mongo.
 
 - `domain/Profile` (JPA, `userId` único) como command side; `readmodel/ProfileReadModel` (Mongo, `_id`=userId, contadores followers/following/posts) como query side.
-- `ProfileService.getOrCreate`/`update`: dual-write (misma operación escribe Postgres y hace upsert del read model); `getByUserId` lee de Mongo y, si falta, materializa on-demand desde Postgres (o crea un perfil **sintético** `user-{id}@booksocial.local` / `displayName:"user-{id}"`) para que el feed/campana nunca reciban 404 y muestren un nombre; `displayName` se deriva de la parte local del email cuando está vacío (`deriveDisplayName`).
+- `ProfileService.getOrCreate`/`update`: dual-write (misma operación escribe Postgres y hace upsert del read model); `getByUserId` lee de Mongo y, si falta, materializa on-demand desde Postgres (o devolvía un perfil **sintético** `user-{id}@booksocial.local` / `displayName:"user-{id}"`) para que el feed/campana nunca reciban 404 y muestren un nombre; `displayName` se deriva de la parte local del email cuando está vacío (`deriveDisplayName`). **[Actualizado en Fase 11**: el sintético se eliminó; ahora se devuelve un read model transitorio sin persistir ni email falso — ver Fase 11.3].
 - `ProfileController`: `GET/PUT /profiles/me` (identidad desde headers `X-User-Id`/`X-User-Email` puestos por el gateway), `GET /profiles/{userId}`.
 - DTOs record con bean validation, `ProfileNotFoundException` y `GlobalExceptionHandler` (404/400 JSON).
-- E2E vía gateway: creación on-demand, PUT con dual-write (dato en Postgres y Mongo), lectura desde Mongo, perfil sintético para userId sin perfil (ya no responde 404).
+- E2E vía gateway: creación on-demand, PUT con dual-write (dato en Postgres y Mongo), lectura desde Mongo, perfil sintético para userId sin perfil (ya no responde 404). **[En Fase 11 el sintético pasó a ser un transitorio sin email falso].**
 
 ### Fase 2.3 — Amistades con CQRS dual-write ✅ Completada
 
@@ -959,3 +959,45 @@ Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y 
 - [ ] E2E manual en navegador contra el stack Docker (feed + push STOMP entre dos usuarios).
 - [x] Commit + push de la Fase 10 (`cc12352`).
 - [x] Actualizar este documento al cerrar la fase.
+
+---
+
+## Fase 11 — Reset de contraseña + directorio People + perfil público y follow ❖ Completada
+
+**Objetivo**: (1) recuperación de contraseña por email en identity + páginas Angular; (2) directorio de usuarios **People** (`/users`), perfil público (`/users/:id`) y botón de seguimiento en feed/People/perfil; (3) **eliminar el perfil sintético** para que no se inventen correos `user-{id}@booksocial.local`.
+
+### Fase 11.1 — Reset de contraseña (identity + frontend) ✅ Completada
+
+- `PasswordResetToken`: token aleatorio de 32 bytes (hex) enviado por email; en BD solo el **hash SHA-256**, `expiresAt` 30 min, `used`. `PasswordResetService.requestReset` **nunca revela** si el email existe (responde `200` igual); `resetPassword` valida hash+uso+caducidad y re-encodea BCrypt.
+- `POST /auth/forgot-password` y `POST /auth/reset-password` (`permitAll`); errores `INVALID_TOKEN`/`EXPIRED_TOKEN`/`ALREADY_USED` en `GlobalExceptionHandler`.
+- Mail: `spring-boot-starter-mail` + `spring.mail.*` y plantilla HTML `password-reset-email.html` con `{{RESET_URL}}`.
+- Frontend: `/forgot-password` y `/reset-password` (lazy), enlace en login, métodos en `AuthService`, interceptor ignora ambos endpoints.
+
+### Fase 11.2 — People + perfil público + follow ✅ Completada
+
+- Backend: `GET /profiles/search?q=` (Mongo, displayName/email insensitive) en `ProfileController`/`ProfileService`.
+- Frontend: `FollowService` con cache reactiva de `followingIds`; `FollowButton`; páginas `/users` (People con buscador) y `/users/:id` (perfil con pestañas seguidores/siguiendo); enlace People en nav; `authGuard`.
+- **Materialización del perfil propio** en login/registro/OAuth2/refresh: `AuthService.applyToken` → `GET /profiles/me` para que los usuarios recién creados aparezcan en People.
+- Proxy: `/api/users/me` con `pathRewrite` → `/users/me` (evita colisionar con la ruta SPA `/users`).
+
+### Fase 11.3 — Eliminación del perfil sintético ✅ Completada
+
+- `Profile.email` nullable. `getByUserId` devuelve un **read model transitorio** (`user-{id}`, `email:null`) **sin persistir** cuando no hay perfil; purga correos `@booksocial.local` legados en Mongo.
+- `findOrCreateProfile` repara el perfil con el email real de identity cuando está vacío/sintético y deja `displayName` derivable del email.
+- `toResponse`/`upsertReadModel` nunca exponen ni persisten correos sintéticos.
+
+### Verificación de la Fase 11
+
+- Compilación Maven de identity y user-service OK; `npm run build` **sin warnings** (i18n completo, **153 trans-units**).
+- API verificado: `/profiles/me` → 200 con email real; `/profiles/search` → lista; `/profiles/5` (sin perfil) → `{"displayName":"user-5","email":null}` sin crear nada.
+- Requiere recrear `booksocial-user` con imagen nueva (`docker compose build user-service` + `up -d --force-recreate`).
+
+### Cierre de la Fase 11
+
+- [x] Fase 11.1 — Reset de contraseña (backend + frontend + email).
+- [x] Fase 11.2 — People, perfil público, follow y materialización del perfil.
+- [x] Fase 11.3 — Eliminación del perfil sintético.
+- [x] i18n: 49 trans-units nuevas traducidas en es/pt (153 en total).
+- [x] Commit por bloque: `7e8dee3` (reset), `cb239f3` (People/follow/perfiles), `3e016f7` (i18n).
+- [ ] E2E manual en navegador: login con Test One/Test Two → People muestra ambos y se puede seguir desde feed/perfil.
+- [ ] Actualizar este documento al cerrar la fase.

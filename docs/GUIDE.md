@@ -560,7 +560,7 @@ El **Identity Service** es el microservicio responsable de todo lo relacionado c
 | Puerto          | `8081`                                                                                                                    |
 | Persistencia    | PostgreSQL (`users`, `refresh_tokens`, roles)                                                                             |
 | Responsabilidad | Identidad y autenticación: registro, login email+password, login Google OAuth2, emisión/rotación de JWT, gestión de roles |
-| Endpoints clave | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, callback OAuth2                     |
+| Endpoints clave | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/forgot-password`, `POST /auth/reset-password`, callback OAuth2 |
 | Consumidores    | Todos los servicios (confían en los headers `X-User-*` que valida el gateway)                                             |
 
 ### 1.0 — Creación del servicio y dependencias
@@ -1562,6 +1562,7 @@ SecurityFilterChain filterChain(HttpSecurity http,
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers(
                             "/auth/register", "/auth/login", "/auth/refresh", "/auth/logout",
+                            "/auth/forgot-password", "/auth/reset-password",
                             "/oauth2/authorization/**", "/login/oauth2/code/**",
                             "/actuator/health").permitAll()
                     .anyRequest().authenticated())
@@ -1654,6 +1655,8 @@ Expone los endpoints de autenticación:
 | `POST /auth/login`    | Autentica, devuelve `200` + tokens + cookie refresh                  |
 | `POST /auth/refresh`  | Rota el refresh token (desde cookie **o** body) y emite un par nuevo |
 | `POST /auth/logout`   | Revoca el refresh token, limpia la cookie, devuelve `204`            |
+| `POST /auth/forgot-password` | Solicita restablecimiento: genera token (hash SHA-256) y envía email con enlace (devuelve `200` siempre) |
+| `POST /auth/reset-password`  | Cambia la contraseña con un token válido, no usado y no caducado (`INVALID_TOKEN`/`EXPIRED_TOKEN`/`ALREADY_USED`) |
 
 Detalle de `/auth/refresh` y `/auth/logout`: admiten el refresh token desde la **cookie** `refresh_token` o desde el **body** JSON (`RefreshRequest`), lo que mantiene compatibilidad con clientes que no usan cookies:
 
@@ -2237,10 +2240,12 @@ readonly isAuthenticated = this.authenticatedStore.asReadonly();
 Métodos:
 
 - `login(credentials)` / `register(payload)`: `POST` a `/auth/login` o `/auth/register` y aplican el token de la respuesta.
+- `forgotPassword(email)` / `resetPassword(token, newPassword)`: `POST` a `/auth/forgot-password` y `/auth/reset-password` (usados por las páginas `/forgot-password` y `/reset-password`).
 - `refresh()`: `POST /auth/refresh` con `withCredentials: true` (para enviar la cookie httpOnly).
 - `logout()`: `POST /auth/logout` con cookie y limpia el estado.
 - `applyOAuthToken(accessToken)`: usado por el callback de Google, que recibe el token en el fragmento de la URL.
 - `restoreSession()`: intenta `refresh()` al arrancar la app; si falla, limpia la sesión.
+- `applyToken(tokens)`: guarda el token y dispara `materializeProfile()` → `GET /profiles/me` (fire-and-forget) para que el perfil del usuario esté listo en el directorio People al entrar (login, registro, OAuth2 y refresh).
 
 > El access token vive en **memoria** (nunca en `localStorage`), lo que reduce el riesgo de robo por XSS. La sesión "larga" se restaura con la cookie httpOnly del refresh.
 
@@ -2282,7 +2287,7 @@ export class UserService {
 
 Se registra con `provideHttpClient(withInterceptors([authInterceptor]))` en `app.config.ts`. Hace tres cosas:
 
-1. **No toca los endpoints de auth**: `/auth/login`, `/auth/register`, `/auth/refresh`, `/auth/logout` no llevan access token, por lo que no se interceptan.
+1. **No toca los endpoints de auth**: `/auth/login`, `/auth/register`, `/auth/refresh`, `/auth/logout`, `/auth/forgot-password` y `/auth/reset-password` no llevan access token, por lo que no se interceptan.
 2. **Clona y adjunta el `Bearer` token** a cualquier otra petición.
 3. **Manejo del 401 (refresh automático)**: si una petición protegida devuelve `401` y la sesión existe, llama a `auth.refresh()` y **reintenta** la petición original con el token nuevo:
 
@@ -2888,7 +2893,7 @@ public class Profile {
     @Column(nullable = false)
     private Long userId;
 
-    @Column(nullable = false)
+    @Column
     private String email;
 
     private String displayName;
@@ -2944,6 +2949,7 @@ public interface ProfileRepository extends JpaRepository<Profile, Long> {
 // MongoDB (query side)
 public interface ProfileReadModelRepository extends MongoRepository<ProfileReadModel, String> {
     Optional<ProfileReadModel> findByUserId(Long userId);
+    List<ProfileReadModel> findByDisplayNameContainingIgnoreCaseOrEmailContainingIgnoreCase(String displayName, String email);
 }
 ```
 
@@ -2972,30 +2978,50 @@ public class ProfileService {
 
     public ProfileResponse getByUserId(Long userId) {
         ProfileReadModel readModel = readModelRepository.findByUserId(userId)
-                .orElseGet(() -> upsertReadModel(
-                        profileRepository.findByUserId(userId)
-                                .orElseGet(() -> createSyntheticProfile(userId))));
+                .orElseGet(() -> {
+                    Profile profile = profileRepository.findByUserId(userId).orElse(null);
+                    if (profile == null) {
+                        return placeholderReadModel(userId);   // transitorio: NO se persiste
+                    }
+                    return upsertReadModel(profile);
+                });
+
+        if (isSyntheticEmail(readModel.getEmail())) {
+            readModel.setEmail(null);                          // purga correos falsos legados
+            readModelRepository.save(readModel);
+        }
 
         return toResponse(readModel);
     }
 
+    private ProfileReadModel placeholderReadModel(Long userId) {
+        ProfileReadModel readModel = new ProfileReadModel(userId, null);
+        readModel.setDisplayName("user-" + userId);
+        return readModel;
+    }
+
     private Profile findOrCreateProfile(Long userId, String email) {
-        return profileRepository.findByUserId(userId)
+        Profile profile = profileRepository.findByUserId(userId)
                 .orElseGet(() -> createProfile(userId, email));
+
+        if (email != null && !email.isBlank()
+                && (profile.getEmail() == null || profile.getEmail().isBlank()
+                || isSyntheticEmail(profile.getEmail()))) {
+            profile.setEmail(email);                           // repara con el correo real de identity
+            if (("user-" + userId).equals(profile.getDisplayName())) {
+                profile.setDisplayName(null);                  // deja que se derive del email
+            }
+            profile.touch();
+            profileRepository.save(profile);
+            upsertReadModel(profile);
+        }
+        return profile;
     }
 
     private Profile createProfile(Long userId, String email) {
         Profile profile = new Profile();
         profile.setUserId(userId);
         profile.setEmail(email);
-        return profileRepository.save(profile);
-    }
-
-    private Profile createSyntheticProfile(Long userId) {
-        Profile profile = new Profile();
-        profile.setUserId(userId);
-        profile.setEmail("user-" + userId + "@booksocial.local");
-        profile.setDisplayName("user-" + userId);
         return profileRepository.save(profile);
     }
 
@@ -3010,7 +3036,7 @@ public class ProfileService {
         ProfileReadModel readModel = readModelRepository.findByUserId(profile.getUserId())
                 .orElseGet(() -> new ProfileReadModel(profile.getUserId(), profile.getEmail()));
         readModel.setUserId(profile.getUserId());
-        readModel.setEmail(profile.getEmail());
+        readModel.setEmail(isSyntheticEmail(profile.getEmail()) ? null : profile.getEmail());
         readModel.setDisplayName(deriveDisplayName(profile.getDisplayName(), profile.getEmail()));
         readModel.setBio(profile.getBio());
         readModel.setLocation(profile.getLocation());
@@ -3029,23 +3055,29 @@ public class ProfileService {
     }
 
     private ProfileResponse toResponse(ProfileReadModel rm) {
+        String email = isSyntheticEmail(rm.getEmail()) ? null : rm.getEmail();
         return new ProfileResponse(
-                rm.getUserId(), rm.getEmail(),
-                deriveDisplayName(rm.getDisplayName(), rm.getEmail()),
+                rm.getUserId(), email,
+                deriveDisplayName(rm.getDisplayName(), email),
                 rm.getBio(), rm.getLocation(), rm.getAvatarUrl(),
                 rm.getFollowersCount(), rm.getFollowingCount(), rm.getPostsCount(),
                 rm.getCreatedAt(), rm.getUpdatedAt());
+    }
+
+    private boolean isSyntheticEmail(String email) {
+        return email != null && email.endsWith("@booksocial.local");
     }
 }
 ```
 
 - `getOrCreate(userId, email)`: si no existe el perfil en Postgres, lo crea; luego hace `upsertReadModel` (actualiza los campos de presentación del documento Mongo y lo guarda).
 - `update(userId, email, request)`: crea el perfil si faltaba (misma semántica on-demand), aplica los campos del DTO (solo los no nulos) y vuelve a sincronizar el read model.
-- `getByUserId(userId)`: **lee de Mongo** y, si el documento no existe, lo materializa on-demand desde Postgres; si tampoco hay perfil en Postgres, crea un **perfil sintético** (`user-{userId}@booksocial.local` / `displayName: "user-{userId}"`) para que el feed/campana nunca reciban un 404 y puedan mostrar un nombre legible en vez de "a reader".
-- `findOrCreateProfile`: lógica extraída para no duplicar la búsqueda+creación en `getOrCreate` y `update`.
-- `upsertReadModel`: si el documento Mongo no existe, lo crea con los campos base; si existe, actualiza todos los campos. Es idempotente. El `displayName` se persiste con `deriveDisplayName`, de modo que si el usuario no fijó un nombre propio se usa la parte local del email (p. ej. `social2@test.com` → `social2`).
+- `getByUserId(userId)`: **lee de Mongo** y, si el documento no existe, lo materializa on-demand desde Postgres; si tampoco hay perfil en Postgres devuelve un **read model transitorio** (`displayName: "user-{userId}"`, `email: null`) **sin persistirlo** — ya NO se crea un perfil sintético con correo falso.
+- `findOrCreateProfile`: además de buscar+crear, **repara** el perfil con el email real de identity (`X-User-Email`) cuando está vacío o es un correo sintético legado `@booksocial.local`, y deja el `displayName` derivable del email si seguía siendo `user-{id}`.
+- `searchProfiles(query)`: búsqueda en Mongo por `displayName` o `email` (insensible a mayúsculas) para el directorio **People** (`GET /profiles/search?q=`).
+- `upsertReadModel`: si el documento Mongo no existe, lo crea con los campos base; si existe, actualiza todos los campos. Es idempotente. El `displayName` se persiste con `deriveDisplayName`, de modo que si el usuario no fijó un nombre propio se usa la parte local del email (p. ej. `social2@test.com` → `social2`). **Nunca persiste un email sintético** (`isSyntheticEmail` → `null`).
 - `deriveDisplayName`: devuelve el `displayName` explícito si no está en blanco; si no, deriva la parte local del email (`email.substring(0, indexOf('@'))`). También se aplica en `toResponse` por si el read model persistido aún trae `null`.
-- `toResponse`: mapea el read model a `ProfileResponse` usando `deriveDisplayName`, garantizando un `displayName` siempre poblado para el frontend.
+- `toResponse`: mapea el read model a `ProfileResponse` usando `deriveDisplayName`, garantizando un `displayName` siempre poblado para el frontend, y **oculta cualquier email sintético** (lo devuelve como `null`).
 
 #### `ProfileController`
 
@@ -3070,6 +3102,11 @@ public class ProfileController {
     @GetMapping("/{userId}")
     public ProfileResponse byUserId(@PathVariable Long userId) {
         return profileService.getByUserId(userId);
+    }
+
+    @GetMapping("/search")
+    public List<ProfileResponse> searchUsers(@RequestParam("q") String q) {
+        return profileService.searchProfiles(q);
     }
 }
 ```
@@ -3097,11 +3134,12 @@ Los DTOs son **records** — la forma idiomática en Java 21. `UpdateProfileRequ
 Con un token real vía gateway (`POST /auth/login` → `accessToken`):
 
 ```
-GET  /profiles/me   -> crea el perfil on-demand (userId, email, contadores a 0)
+GET  /profiles/me   -> materializa el perfil on-demand (userId, email real, contadores a 0)
 PUT  /profiles/me   -> actualiza displayName/bio/location/avatarUrl
 GET  /profiles/10   -> devuelve el perfil leído de Mongo
-GET  /profiles/999  -> crea un perfil sintético: 200 {"displayName":"user-999","email":"user-999@booksocial.local"}
-                       (ya no devuelve 404; así el feed/campana muestran un nombre en vez de "a reader")
+GET  /profiles/search?q=javier  -> directorio People: lista perfiles por displayName/email (Mongo)
+GET  /profiles/999  -> devuelve 200 {"displayName":"user-999","email":null} (read model transitorio,
+                       SIN perfil falso persistido y SIN email inventado)
 ```
 
 Se comprueba el dual-write consultando las dos bases directamente:
@@ -6244,6 +6282,52 @@ El access token (TTL 15 min) vive en memoria; un F5 perdía la sesión salvo que
 3. **F5** en `/feed` → la página se sirve como SPA y `GET /api/feed?limit=10` responde `application/json` con la actividad `FOLLOW` en primer lugar (el siguiente `nextCursor` alimenta "Load more").
 
 Estado verificable en el navegador (DevTools → Network): `/feed` → `200 text/html` (documento); `/api/feed?limit=10` → `200 application/json`; `/auth/refresh` → `200 application/json` con `Set-Cookie: refresh_token=…`; `ws://localhost:8087/ws?token=…` → `101 Switching Protocols`.
+
+---
+
+## Bloque 13 — Fase 11: reset de contraseña + directorio People + perfil público y follow
+
+**Objetivo**: tres tandas de trabajo sobre la base de la Fase 10: (1) recuperación de contraseña por email (identity + páginas Angular), (2) directorio de usuarios **People** con perfil público y botón de seguimiento en el feed, y (3) eliminación del **perfil sintético** (se acabaron los correos falsos `user-{id}@booksocial.local`).
+
+Commits: `7e8dee3` (reset), `cb239f3` (People/follow/perfiles), `3e016f7` (i18n).
+
+### 13.1 — Reset de contraseña (identity + frontend)
+
+- **`PasswordResetToken`** (`password_reset_tokens`): `userId`, `tokenHash` (SHA-256 del token aleatorio de 32 bytes, único), `expiresAt` (30 min), `used`, `createdAt`. El token **en crudo solo viaja por email**; en BD solo vive el hash.
+- **`PasswordResetService`**:
+  - `requestReset(email)`: **nunca falla** aunque el email no exista (evita revelar qué cuentas existen); borra tokens previos del usuario, genera uno nuevo y envía el email con el enlace `{FRONTEND_URL}/reset-password?token=…`.
+  - `resetPassword(rawToken, newPassword)`: valida hash+no usado+no caducado, re-encodea la contraseña con BCrypt y marca el token como usado.
+- **Excepciones → `GlobalExceptionHandler`**: `InvalidTokenException` → `INVALID_TOKEN`, `ExpiredTokenException` → `EXPIRED_TOKEN`, `AlreadyUsedTokenException` → `ALREADY_USED` (all `400`).
+- **Endpoints**: `POST /auth/forgot-password` y `POST /auth/reset-password`, ambos `permitAll` en `SecurityConfig` (el interceptor Angular ya no les añade `Authorization`).
+- **Email**: `spring-boot-starter-mail` + `spring.mail.*` + `app.mail.from` / `app.mail.reset-base-url` (envs `MAIL_HOST`, `MAIL_USERNAME`, …). Plantilla HTML `templates/password-reset-email.html` con `{{RESET_URL}}`.
+- **Frontend**: páginas lazy `/forgot-password` y `/reset-password` (`features/auth/forgot-password|reset-password`, validación con `ReactiveFormsModule`; la de reset lee `?token=` de la query y muestra estados: listo / enlace inválido / caducado / usado), enlace "Forgot password?" en el login y métodos `forgotPassword`/`resetPassword` en `AuthService`.
+
+### 13.2 — Directorio People + perfil público + botón Follow
+
+- **Backend (user-service)**: `GET /profiles/search?q=` → `ProfileReadModelRepository.findByDisplayNameContainingIgnoreCaseOrEmailContainingIgnoreCase`; `ProfileService.searchProfiles`.
+- **Frontend**:
+  - `core/services/follow.service.ts`: cache reactiva de `followingIds` (`ensureLoaded()` la llena con `GET /follows/{me}/following`), `follow`/`unfollow`/`toggle`, `followers`/`following` y `search(q)`.
+  - `shared/components/follow-button/`: botón Follow/Following/Dejar de seguir (oculto para uno mismo), usado en feed, People y perfil.
+  - `features/users/` → ruta `/users` (People): buscador por nombre/email, lista con contadores, avatar inicial y `app-follow-button`.
+  - `features/user-profile/` → ruta `/users/:id`: datos del perfil, contadores y pestañas **Followers/Following** (resueltas vía `GET /follows/{id}/followers|following` + enriquecimiento con `GET /profiles/{id}`).
+  - `nav`: enlace **People** (`@@navPeople`); `app.routes` añade ambas rutas (con `authGuard`).
+- **Materialización del perfil propio**: `AuthService.applyToken()` → `materializeProfile()` → `GET /profiles/me` (fire-and-forget) para que los usuarios recién registrados aparezcan en People sin tener que entrar en su perfil antes.
+- **Proxy**: la API de identity pasa a `/api/users/me` con `pathRewrite` `/api/users → /users` (la ruta SPA `/users` ya no colisiona con el proxy).
+
+### 13.3 — Adiós al perfil sintético
+
+- `Profile.email` pasa a **nullable** (`@Column` sin `nullable = false`).
+- `getByUserId`: si no hay perfil en Mongo ni Postgres devuelve un **read model transitorio** `displayName:"user-{id}"`, `email:null` — **sin persistir nada**. Si el Mongo trae un email `@booksocial.local` lo purga a `null`.
+- `findOrCreateProfile`: cuando identity provee el email real (`X-User-Email`) y el perfil tiene `null`/vacío/sintético, lo **repara** y deja derivar el `displayName` del email.
+- `toResponse` / `upsertReadModel`: nunca exponen ni persisten correos sintéticos.
+- Verificado por API: `/profiles/me` → `200` con email real; `/profiles/search` → perfiles materializados; `/profiles/999` → `{"displayName":"user-999","email":null}` **sin crear fila ni documento**.
+
+### Verificación de la Fase 11
+
+- `mvnw -pl identity-service compile` OK; `mvnw -pl user-service compile` OK.
+- `npm run build` (producción) **sin warnings**: i18n completo con **153 trans-units** (49 nuevas: reset, People, perfil, follow) en en/es/pt.
+- API: `/auth/forgot-password` y `/auth/reset-password`; `/profiles/search`; `/profiles/{id}` transitorio sin email falso.
+- Requiere rebuild + recreate del contenedor `booksocial-user` (`docker compose build user-service` + `up -d --force-recreate user-service`).
 
 ---
 
