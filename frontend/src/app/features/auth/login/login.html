@@ -23,6 +23,13 @@
     >
   </label>
 
+  <p class="forgot">
+    <a
+      routerLink="/forgot-password"
+      i18n="@@loginForgotPassword"
+    >Forgot password?</a>
+  </p>
+
   @if (errorMessage()) {
   <p class="error">{{ errorMessage() }}</p>
   }

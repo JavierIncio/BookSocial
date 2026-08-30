@@ -1,6 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
-import { LoginRequest, RegisterRequest, TokenResponse } from '@core/models/auth.models';
+import {
+  ForgotPasswordRequest,
+  LoginRequest,
+  RegisterRequest,
+  ResetPasswordRequest,
+  TokenResponse,
+} from '@core/models/auth.models';
 import { firstValueFrom, Observable, tap } from 'rxjs';
 
 @Injectable({ providedIn: 'root' })
@@ -35,6 +41,14 @@ export class AuthService {
     return this.http
       .post<void>('/auth/logout', null, { withCredentials: true })
       .pipe(tap(() => this.clearSession()));
+  }
+
+  forgotPassword(email: string): Observable<void> {
+    return this.http.post<void>('/auth/forgot-password', { email } as ForgotPasswordRequest);
+  }
+
+  resetPassword(token: string, newPassword: string): Observable<void> {
+    return this.http.post<void>('/auth/reset-password', { token, newPassword } as ResetPasswordRequest);
   }
 
   userId(): number | null {

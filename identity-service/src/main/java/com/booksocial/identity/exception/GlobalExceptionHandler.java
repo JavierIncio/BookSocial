@@ -40,4 +40,22 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest()
                 .body(Map.of("error", "validation_failed", "fields", fields));
     }
+
+    @ExceptionHandler(InvalidTokenException.class)
+    public ResponseEntity<Map<String, String>> invalidToken(InvalidTokenException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", "INVALID_TOKEN"));
+    }
+
+    @ExceptionHandler(ExpiredTokenException.class)
+    public ResponseEntity<Map<String, String>> expiredToken(ExpiredTokenException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", "EXPIRED_TOKEN"));
+    }
+
+    @ExceptionHandler(AlreadyUsedTokenException.class)
+    public ResponseEntity<Map<String, String>> alreadyUsedToken(AlreadyUsedTokenException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", "ALREADY_USED"));
+    }
 }

@@ -24,6 +24,18 @@ spring:
                 client-id: ${GOOGLE_CLIENT_ID}
                 client-secret: ${GOOGLE_CLIENT_SECRET}
 
+  mail:
+    host: ${MAIL_HOST:}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    port: ${MAIL_PORT:587}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 server:
   port: 8081
 
@@ -40,6 +52,10 @@ app:
 
   oauth2:
     frontend-redirect-uri: http://localhost:4200/oauth2/callback
+
+  mail:
+    from: ${MAIL_FROM:no-reply@booksocial.com}
+    reset-base-url: ${FRONTEND_URL:http://localhost:4200}
 
 management:
   endpoints:

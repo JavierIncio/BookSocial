@@ -1,12 +1,10 @@
 package com.booksocial.identity.controller;
 
-import com.booksocial.identity.dto.LoginRequest;
-import com.booksocial.identity.dto.RefreshRequest;
-import com.booksocial.identity.dto.RegisterRequest;
-import com.booksocial.identity.dto.TokenResponse;
+import com.booksocial.identity.dto.*;
 import com.booksocial.identity.exception.InvalidRefreshTokenException;
 import com.booksocial.identity.security.TokenCookieService;
 import com.booksocial.identity.service.AuthService;
+import com.booksocial.identity.service.PasswordResetService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
@@ -20,10 +18,14 @@ public class AuthController {
 
     private final AuthService authService;
     private final TokenCookieService cookieService;
+    private final PasswordResetService passwordResetService;
 
-    public AuthController(AuthService authService, TokenCookieService cookieService) {
+    public AuthController(AuthService authService,
+                          TokenCookieService cookieService,
+                          PasswordResetService passwordResetService) {
         this.authService = authService;
         this.cookieService = cookieService;
+        this.passwordResetService = passwordResetService;
     }
 
     @PostMapping("/register")
@@ -69,5 +71,17 @@ public class AuthController {
 
         response.addHeader(HttpHeaders.SET_COOKIE, cookieService.clear().toString());
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Void> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        passwordResetService.requestReset(request.email());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        passwordResetService.resetPassword(request.token(), request.newPassword());
+        return ResponseEntity.ok().build();
     }
 }
