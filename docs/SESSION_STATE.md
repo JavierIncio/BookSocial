@@ -121,8 +121,8 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-11 están completadas** (1-1
 
 ### Active
 
-- **Verificación E2E de la Fase 11 pendiente en navegador** (dos usuarios `javierincio.dev@gmail.com` / `javierincioprieto@gmail.com` con `Test123456`, stack limpio): login → **People** muestra ambos; follow desde feed/perfil; perfil público `/users/:id` con pestañas seguidores/siguiendo; flujo forgot → email (requiere SMTP `MAIL_HOST` configurado) → reset.
-- **Push pendiente**: los 3 commits de la Fase 11 no están en `origin/main` (la Fase 10 `cc12352` y los fixes `09aa734`/`9e7b8ab` ya están pusheados).
+- **Verificación E2E de la Fase 11 superada en navegador** (usuarios `javierincio.dev@gmail.com` / `javierincioprieto@gmail.com` con `Test123456`): login → People muestra ambos y busca por nombre/email; follow desde feed y desde el perfil; perfil público `/users/:id` con pestañas seguidores/siguiendo; flujo forgot → email (SMTP configurado) → reset. Sin código pendiente.
+- **Push**: los 4 commits de la Fase 11 (`7e8dee3`, `cb239f3`, `3e016f7`, `cf20390`) no están en `origin/main` (la Fase 10 `cc12352` y los fixes `09aa734`/`9e7b8ab` ya están pusheados).
 
 ### Blocked
 
@@ -134,8 +134,7 @@ Tras cerrar la **Fase 11** (reset + People/follow/perfiles + i18n 153 trans-unit
 
 | Opción | Descripción |
 |--------|-------------|
-| **Verificación + cierre (recomendado)** | E2E manual en navegador contra el stack Docker (usuarios `javierincio.dev@gmail.com`/`javierincioprieto@gmail.com`, `Test123456`): login → **People** muestra ambos y busca por nombre/email; follow desde feed y desde el perfil; perfil público `/users/:id` con pestañas seguidores/siguiendo; flujo forgot → email (requiere SMTP `MAIL_HOST` configurado) → reset. |
-| **Push** | Subir los 3 commits de la Fase 11 (`7e8dee3`, `cb239f3`, `3e016f7`) a `origin/main`. |
+| **Cierre** | E2E manual de la Fase 11 **superado** (login → People → follow → perfil → reset) y los 4 commits ya pusheados. La Fase 11 queda cerrada por completo. |
 | Backend opcional | Consumer de `review.created` en notification-service (cola ya declarada); reconciliar `review.updated` como notificación; actor con nombre real (firstName+lastName en vez de derivado del email); despliegue cloud (el WS requiere proxy con soporte WebSocket: nginx/traefik o SCG reactivo). |
 | Nota | El `package.json` raíz (untracked) es basura heredada sin uso; no trackear. |
 

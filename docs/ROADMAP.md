@@ -999,5 +999,5 @@ Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y 
 - [x] Fase 11.3 — Eliminación del perfil sintético.
 - [x] i18n: 49 trans-units nuevas traducidas en es/pt (153 en total).
 - [x] Commit por bloque: `7e8dee3` (reset), `cb239f3` (People/follow/perfiles), `3e016f7` (i18n).
-- [ ] E2E manual en navegador: login con Test One/Test Two → People muestra ambos y se puede seguir desde feed/perfil.
-- [ ] Actualizar este documento al cerrar la fase.
+- [x] E2E manual en navegador: login con Test One/Test Two → People muestra ambos y se puede seguir desde feed/perfil.
+- [x] Actualizar este documento al cerrar la fase.
