@@ -1,7 +1,6 @@
 package com.booksocial.user.service;
 
 import com.booksocial.user.domain.Profile;
-import com.booksocial.user.domain.ProfileNotFoundException;
 import com.booksocial.user.readmodel.ProfileReadModel;
 import com.booksocial.user.readmodel.ProfileReadModelRepository;
 import com.booksocial.user.repository.ProfileRepository;
@@ -38,9 +37,19 @@ public class ProfileService {
 
     public ProfileResponse getByUserId(Long userId) {
         ProfileReadModel readModel = readModelRepository.findByUserId(userId)
-                .orElseThrow(() -> new ProfileNotFoundException(userId));
+                .orElseGet(() -> upsertReadModel(
+                        profileRepository.findByUserId(userId)
+                                .orElseGet(() -> createSyntheticProfile(userId))));
 
         return toResponse(readModel);
+    }
+
+    private Profile createSyntheticProfile(Long userId) {
+        Profile profile = new Profile();
+        profile.setUserId(userId);
+        profile.setEmail("user-" + userId + "@booksocial.local");
+        profile.setDisplayName("user-" + userId);
+        return profileRepository.save(profile);
     }
 
     private Profile findOrCreateProfile(Long userId, String email) {
@@ -74,7 +83,7 @@ public class ProfileService {
                 .orElseGet(() -> new ProfileReadModel(profile.getUserId(), profile.getEmail()));
         readModel.setUserId(profile.getUserId());
         readModel.setEmail(profile.getEmail());
-        readModel.setDisplayName(profile.getDisplayName());
+        readModel.setDisplayName(deriveDisplayName(profile.getDisplayName(), profile.getEmail()));
         readModel.setBio(profile.getBio());
         readModel.setLocation(profile.getLocation());
         readModel.setAvatarUrl(profile.getAvatarUrl());
@@ -82,9 +91,20 @@ public class ProfileService {
         return readModelRepository.save(readModel);
     }
 
+    private String deriveDisplayName(String displayName, String email) {
+        if (displayName != null && !displayName.isBlank()) return displayName;
+        if (email != null) {
+            int at = email.indexOf('@');
+            if (at > 0) return email.substring(0, at);
+        }
+        return displayName;
+    }
+
     private ProfileResponse toResponse(ProfileReadModel rm) {
         return new ProfileResponse(
-                rm.getUserId(), rm.getEmail(), rm.getDisplayName(), rm.getBio(),
+                rm.getUserId(), rm.getEmail(),
+                deriveDisplayName(rm.getDisplayName(), rm.getEmail()),
+                rm.getBio(),
                 rm.getLocation(), rm.getAvatarUrl(), rm.getFollowersCount(),
                 rm.getFollowingCount(), rm.getPostsCount(), rm.getCreatedAt(), rm.getUpdatedAt()
         );

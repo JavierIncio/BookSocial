@@ -2972,7 +2972,10 @@ public class ProfileService {
 
     public ProfileResponse getByUserId(Long userId) {
         ProfileReadModel readModel = readModelRepository.findByUserId(userId)
-                .orElseThrow(() -> new ProfileNotFoundException(userId));
+                .orElseGet(() -> upsertReadModel(
+                        profileRepository.findByUserId(userId)
+                                .orElseGet(() -> createSyntheticProfile(userId))));
+
         return toResponse(readModel);
     }
 
@@ -2988,6 +2991,14 @@ public class ProfileService {
         return profileRepository.save(profile);
     }
 
+    private Profile createSyntheticProfile(Long userId) {
+        Profile profile = new Profile();
+        profile.setUserId(userId);
+        profile.setEmail("user-" + userId + "@booksocial.local");
+        profile.setDisplayName("user-" + userId);
+        return profileRepository.save(profile);
+    }
+
     private void updateProfile(Profile profile, UpdateProfileRequest request) {
         if (request.displayName() != null) profile.setDisplayName(request.displayName());
         if (request.bio() != null)          profile.setBio(request.bio());
@@ -3000,21 +3011,41 @@ public class ProfileService {
                 .orElseGet(() -> new ProfileReadModel(profile.getUserId(), profile.getEmail()));
         readModel.setUserId(profile.getUserId());
         readModel.setEmail(profile.getEmail());
-        readModel.setDisplayName(profile.getDisplayName());
+        readModel.setDisplayName(deriveDisplayName(profile.getDisplayName(), profile.getEmail()));
         readModel.setBio(profile.getBio());
         readModel.setLocation(profile.getLocation());
         readModel.setAvatarUrl(profile.getAvatarUrl());
         readModel.setUpdatedAt(profile.getUpdatedAt());
         return readModelRepository.save(readModel);
     }
+
+    private String deriveDisplayName(String displayName, String email) {
+        if (displayName != null && !displayName.isBlank()) return displayName;
+        if (email != null) {
+            int at = email.indexOf('@');
+            if (at > 0) return email.substring(0, at);
+        }
+        return displayName;
+    }
+
+    private ProfileResponse toResponse(ProfileReadModel rm) {
+        return new ProfileResponse(
+                rm.getUserId(), rm.getEmail(),
+                deriveDisplayName(rm.getDisplayName(), rm.getEmail()),
+                rm.getBio(), rm.getLocation(), rm.getAvatarUrl(),
+                rm.getFollowersCount(), rm.getFollowingCount(), rm.getPostsCount(),
+                rm.getCreatedAt(), rm.getUpdatedAt());
+    }
 }
 ```
 
 - `getOrCreate(userId, email)`: si no existe el perfil en Postgres, lo crea; luego hace `upsertReadModel` (actualiza los campos de presentación del documento Mongo y lo guarda).
 - `update(userId, email, request)`: crea el perfil si faltaba (misma semántica on-demand), aplica los campos del DTO (solo los no nulos) y vuelve a sincronizar el read model.
-- `getByUserId(userId)`: lee **exclusivamente de Mongo** — demuestra la separación de rutas de lectura del CQRS.
+- `getByUserId(userId)`: **lee de Mongo** y, si el documento no existe, lo materializa on-demand desde Postgres; si tampoco hay perfil en Postgres, crea un **perfil sintético** (`user-{userId}@booksocial.local` / `displayName: "user-{userId}"`) para que el feed/campana nunca reciban un 404 y puedan mostrar un nombre legible en vez de "a reader".
 - `findOrCreateProfile`: lógica extraída para no duplicar la búsqueda+creación en `getOrCreate` y `update`.
-- `upsertReadModel`: si el documento Mongo no existe, lo crea con los campos base; si existe, actualiza todos los campos. Es idempotente.
+- `upsertReadModel`: si el documento Mongo no existe, lo crea con los campos base; si existe, actualiza todos los campos. Es idempotente. El `displayName` se persiste con `deriveDisplayName`, de modo que si el usuario no fijó un nombre propio se usa la parte local del email (p. ej. `social2@test.com` → `social2`).
+- `deriveDisplayName`: devuelve el `displayName` explícito si no está en blanco; si no, deriva la parte local del email (`email.substring(0, indexOf('@'))`). También se aplica en `toResponse` por si el read model persistido aún trae `null`.
+- `toResponse`: mapea el read model a `ProfileResponse` usando `deriveDisplayName`, garantizando un `displayName` siempre poblado para el frontend.
 
 #### `ProfileController`
 
@@ -3069,7 +3100,8 @@ Con un token real vía gateway (`POST /auth/login` → `accessToken`):
 GET  /profiles/me   -> crea el perfil on-demand (userId, email, contadores a 0)
 PUT  /profiles/me   -> actualiza displayName/bio/location/avatarUrl
 GET  /profiles/10   -> devuelve el perfil leído de Mongo
-GET  /profiles/999  -> 404 {"error":"not_found","message":"Profile not found for userId 999"}
+GET  /profiles/999  -> crea un perfil sintético: 200 {"displayName":"user-999","email":"user-999@booksocial.local"}
+                       (ya no devuelve 404; así el feed/campana muestran un nombre en vez de "a reader")
 ```
 
 Se comprueba el dual-write consultando las dos bases directamente:

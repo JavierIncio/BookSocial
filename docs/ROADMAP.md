@@ -448,10 +448,10 @@ Verificar en GitHub: código subido, y **Actions → CI en verde**.
 **Objetivo**: perfil de usuario con escrituras en Postgres y lecturas desde Mongo.
 
 - `domain/Profile` (JPA, `userId` único) como command side; `readmodel/ProfileReadModel` (Mongo, `_id`=userId, contadores followers/following/posts) como query side.
-- `ProfileService.getOrCreate`/`update`: dual-write (misma operación escribe Postgres y hace upsert del read model); `getByUserId` lee **solo de Mongo** (separación de rutas del CQRS).
+- `ProfileService.getOrCreate`/`update`: dual-write (misma operación escribe Postgres y hace upsert del read model); `getByUserId` lee de Mongo y, si falta, materializa on-demand desde Postgres (o crea un perfil **sintético** `user-{id}@booksocial.local` / `displayName:"user-{id}"`) para que el feed/campana nunca reciban 404 y muestren un nombre; `displayName` se deriva de la parte local del email cuando está vacío (`deriveDisplayName`).
 - `ProfileController`: `GET/PUT /profiles/me` (identidad desde headers `X-User-Id`/`X-User-Email` puestos por el gateway), `GET /profiles/{userId}`.
 - DTOs record con bean validation, `ProfileNotFoundException` y `GlobalExceptionHandler` (404/400 JSON).
-- E2E vía gateway: creación on-demand, PUT con dual-write (dato en Postgres y Mongo), lectura desde Mongo, 404 JSON.
+- E2E vía gateway: creación on-demand, PUT con dual-write (dato en Postgres y Mongo), lectura desde Mongo, perfil sintético para userId sin perfil (ya no responde 404).
 
 ### Fase 2.3 — Amistades con CQRS dual-write ✅ Completada
 

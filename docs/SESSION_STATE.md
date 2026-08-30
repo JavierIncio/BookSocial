@@ -75,7 +75,7 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-10 están completadas** (1-9
 ### Profiles (user-service)
 - `GET /profiles/me` — perfil del usuario actual
 - `PUT /profiles/me` — actualizar perfil
-- `GET /profiles/{userId}` — perfil público
+- `GET /profiles/{userId}` — perfil público (crea on-demand un perfil sintético `user-{id}` si no existe; `displayName` derivado del email si está vacío)
 
 ### Follows (user-service)
 - `POST /follows/{userId}` — seguir
@@ -114,6 +114,11 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-10 están completadas** (1-9
 ### Active
 
 - Ninguno bloqueado. Feed arreglado y **verificado con navegador real (Chrome headless + CDP, F5 a `/feed` en sesión con cookie de refresh)**: página `/feed` → index.html (SPA), `XHR /api/feed?limit=10` → `application/json` 200, refresh por cookie 200, enriquecimiento `/profiles/{userId}` 200, DOM mostrando *"Your feed social2@test.com started following you…"*. Commit `cc12352` pusheado a `origin/main`. **Fixes post-commit pendientes de commit (sin pushear)**: colisiones proxy↔SPA + query-string en `proxy.conf.json` (prefijos `/api/feed`/`/api/notifications` con `pathRewrite`, límites `(\?|/|$)`), guard de sesión asíncrono (`ensureSession`) + `withEnabledBlockingInitialNavigation`.
+- **Fixes de UX post-verificación E2E (4)** — a revisar en navegador (no commiteados aún, ver `git status`):
+  - **Texto de notificación blanco sobre blanco**: la campana vive en el `nav` (blanco) y el dropdown `.panel` heredaba `color:#fff` sobre fondo blanco. Fix: `color:#212529` en `.panel` de `notification-bell.scss`.
+  - **Feed pegado al borde inferior**: `main` de `feed.scss` ahora lleva `padding: 0 1rem 3rem` (margen inferior) para que el último elemento/"Load more" no quede pegado al borde.
+  - **Registro desborda en apellido**: `.row` de `register.scss` ahora con `flex-wrap:wrap`, labels `flex:1 1 8rem; min-width:0` e inputs `width:100%; min-width:0` (el apellido baja de línea en vez de desbordar).
+  - **Mostrar nombre en vez de "A reader"**: en `ProfileService`, `getByUserId` **crea el perfil on-demand** (si no existe en Mongo ni Postgres crea un sintético `user-{id}@booksocial.local` / `displayName:"user-{id}"`) en vez de devolver 404, y `deriveDisplayName` devuelve la parte local del email (`social2@test.com` → `social2`) cuando el `displayName` está vacío (aplicado en `upsertReadModel` + `toResponse`). Verificado por API: `/profiles/8` → `"user-8"` (antes 404), `/profiles/9` → `"social2"` (antes `displayName:null`). **Requiere el user-service recreado con la imagen nueva** (ya hecho: `docker compose build user-service` + `up -d`). El dev-server ya recompiló los SCSS.
 
 ### Blocked
 
@@ -126,7 +131,7 @@ Tras cerrar la **Fase 10** (frontend feed + notificaciones):
 | Opción | Descripción |
 |--------|-------------|
 | **Verificación + cierre** | E2E manual en navegador contra el stack Docker (usuarios `social1`/`social2`): login → `/feed` con entradas FOLLOW/REVIEW/SHELF y "Load more"; campana con contador y push en tiempo real al dar follow desde la otra cuenta; marcar leídas. (Fase 10 ya commiteada y pusheada como `cc12352`.) |
-| Backend opcional | Consumer de `review.created` en notification-service (ya declarada la cola); reconciliar `review.updated` como notificación; mostrar `targetUserId`/actor con nombre real en vez de "A reader" (enriquecimiento ya resuelto para nombres de actor); despliegue cloud (el WS requiere proxy con soporte WebSocket: nginx/traefik o SCG reactivo). |
+| Backend opcional | Consumer de `review.created` en notification-service (ya declarada la cola); reconciliar `review.updated` como notificación; mostrar el `targetUserId`/actor con nombre real (firstName+lastName en vez del derivado del email — requiere sincronizar identity→user via evento de registro o REST); despliegue cloud (el WS requiere proxy con soporte WebSocket: nginx/traefik o SCG reactivo). |
 | Nota | El `package.json` raíz (untracked) es basura heredada sin uso; no trackear. |
 
 ## Relevant Files
