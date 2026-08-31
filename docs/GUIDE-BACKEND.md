@@ -2270,7 +2270,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        String clientIp = request.getRemoteAddr();
+        String clientIp = getClientIp(request);
         if (rateLimitService.tryConsume(clientIp)) {
             filterChain.doFilter(request, response);
         } else {
@@ -2279,6 +2279,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
             response.setCharacterEncoding("UTF-8");
             response.getWriter().write("{\"error\":\"too_many_requests\"}");
         }
+    }
+
+    private String getClientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            int commaIndex = forwarded.indexOf(',');
+            return (commaIndex > 0) ? forwarded.substring(0, commaIndex).trim() : forwarded.trim();
+        }
+        return request.getRemoteAddr();
     }
 }
 ```
@@ -2354,7 +2363,7 @@ Si el rate-limit se pusiera después del `JwtAuthFilter`, los endpoints público
    ```
    Resultado esperado: peticiones **1-5 → `200`** y la **6ª → `429`** con `{"error":"too_many_requests"}`.
 
-> El límite se aplica por IP (`request.getRemoteAddr()`). Tras un proxy/gateway real habría que leer el header `X-Forwarded-For`, porque el `remoteAddr` sería el del propio proxy (todas las peticiones compartirían bucket). En el entorno de desarrollo directo al `identity-service:8081` funciona tal cual.
+> La IP se resuelve con `getClientIp()`: usa el **primer** elemento del header `X-Forwarded-For` si viene (lista de proxys, el primero es el cliente original) y, si no, cae a `request.getRemoteAddr()`. Así, tras un proxy/gateway real cada cliente tiene su propio bucket (sin el header, el `remoteAddr` sería la IP del proxy y todas las peticiones compartirían bucket). **Nota de seguridad**: aceptar `X-Forwarded-For` sin confiar en el proxy permite spoofear la IP (`change this header` para saltarse el límite); en producción hay que sanitizarlo en el proxy de confianza.
 
 > **Depuración en Redis**: los buckets se guardan en Redis con la IP del cliente como clave. Puedes inspeccionarlos con `docker exec booksocial-redis redis-cli keys "*"` para confirmar que el rate-limiter distribuido está escribiendo, y borrar una clave con `del <ip>` para reiniciar el bucket de esa IP.
 

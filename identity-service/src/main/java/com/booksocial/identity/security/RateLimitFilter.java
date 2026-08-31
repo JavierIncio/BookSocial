@@ -35,7 +35,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        String clientIp = request.getRemoteAddr();
+        String clientIp = getClientIp(request);
         if (rateLimitService.tryConsume(clientIp)) {
             filterChain.doFilter(request, response);
         } else {
@@ -44,6 +44,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
             response.setCharacterEncoding("UTF-8");
             response.getWriter().write("{\"error\":\"too_many_requests\"}");
         }
-
+    }
+    
+    private String getClientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            int commaIndex = forwarded.indexOf(',');
+            return (commaIndex > 0) ? forwarded.substring(0, commaIndex).trim() : forwarded.trim();
+        }
+        return request.getRemoteAddr();
     }
 }

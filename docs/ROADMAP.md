@@ -1001,6 +1001,12 @@ Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y 
 - [x] E2E verificado por el usuario contra el stack Docker.
 - [x] Actualizar ROADMAP + SESSION_STATE + commit.
 
+### Fix rate-limit post-Fase 11 — `X-Forwarded-For` (identity-service) ✅
+
+- `RateLimitFilter.getClientIp()` lee `X-Forwarded-For` (primer elemento de la lista) con fallback a `remoteAddr`, para que tras un proxy cada cliente tenga su bucket (antes todos compartían la IP del proxy).
+- E2E verificado por el usuario: 5×`200` + 6ª `429` con `X-Forwarded-For: 203.0.113.7`; `200` de nuevo con `203.0.113.8` (no comparten bucket). Contenedor Redis = `booksocial-redis`.
+- Nota de seguridad: sin proxy de confianza, `X-Forwarded-For` es spoofeable (anotado para producción).
+
 ---
 
 ## Fase 11 — Reset de contraseña + directorio People + perfil público y follow ❖ Completada
