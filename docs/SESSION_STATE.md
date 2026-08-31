@@ -141,7 +141,7 @@ Tras cerrar la **Fase 11** (reset + People/follow/perfiles + i18n 153 trans-unit
 | **Cierre** | E2E manual de la Fase 11 **superado** (login → People → follow → perfil → reset) y rate-limiting **verificado** (5×`200` + `429`). Pendiente: **commit + push** del rate-limiting (4 commits de Fase 11 sin pushear + el código nuevo de rate-limit sin commitear). |
 | Rate-limit (mejoras posibles) | Aplicar el mismo patrón a otros servicios; leer `X-Forwarded-For` para rate-limit por IP real tras el gateway (hoy el `remoteAddr` sería la IP del proxy y todos compartirían bucket); subir/dividir límites por endpoint (p. ej. login más restrictivo que register); exponer headers `X-Rate-Limit-Remaining`/`Retry-After` con `ConsumptionProbe`. |
 | Backend opcional | Consumer de `review.created` en notification-service (cola ya declarada); reconciliar `review.updated` como notificación; actor con nombre real (firstName+lastName en vez de derivado del email); despliegue cloud (el WS requiere proxy con soporte WebSocket: nginx/traefik o SCG reactivo). |
-| Nota | El `package.json` raíz (untracked) es basura heredada sin uso; no trackear. |
+| Nota | El `package.json` raíz (basura heredada, sin uso) ya está **ignorado** en el `.gitignore` raíz (`/package.json`, `/package-lock.json`, `/index.js`). El frontend real usa `frontend/package.json`. |
 
 ## Relevant Files
 

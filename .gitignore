@@ -13,6 +13,11 @@ dist/
 .angular/cache/
 *.log
 
+# Basura heredada en la raiz (no se usa; el frontend real vive en frontend/)
+/package.json
+/package-lock.json
+/index.js
+
 # --- Entorno / secretos ---
 .env
 .env.*
