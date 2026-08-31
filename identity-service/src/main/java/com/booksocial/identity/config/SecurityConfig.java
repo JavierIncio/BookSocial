@@ -1,10 +1,7 @@
 package com.booksocial.identity.config;
 
 import com.booksocial.identity.repository.UserRepository;
-import com.booksocial.identity.security.JwtAuthFilter;
-import com.booksocial.identity.security.OAuth2AuthenticationFailureHandler;
-import com.booksocial.identity.security.OAuth2AuthenticationSuccessHandler;
-import com.booksocial.identity.security.RestAuthenticationEntryPoint;
+import com.booksocial.identity.security.*;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -62,6 +59,7 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http,
                                     JwtAuthFilter jwtAuthFilter,
+                                    RateLimitFilter rateLimitFilter,
                                     RestAuthenticationEntryPoint entryPoint,
                                     OAuth2AuthenticationSuccessHandler successHandler,
                                     OAuth2AuthenticationFailureHandler failureHandler) throws Exception {
@@ -77,6 +75,7 @@ public class SecurityConfig {
                                 "/oauth2/authorization/**", "/login/oauth2/code/**",
                                 "/actuator/health").permitAll()
                         .anyRequest().authenticated())
+                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
