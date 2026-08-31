@@ -15,6 +15,8 @@ public class RabbitConfig {
 
     public static final String FOLLOWED_QUEUE = "notification-service.follows.followed";
     public static final String FOLLOWED_KEY = "follow.followed";
+    public static final String UNFOLLOWED_QUEUE = "notification-service.follows.unfollowed";
+    public static final String UNFOLLOWED_KEY = "follow.unfollowed";
 
     public static final String REVIEW_CREATED_QUEUE = "notification-service.reviews.created";
     public static final String REVIEW_CREATED_KEY = "review.created";
@@ -35,6 +37,16 @@ public class RabbitConfig {
     @Bean
     public Binding followedBinding() {
         return BindingBuilder.bind(followedQueue()).to(eventsExchange()).with(FOLLOWED_KEY);
+    }
+
+    @Bean
+    public Queue unfollowedQueue() {
+        return new Queue(UNFOLLOWED_QUEUE, true);
+    }
+
+    @Bean
+    public Binding unfollowedBinding() {
+        return BindingBuilder.bind(unfollowedQueue()).to(eventsExchange()).with(UNFOLLOWED_KEY);
     }
 
     // REVIEWS

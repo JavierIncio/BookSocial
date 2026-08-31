@@ -15,6 +15,11 @@ public class FollowEventConsumer {
 
     @RabbitListener(queues = RabbitConfig.FOLLOWED_QUEUE)
     public void handleFollowed(FollowedEvent event) {
-        notificationService.createFollowNotification(event.followerId(), event.followeeId());
+        notificationService.handleFollowed(event.followerId(), event.followeeId());
+    }
+
+    @RabbitListener(queues = RabbitConfig.UNFOLLOWED_QUEUE)
+    public void handleUnfollowed(UnfollowedEvent event) {
+        notificationService.handleUnfollowed(event.followerId(), event.followeeId());
     }
 }

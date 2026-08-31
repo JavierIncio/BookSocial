@@ -4,7 +4,7 @@ Documento de handoff para retomar el trabajo en cualquier momento. Se actualiza 
 
 ## Objective
 
-Continuar el monorepo **BookSocial**. Las **Fases 1-11 están completadas** (1-10 + i18n + **Fase 11: reset de contraseña por email, directorio People, perfil público y follow**): identity + gateway + frontend auth + user-service + book-service + review-service + shelf-service + Google Books/Open Library + Author entity + internacionalización Angular (3 idiomas) + **social-service** (feed) + **notification-service** (REST + push STOMP) + frontend `/feed` y campana + **Fase 11**: `POST /auth/forgot-password`/`reset-password` con token por email, páginas `/forgot-password` y `/reset-password`, directorio **People** `/users` (búsqueda), perfil público `/users/:id` (seguidores/siguiendo), botón Follow en feed/People/perfil y **eliminación del perfil sintético** (sin correos falsos `user-{id}@booksocial.local`). Además, **rate-limiting distribuido con Redis + Bucket4j** en los endpoints de auth del identity-service (`/auth/login`, `/auth/register`, `/auth/forgot-password`, `/auth/reset-password`), 5 req/min por IP, verificado E2E (5×`200` + 6ª `429 {"error":"too_many_requests"}`), con la sección 1.10 documentada en `GUIDE-BACKEND.md`.
+Continuar el monorepo **BookSocial**. Las **Fases 1-12 están completadas** (1-10 + i18n + Fase 11: reset de contraseña por email, directorio People, perfil público y follow + rate-limiting Redis; Fase 12: **notificación de reseñas**): identity + gateway + frontend auth + user-service + book-service + review-service + shelf-service + Google Books/Open Library + Author entity + internacionalización Angular (3 idiomas) + **social-service** (feed) + **notification-service** (REST + push STOMP) + frontend `/feed` y campana + **Fase 11**: `POST /auth/forgot-password`/`reset-password` con token por email, páginas `/forgot-password` y `/reset-password`, directorio **People** `/users` (búsqueda), perfil público `/users/:id` (seguidores/siguiendo), botón Follow en feed/People/perfil y **eliminación del perfil sintético** (sin correos falsos `user-{id}@booksocial.local`). Además, **rate-limiting distribuido con Redis + Bucket4j** en los endpoints de auth del identity-service (/auth/login, /auth/register, /auth/forgot-password, /auth/reset-password), 5 req/min por IP, verificado E2E (5×`200` + 6ª `429`), con la sección 1.10 en `GUIDE-BACKEND.md`. **Fase 12**: consumer `review.created` en notification-service con **fanout a los seguidores** del autor de la reseña (índice local de seguidores replicando el patrón del social-service) + push STOMP, idempotente (`followerId:REVIEW:reviewId`).
 
 ## Important Details
 
@@ -121,12 +121,14 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-11 están completadas** (1-1
 
 - **Fase 11 cerrada (reset + People/follow/perfiles)**: commits `7e8dee3` (reset), `cb239f3` (People/follow/perfiles), `3e016f7` (i18n 153 trans-units). **Requiere recrear `booksocial-user` con la imagen nueva** (hecho: `docker compose build --no-cache user-service` + `up -d --force-recreate`, tras corregir en `ProfileService` el `("user-"+userId).equals(...)` que rompía el build Docker). Verificado por API vía gateway: `/profiles/me` → 200 con email real, `/profiles/search?q=` → perfiles materializados, `/profiles/5` → transitorio `{"displayName":"user-5","email":null}` sin persistir nada en Mongo.
 - **Rate-limiting cerrado (Redis + Bucket4j, identity-service)**: dependencias y Redis en docker-compose, `RateLimitService` + `RateLimitFilter` + registro en `SecurityConfig` (con el fix de Spring Security 7 del `addFilterBefore`), config `app.rate-limit.*`. Rebuild del `identity-service` y verificado E2E: 5×`200` + 6ª `429 {"error":"too_many_requests"}` (JSON desde archivo, bucket reseteado en Redis). Sección 1.10 añadida a `GUIDE-BACKEND.md` (código final correcto, sin las opciones fallidas de la API deprecada).
+- **Fix CI**: el test de contexto del identity-service fallaba en CI porque `RateLimitService` conecta a Redis **eagerly** y CI no tiene Redis. Fix: `@MockitoBean RateLimitService rateLimitService;` en `IdentityServiceApplicationTests` (commit `2b7040d`). CI verde.
+
+- **Fase 12 cerrada (notificación de reseñas, notification-service)**: índice de seguidores local (colección `followers`, `FollowerIndexReadModel` + repo), cola `notification-service.follows.unfollowed` (`follow.unfollowed`), `FollowEventConsumer` extendido (followed+unfollowed), `ReviewCreatedEvent` (copia local) + `ReviewEventConsumer` sobre la cola `notification-service.reviews.created` (declarada en Fase 9.4, ahora con consumer). `NotificationService.handleReviewCreated`: fanout a los seguidores del `actorUserId`, payload con `HashMap` (tolerante a `comment` null), notificación `REVIEW` idempotente (`_id=followerId:REVIEW:reviewId`) + push STOMP a cada seguidor. Compila y E2E verificado por el usuario contra el stack Docker.
 
 ### Active
 
-- **Verificación E2E de la Fase 11 superada en navegador** (usuarios `javierincio.dev@gmail.com` / `javierincioprieto@gmail.com` con `Test123456`): login → People muestra ambos y busca por nombre/email; follow desde feed y desde el perfil; perfil público `/users/:id` con pestañas seguidores/siguiendo; flujo forgot → email (SMTP configurado) → reset. Sin código pendiente.
-- **Rate-limiting verificado E2E** en el stack Docker: Redis levantado (`redis:7-alpine`), `identity-service` rebuildado con el nuevo código, `429` confirmado (5×`200` + 6ª `429`). Sin código pendiente.
-- **Push**: los 4 commits de la Fase 11 (`7e8dee3`, `cb239f3`, `3e016f7`, `cf20390`) no están en `origin/main` (la Fase 10 `cc12352` y los fixes `09aa734`/`9e7b8ab` ya están pusheados). El código del rate-limiting aún no está commitado.
+- **Fase 12 cerrada (notificación de reseñas)**: construida, compila y **E2E verificado por el usuario** contra el stack Docker (follow → reseña → notificación REVIEW para el seguidor). Pendiente: commit + push.
+- **Fase 11 y rate-limiting** ya pusheados (`7e8dee3`..`8f69099`); fix CI `2b7040d` pusheado. Nada pendiente de push de fases anteriores.
 
 ### Blocked
 
@@ -134,13 +136,13 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-11 están completadas** (1-1
 
 ## Next Move
 
-Tras cerrar la **Fase 11** (reset + People/follow/perfiles + i18n 153 trans-units) y el **rate-limiting (Redis + Bucket4j)**:
+Tras cerrar la **Fase 12 (notificación de reseñas con fanout a seguidores)**:
 
 | Opción | Descripción |
 |--------|-------------|
-| **Cierre** | E2E manual de la Fase 11 **superado** (login → People → follow → perfil → reset) y rate-limiting **verificado** (5×`200` + `429`). Pendiente: **commit + push** del rate-limiting (4 commits de Fase 11 sin pushear + el código nuevo de rate-limit sin commitear). |
+| **Cierre** | Fase 12 superada (consumer `review.created` + fanout a seguidores + push STOMP idempotente), compila y E2E verificado. Pendiente: **commit + push** de la Fase 12 + docs. |
 | Rate-limit (mejoras posibles) | Aplicar el mismo patrón a otros servicios; leer `X-Forwarded-For` para rate-limit por IP real tras el gateway (hoy el `remoteAddr` sería la IP del proxy y todos compartirían bucket); subir/dividir límites por endpoint (p. ej. login más restrictivo que register); exponer headers `X-Rate-Limit-Remaining`/`Retry-After` con `ConsumptionProbe`. |
-| Backend opcional | Consumer de `review.created` en notification-service (cola ya declarada); reconciliar `review.updated` como notificación; actor con nombre real (firstName+lastName en vez de derivado del email); despliegue cloud (el WS requiere proxy con soporte WebSocket: nginx/traefik o SCG reactivo). |
+| Backend opcional | Reconciliar `review.updated` como notificación (edición de reseña); actor con nombre real (firstName+lastName en vez de derivado del email); despliegue cloud (el WS requiere proxy con soporte WebSocket: nginx/traefik o SCG reactivo). |
 | Nota | El `package.json` raíz (basura heredada, sin uso) ya está **ignorado** en el `.gitignore` raíz (`/package.json`, `/package-lock.json`, `/index.js`). El frontend real usa `frontend/package.json`. |
 
 ## Relevant Files
@@ -152,7 +154,7 @@ Tras cerrar la **Fase 11** (reset + People/follow/perfiles + i18n 153 trans-unit
 - `user-service/` — Fase 2 + 11: perfil CQRS (`ProfileService`: `getByUserId` devuelve read model transitorio **sin persistir** y sin email sintético, `findOrCreateProfile` repara con email real de identity, `searchProfiles`; `Profile.email` nullable), amistades event-driven (`FollowService` + `FollowEventConsumer`). Imagen nueva `booksocial-user` requerida.
 - `identity-service/` — Fase 1 + 11.1 + **rate-limit**: registro, JWT, OAuth2 Google, **reset de contraseña** (`PasswordResetToken` con hash SHA-256 + 30 min, `PasswordResetService` que no revela emails, `POST /auth/forgot-password` y `POST /auth/reset-password` con `permitAll`, mail SMTP + plantilla `password-reset-email.html`). **Rate-limited**: `security/RateLimitService.java` (Redis + Bucket4j 8.19, `Bucket4jLettuce.casBasedBuilder`), `security/RateLimitFilter.java` (`@Component`, 4 rutas auth), `SecurityConfig` registra `rateLimitFilter` con `addFilterBefore(..., UsernamePasswordAuthenticationFilter.class)` (fix Spring Security 7), config `app.rate-limit.requests/period-seconds` + `spring.data.redis.*` en `application.yml`, deps `bucket4j_jdk17-core/lettuce` + `spring-boot-starter-data-redis` en `pom.xml`.
 - `social-service/` — Fase 9: feed por fanout-on-write (ActivityItemReadModel, FollowerIndexReadModel, FeedEntryReadModel), 5 colas + 3 consumers, FeedService con `getFeed()` por cursor, FeedController `GET /feed`, copias locales de eventos.
-- `notification-service/` — Fase 9: NotificationReadModel idempotente + repo, NotificationService, FollowEventConsumer, WebSocketConfig + JwtHandshakeInterceptor (claim `uid`), NotificationController REST. Colas `follows.followed` (active) + `reviews.created` (sin consumer aún).
+- `notification-service/` — Fase 9 + **12**: NotificationReadModel idempotente + repo, WebSocketConfig + JwtHandshakeInterceptor (claim `uid`), NotificationController REST. **Fase 12**: índice de seguidores local (`FollowerIndexReadModel` colección `followers` + repo), colas `follows.followed`+`follows.unfollowed` y `reviews.created` (las 3 con consumer), `ReviewCreatedEvent` (copia local) + `ReviewEventConsumer`, `FollowEventConsumer` (followed+unfollowed), `NotificationService` (`handleFollowed/handleUnfollowed` mantienen el índice; `handleReviewCreated` hace **fanout** a seguidores con notificación `REVIEW` idempotente `followerId:REVIEW:reviewId` + push STOMP).
 - `gateway/` — Fase 1 + 6.1 + 6.3 + 7.1 + 9: JWT filter, 7 rutas (añade `/feed/**` → social-service y `/notifications/**` → notification-service), headers strip-then-assert, SecurityConfig con GETs públicos. (WS al gateway NO soportado por SCG WebMVC.)
 - `infrastructure/docker-compose.yml` — 12 servicios (incluye `redis:7-alpine` con healthcheck; `identity-service` con `SPRING_REDIS_HOST: redis` y `depends_on: redis`).
 - `docs/GUIDE-BACKEND.md` — guía de backend; sección **1.10** documenta el rate-limiting con Redis + Bucket4j (solución final correcta, verificación y procedimiento de prueba con JSON desde archivo + reset de bucket).
@@ -181,5 +183,5 @@ Tras cerrar la **Fase 11** (reset + People/follow/perfiles + i18n 153 trans-unit
 
 ### Docs
 - `docs/GUIDE.md` — Bloques 0-13, Apéndices A-E (C: operación — despliegue, logs, depuración; E: WebSocket STOMP).
-- `docs/ROADMAP.md` — Fases 1-11 documentadas (8.1-8.6 + i18n + Fase 9.1-9.4 + Fase 10 + Fase 11).
+- `docs/ROADMAP.md` — Fases 1-12 documentadas (8.1-8.6 + i18n + Fase 9.1-9.4 + Fase 10 + Fase 11 + Fase 12).
 - `docs/SESSION_STATE.md` — Este archivo.

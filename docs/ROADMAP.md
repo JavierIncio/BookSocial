@@ -962,6 +962,47 @@ Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y 
 
 ---
 
+## Fase 12 — Notificación de reseñas (consumer `review.created` + fanout a seguidores) ✅ Completada
+
+**Objetivo**: completar la infraestructura de notificaciones con la notificación de **nuevas reseñas**. Cierre del pendiente heredado de la Fase 9.4: la cola `notification-service.reviews.created` ya estaba declarada pero **sin consumer**. Se añade el fanout a los seguidores del autor de la reseña (patrón espejo del feed del social-service) con push STOMP.
+
+> Nota de convención: el backend lo implementa el usuario; el asistente guía, revisa y verifica. En esta fase el usuario escribió el código paso a paso siguiendo la guía.
+
+### Fase 12.1 — Índice de seguidores local en notification-service ✅ Completada
+
+- `readmodel/FollowerIndexReadModel` (colección `followers`, `_id` = userId → lista de followerIds) + `FollowerIndexReadModelRepository` — misma colección y patrón que el social-service (desacoplado, sin HTTP).
+- `events/UnfollowedEvent` (copia local) + cola/binding `notification-service.follows.unfollowed` (`follow.unfollowed`) en `RabbitConfig`.
+- `FollowEventConsumer` extendido: consume `followed` **y** `unfollowed`, delega en `NotificationService` (consumer delgado).
+- `NotificationService`:
+  - `handleFollowed` → notificación FOLLOW (existente) **+** `addFollower` (mantiene el índice).
+  - `handleUnfollowed` → `removeFollower`.
+  - `addFollower`/`removeFollower` con read-modify-write sobre el índice (mismo patrón que social-service).
+
+### Fase 12.2 — Fanout de reseñas a seguidores ✅ Completada
+
+- `events/ReviewCreatedEvent` (copia local, mismo record que review-service: `reviewId`, `bookIsbn`, `title`, `authorName`, `rating`, `comment`, `actorUserId`, `occurredAt`).
+- `events/ReviewEventConsumer` → `@RabbitListener` sobre `REVIEW_CREATED_QUEUE` (cola ya declarada en Fase 9.4) que delega en `NotificationService.handleReviewCreated`.
+- `NotificationService.handleReviewCreated`:
+  - Construye payload rico con **`HashMap` mutable** (no `Map.of`) para tolerar `comment` **nullable** sin `NullPointerException`.
+  - Busca los seguidores del `actorUserId` en el índice y hace **fanout**: una notificación `REVIEW` por seguidor.
+  - **Idempotente**: `notificationId = "REVIEW:" + reviewId` → `_id = followerId:REVIEW:reviewId` (el upsert por clave evita duplicados en redelivery).
+  - Push STOMP a `/topic/notifications/{followerId}` (el destinatario, no el actor).
+
+### Verificación de la Fase 12
+
+- Compilación Maven OK (`notification-service`, reactor `-am`).
+- E2E con Docker (usuario verificado): A sigue a B → B publica reseña → notificación `REVIEW` para A en Mongo (`_id=A:REVIEW:<reviewId>`), visible en `GET /notifications`, y push STOMP al topic de A. Realizado por el usuario en navegador/API.
+
+### Cierre de la Fase 12
+
+- [x] Fase 12.1 — Índice de seguidores local + consumer follow/unfollow.
+- [x] Fase 12.2 — Consumer `review.created` + fanout a seguidores, idempotente, con push STOMP.
+- [x] Compilación OK.
+- [x] E2E verificado por el usuario contra el stack Docker.
+- [x] Actualizar ROADMAP + SESSION_STATE + commit.
+
+---
+
 ## Fase 11 — Reset de contraseña + directorio People + perfil público y follow ❖ Completada
 
 **Objetivo**: (1) recuperación de contraseña por email en identity + páginas Angular; (2) directorio de usuarios **People** (`/users`), perfil público (`/users/:id`) y botón de seguimiento en feed/People/perfil; (3) **eliminar el perfil sintético** para que no se inventen correos `user-{id}@booksocial.local`.
