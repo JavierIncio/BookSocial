@@ -128,8 +128,7 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-12 están completadas** (1-1
 
 ### Active
 
-- **Fase 12 cerrada (notificación de reseñas)**: construida, compila y **E2E verificado por el usuario** contra el stack Docker (follow → reseña → notificación REVIEW para el seguidor). Pendiente: commit + push.
-- **Fase 11 y rate-limiting** ya pusheados (`7e8dee3`..`8f69099`); fix CI `2b7040d` pusheado. Nada pendiente de push de fases anteriores.
+- **Fase 12 cerrada (notificación de reseñas)** + **rate-limit `X-Forwarded-For`**: ambos **commiteados y pusheados** (`6d14b7b` y `278d381`). CI verde con el fix `2b7040d`. Sin código pendiente de push.
 
 ### Blocked
 
@@ -137,14 +136,14 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-12 están completadas** (1-1
 
 ## Next Move
 
-Tras cerrar la **Fase 12 (notificación de reseñas con fanout a seguidores)**:
+Tras cerrar la **Fase 12 (notificación de reseñas con fanout a seguidores)** y el **fix de rate-limit `X-Forwarded-For`**, el trabajo de esta sesión concluye. Pendiente en la cola del usuario (elegido al inicio de la sesión):
 
 | Opción | Descripción |
 |--------|-------------|
-| **Cierre** | Fase 12 superada (consumer `review.created` + fanout a seguidores + push STOMP idempotente), compila y E2E verificado. Pendiente: **commit + push** de la Fase 12 + docs. |
-| Rate-limit (mejoras posibles) | Aplicar el mismo patrón a otros servicios; leer `X-Forwarded-For` para rate-limit por IP real tras el gateway (hoy el `remoteAddr` sería la IP del proxy y todos compartirían bucket); subir/dividir límites por endpoint (p. ej. login más restrictivo que register); exponer headers `X-Rate-Limit-Remaining`/`Retry-After` con `ConsumptionProbe`. |
-| Backend opcional | Reconciliar `review.updated` como notificación (edición de reseña); actor con nombre real (firstName+lastName en vez de derivado del email); despliegue cloud (el WS requiere proxy con soporte WebSocket: nginx/traefik o SCG reactivo). |
-| Nota | El `package.json` raíz (basura heredada, sin uso) ya está **ignorado** en el `.gitignore` raíz (`/package.json`, `/package-lock.json`, `/index.js`). El frontend real usa `frontend/package.json`. |
+| **Deploy cloud (Terraform)** — próximo bloque elegido | Despliegue cloud con Terraform. El **WebSocket STOMP** del notification-service requiere un proxy con soporte WebSocket: nginx/traefik o SCG reactivo (el gateway actual SCG WebMVC NO proxea WS). Incluye también: subir imágenes a registry, orquestación de los 12+ servicios, almacenamiento (Postgres/Mongo/RabbitMQ/Redis) y observabilidad. Fase grande con varias decisiones de proveedor/arquitectura por tomar al inicio. |
+| Rate-limit (mejoras posibles) | Aplicar el mismo patrón a otros servicios; subir/dividir límites por endpoint (p. ej. login más restrictivo que register); exponer headers `X-Rate-Limit-Remaining`/`Retry-After` con `ConsumptionProbe`. |
+| Backend opcional | Reconciliar `review.updated` como notificación (edición de reseña); actor con nombre real (firstName+lastName en vez de derivado del email). |
+| Nota | El `package.json` raíz (basura heredada, sin uso) ya está **ignorado** en el `.gitignore` raíz (`/package.json`, `/package-lock.json`, `/index.js`). El frontend real usa `frontend/package.json`. Contenedor Redis = `booksocial-redis` (no `redis`). |
 
 ## Relevant Files
 
@@ -158,7 +157,7 @@ Tras cerrar la **Fase 12 (notificación de reseñas con fanout a seguidores)**:
 - `notification-service/` — Fase 9 + **12**: NotificationReadModel idempotente + repo, WebSocketConfig + JwtHandshakeInterceptor (claim `uid`), NotificationController REST. **Fase 12**: índice de seguidores local (`FollowerIndexReadModel` colección `followers` + repo), colas `follows.followed`+`follows.unfollowed` y `reviews.created` (las 3 con consumer), `ReviewCreatedEvent` (copia local) + `ReviewEventConsumer`, `FollowEventConsumer` (followed+unfollowed), `NotificationService` (`handleFollowed/handleUnfollowed` mantienen el índice; `handleReviewCreated` hace **fanout** a seguidores con notificación `REVIEW` idempotente `followerId:REVIEW:reviewId` + push STOMP).
 - `gateway/` — Fase 1 + 6.1 + 6.3 + 7.1 + 9: JWT filter, 7 rutas (añade `/feed/**` → social-service y `/notifications/**` → notification-service), headers strip-then-assert, SecurityConfig con GETs públicos. (WS al gateway NO soportado por SCG WebMVC.)
 - `infrastructure/docker-compose.yml` — 12 servicios (incluye `redis:7-alpine` con healthcheck; `identity-service` con `SPRING_REDIS_HOST: redis` y `depends_on: redis`).
-- `docs/GUIDE-BACKEND.md` — guía de backend; sección **1.10** documenta el rate-limiting con Redis + Bucket4j (solución final correcta, verificación y procedimiento de prueba con JSON desde archivo + reset de bucket).
+- `docs/GUIDE-BACKEND.md` — guía de backend; sección **1.10** documenta el rate-limiting con Redis + Bucket4j (solución final correcta, verificación y procedimiento de prueba con JSON desde archivo + reset de bucket), incluido **`X-Forwarded-For`** para IP real.
 
 ### Frontend (Fases 8 + i18n + 10 + 11 completadas)
 - `frontend/` — Angular 21.2.21, login/registro/OAuth2/guardas/interceptor JWT + home con profile.
@@ -184,5 +183,6 @@ Tras cerrar la **Fase 12 (notificación de reseñas con fanout a seguidores)**:
 
 ### Docs
 - `docs/GUIDE.md` — Bloques 0-13, Apéndices A-E (C: operación — despliegue, logs, depuración; E: WebSocket STOMP).
-- `docs/ROADMAP.md` — Fases 1-12 documentadas (8.1-8.6 + i18n + Fase 9.1-9.4 + Fase 10 + Fase 11 + Fase 12).
+- `docs/GUIDE-BACKEND.md` — guía de backend; sección **1.10** documenta el rate-limiting (Redis + Bucket4j + `X-Forwarded-For`) con verificación y procedimiento de prueba.
+- `docs/ROADMAP.md` — Fases 1-12 documentadas (8.1-8.6 + i18n + Fase 9.1-9.4 + Fase 10 + Fase 11 + Fase 12 + fix rate-limit).
 - `docs/SESSION_STATE.md` — Este archivo.
