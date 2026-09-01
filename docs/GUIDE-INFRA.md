@@ -1,0 +1,800 @@
+# BookSocial — Guía de Desarrollo (Infraestructura)
+
+Guía de la **infraestructura** de BookSocial: entorno local con Docker Compose, contenerización de los microservicios, y despliegue cloud con Terraform en Google Cloud Platform (GCP).
+
+> El contenido relativo a Docker (compose, Dockerfiles, CI) se ha extraído de `GUIDE.md` y se amplía aquí con el despliegue cloud. Para el backend Java ver [GUIDE-BACKEND.md](./GUIDE-BACKEND.md); para el frontend Angular ver [GUIDE-FRONTEND.md](./GUIDE-FRONTEND.md).
+
+---
+
+## Cómo usar esta guía
+
+La guía está organizada en **bloques cronológicos**: cada bloque se construye sobre el anterior, como un curso progresivo.
+
+- **Bloque 0** — Infraestructura local con Docker Compose (bases de datos y broker).
+- **Bloque 1** — Contenerización: Dockerfiles multi-stage, `.dockerignore` y CI.
+- **Bloque 2** — Operación local: arranque, logs, redespliegue y herramientas.
+- **Bloque 3** — Despliegue cloud con Terraform (GCP): Cloud SQL, Artifact Registry, Cloud Run, IAM y verificación end-to-end.
+
+**Nivel de detalle**: se incluye el código real del proyecto (compose, Dockerfiles, `.tf`) con explicaciones de _por qué_ se toma cada decisión y una sección final de errores típicos con su solución (son los que se encontraron al construir la fase).
+
+---
+
+## Tabla de contenidos
+
+| Bloque                                                                                     | Tema                                              | Fase       |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------- | ---------- |
+| [0. Infraestructura local Docker](#bloque-0--infraestructura-local-docker-compose)         | Compose, healthchecks, volúmenes, puertos         | —          |
+| [1. Contenerización y CI](#bloque-1--contenerización-y-ci)                                 | Dockerfiles, `.dockerignore`, compose ampliado, CI | Fase 1    |
+| [2. Operación local](#bloque-2--operación-local)                                            | Comandos útiles, logs, redespliegue               | Referencia |
+| [3. Deploy cloud con Terraform](#bloque-3--despliegue-cloud-con-terraform-fase-13)         | GCP, Cloud SQL, Registry, Cloud Run, IAM          | Fase 13    |
+| [A. Errores típicos del Bloque 3](#apéndice-a--errores-típicos-del-despliegue-cloud)      | Troubleshooting con solución directa              | Referencia |
+
+---
+
+# Bloque 0 — Infraestructura local (Docker Compose)
+
+## 0.1 — Estructura de carpetas
+
+El monorepo separa el **código de negocio** de la **infraestructura**:
+
+```
+  frontend/
+  gateway/
+  identity-service/
+  user-service/
+  book-service/
+  review-service/
+  shelf-service/
+  social-service/
+  notification-service/
+  infrastructure/
+    docker-compose.yml
+    terraform/
+  docs/
+```
+
+- Cada microservicio tiene **aislamiento total**: su propio código, `pom.xml`, `.env` y `Dockerfile`.
+- `infrastructure/` contiene todo aquello que pertenece a la infraestructura y no al código de negocio: **Docker Compose**, **Terraform** y configuraciones relacionadas.
+- `docs/` contiene el roadmap y el estado de cada sesión.
+
+El `.gitignore` raíz tiene un bloque de infraestructura:
+
+```gitignore
+# --- Infraestructura ---
+*.tfstate
+*.tfstate.backup
+*.tfvars
+.terraform/
+```
+
+Reglas críticas:
+
+- `*.tfvars` y `*.tfstate` **nunca se commitean**: contienen secretos (`db_password`, `jwt_secret`) y el estado de Terraform (también sensible). El `.terraform.lock.hcl` **sí** se commitea (fija las versiones de los providers para que todo el equipo use las mismas).
+- La política del proyecto es que **ningún dato sensible viva en Git**: los `.env` de cada módulo se cargan en runtime y nunca entran en las imágenes Docker.
+
+## 0.2 — `infrastructure/docker-compose.yml`
+
+El compose inicial define únicamente la infraestructura necesaria en local:
+
+- **PostgreSQL 16** (datos relacionales — command side del CQRS).
+- **MongoDB 8** (lecturas CQRS — query side).
+- **RabbitMQ 4** (broker de eventos asíncronos).
+- **Redis 7** (rate-limiting distribuido, añadido en la Fase 11).
+
+```yml
+name: booksocial
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: booksocial-postgres
+    environment:
+      POSTGRES_USER: booksocial
+      POSTGRES_PASSWORD: booksocial
+      POSTGRES_DB: booksocial
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booksocial"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongodb:
+    image: mongo:8.0
+    container_name: booksocial-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: booksocial
+      MONGO_INITDB_ROOT_PASSWORD: booksocial
+      MONGO_INITDB_DATABASE: booksocial
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: booksocial-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: booksocial-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  mongodb-data:
+  rabbitmq-data:
+```
+
+> Si no se definen, el usuario y contraseña por defecto de RabbitMQ son `guest / guest` (consola web: [http://localhost:15672](http://localhost:15672)).
+
+### Conceptos clave
+
+**Volúmenes**: permiten que los datos sobrevivan al ciclo de vida del contenedor. PostgreSQL se elimina y se recrea, pero los datos persisten en `postgres-data`. Sin volumen, al eliminar el contenedor se pierde la base de datos.
+
+**Healthchecks**: no comprueban que el contenedor arrancó, sino que el **servicio interno está listo** (PostgreSQL puede estar arrancado mientras inicializa). Se consulta el estado con `docker compose ps` → `healthy | unhealthy | starting`. Este mecanismo se reutiliza con `depends_on: condition: service_healthy` para que los microservicios esperen a sus dependencias.
+
+**Puertos publicados**: se publican del contenedor al host (`"5432:5432"`). Mientras los microservicios se ejecutan en la máquina host se conectan a `localhost:5432`, `localhost:27017`, `localhost:5672` y `localhost:6379`.
+
+---
+
+# Bloque 1 — Contenerización y CI
+
+Hasta el Bloque 0 los servicios se ejecutan directamente en el host. Este bloque los contenedoriza y amplía el pipeline de CI para verificar todo en un entorno aislado: transición de desarrollo local a despliegue consistente.
+
+## 1.1 — Dockerfiles multi-stage
+
+Cada servicio tiene su propio `Dockerfile` con **dos etapas**. El contexto de build es **la raíz del monorepo** (porque necesita el `pom.xml` padre y el wrapper `mvnw`):
+
+```dockerfile
+# Stage 1: build
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /workspace
+COPY . .
+RUN chmod +x mvnw && ./mvnw -B -pl identity-service -am package -DskipTests
+
+# Stage 2: runtime
+FROM eclipse-temurin:21-jre
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /workspace/identity-service/target/identity-service-0.1.0-SNAPSHOT.jar app.jar
+EXPOSE 8081
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+- **Stage de build**: una imagen de Maven compila solo ese módulo. `-pl <módulo>` ejecuta solo ese proyecto; `-am` (also make) compila también los proyectos de los que depende (el parent `booksocial-parent`); `-DskipTests` acelera el build (los tests ya corren en CI).
+- **Stage de runtime**: parte de una imagen Java mínima (`21-jre`, sin Maven, sin código fuente) y solo copia el JAR → imagen **pequeña**. Se instala `curl` porque el healthcheck de Docker Compose lo usa.
+- El nombre del JAR no es casual: Maven lo genera como `<artifactId>-<version>.jar`. Con `version = 0.1.0-SNAPSHOT` en el parent POM, cada módulo produce `X-0.1.0-SNAPSHOT.jar`.
+
+El gateway es idéntico, cambiando el módulo (`-pl gateway`) y el JAR copiado (`gateway-0.1.0-SNAPSHOT.jar`).
+
+## 1.2 — `.dockerignore` raíz
+
+```gitignore
+**/target/
+**/node_modules/
+.angular/
+.git/
+.idea/
+*.iml
+.vscode/
+**/.env
+**/.env.*
+frontend/
+infrastructure/
+docs/
+.github/
+```
+
+Protege dos cosas: **tamaño** del contexto de build (no entran `target/`, `node_modules/`, `.git/`) y, sobre todo, **secretos** — los `.env` de los módulos **nunca entran en la imagen**. Los secretos se inyectan en runtime.
+
+## 1.3 — `docker-compose.yml` ampliado
+
+A los servicios de infraestructura se añaden las aplicaciones (ejemplo identity-service + gateway):
+
+```yaml
+identity-service:
+  build:
+    context: ..
+    dockerfile: identity-service/Dockerfile
+  container_name: booksocial-identity
+  ports:
+    - "8081:8081"
+  env_file:
+    - ../identity-service/.env   # secretos desde el host, fuera de la imagen
+  environment:
+    SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/booksocial
+    SPRING_REDIS_HOST: redis
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 30s
+
+gateway:
+  build:
+    context: ..
+    dockerfile: gateway/Dockerfile
+  container_name: booksocial-gateway
+  ports:
+    - "8080:8080"
+  env_file:
+    - ../gateway/.env
+  environment:
+    IDENTITY_SERVICE_URI: http://identity-service:8081
+  depends_on:
+    identity-service:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+```
+
+Tres patrones importantes:
+
+- **`build.context: ..`**: el contexto es la raíz del monorepo (necesita el `pom.xml` padre y el wrapper); el `dockerfile` se indica por ruta relativa.
+- **`env_file` + `environment`**: los secretos (`APP_JWT_SECRET`, `GOOGLE_CLIENT_*`) llegan del `.env` del módulo; la **configuración no sensible** (URLs de otros contenedores) se sobreescribe con `environment`. Así el mismo JAR funciona dentro de la red Docker usando los nombres de contenedor (`postgres`, `redis`, `identity-service`) como host.
+- **`depends_on ... service_healthy`**: el gateway no arranca hasta que identity-service responde a `/actuator/health`, y este no arranca hasta que Postgres y Redis están sanos.
+
+Arranque completo con un solo comando:
+
+```powershell
+docker compose -f infrastructure/docker-compose.yml up -d --build
+```
+
+## 1.4 — CI ampliado (`ci.yml`)
+
+Dos jobs en paralelo:
+
+**Job `build` (backend)** — con un servicio PostgreSQL de soporte (cubre la dependencia de los tests de identity) y los secrets inyectados como variables de entorno:
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      APP_JWT_SECRET: ${{ secrets.APP_JWT_SECRET }}
+      GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+      GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: booksocial
+          POSTGRES_USER: booksocial
+          POSTGRES_PASSWORD: booksocial
+        ports:
+          - 5432:5432
+```
+
+> Nota CI: el test de contexto del identity-service fallaba en CI porque `RateLimitService` conecta a Redis de forma **eager** y CI no tiene Redis. Se mockea con `@MockitoBean RateLimitService rateLimitService;` en `IdentityServiceApplicationTests`.
+
+**Job `frontend`** — compila el Angular con Node 24:
+
+```yaml
+frontend:
+  runs-on: ubuntu-latest
+  defaults:
+    run:
+      working-directory: frontend
+  steps:
+    - uses: actions/checkout@v5
+    - uses: actions/setup-node@v5
+      with:
+        node-version: "24"
+        cache: npm
+        cache-dependency-path: frontend/package-lock.json
+    - run: npm ci
+    - run: npm run build
+```
+
+---
+
+# Bloque 2 — Operación local
+
+Todos los comandos se ejecutan desde la **raíz del monorepo** y usan el compose de `infrastructure/docker-compose.yml`.
+
+## 2.1 — Arrancar, parar y estado
+
+```powershell
+docker compose -f infrastructure/docker-compose.yml up -d          # arrancar todo (respeta depends_on + healthchecks)
+docker compose -f infrastructure/docker-compose.yml down           # parar todo (conserva volúmenes)
+docker compose -f infrastructure/docker-compose.yml ps             # estado + health de cada contenedor
+```
+
+## 2.2 — Redesplegar un servicio tras cambiar su código
+
+```powershell
+docker compose -f infrastructure/docker-compose.yml build book-service   # reconstruye la imagen
+docker compose -f infrastructure/docker-compose.yml up -d book-service   # recrea el contenedor con la imagen nueva
+```
+
+- El build es **incremental por capas**: al cambiar código fuente, Docker invalida la capa `COPY` y recompila solo lo necesario.
+- Si sospechas que el contenedor sirve **código antiguo** (un bug corregido sigue apareciendo), fuerza rebuild completo: `docker compose build --no-cache <servicio>`.
+
+## 2.3 — Logs
+
+```powershell
+docker logs booksocial-book --tail 100          # últimas 100 líneas
+docker logs booksocial-book -f                  # seguir en vivo
+docker logs booksocial-book --since 10m         # últimos 10 minutos
+docker logs booksocial-gateway 2>&1 | Select-String ERROR   # filtrar errores
+```
+
+## 2.4 — Herramientas de inspección
+
+```powershell
+# RabbitMQ: colas, exchanges, mensajes → http://localhost:15672 (guest / guest)
+
+# Mongo: read models
+docker exec booksocial-mongodb mongosh -u booksocial -p booksocial --authenticationDatabase admin booksocial --eval "db.shelves.find().limit(3)"
+
+# Postgres: tablas de comandos
+docker exec booksocial-postgres psql -U booksocial -d booksocial -c "SELECT isbn, title, author_id FROM books LIMIT 5;"
+
+# Redis: claves del rate-limiting (bucket por IP)
+docker exec booksocial-redis redis-cli keys "*"
+docker exec booksocial-redis redis-cli del "203.0.113.7"   # resetear un bucket de rate-limit
+```
+
+---
+
+# Bloque 3 — Despliegue cloud con Terraform (Fase 13)
+
+Despliegue del backend en **Google Cloud Platform** con **Terraform**, usando los servicios con **nivel gratis** de GCP: **Cloud SQL** (Postgres free tier), **Artifact Registry**, **Cloud Run** y **Cloud Shell/IAM**. El objetivo es probar el **camino 1** (Cloud Run) sobre un **alcance A** (identity + gateway + Redis sidecar; user/book quedan en cola porque necesitan Mongo y RabbitMQ).
+
+> El despliegue se hizo como **aprendizaje paso a paso**: se generan recursos reales (nivel free tier), se validan y —cuando aplica— se importan a Terraform las piezas que el plan no llegó a gestionar.
+
+## 3.0 — Preparación y conceptos Terraform
+
+### Estructura de carpetas
+
+```
+infrastructure/terraform/environments/dev/
+  provider.tf        # terraform block + provider google
+  variables.tf       # declaración de variables
+  main.tf            # recursos (Cloud SQL, registry, Cloud Run, IAM)
+  outputs.tf         # salidas (project_id, gateway_url, identity_url)
+  terraform.tfvars   # valores reales + secretos (NO se commitea)
+  .terraform.lock.hcl  # SÍ se commitea (fija versiones de providers)
+```
+
+Los ficheros `.tf` usan la sintaxis HashiCorp Configuration Language (HCL). El ciclo de vida básico:
+
+```powershell
+terraform init     # descarga el provider y prepara el módulo
+terraform plan     # calcula el plan (sin aplicar): ler `+` crear, `-` eliminar, `~` cambiar
+terraform apply    # aplica el plan (pide confirmación o `-auto-approve`)
+terraform output   # muestra las salidas definidas en outputs.tf
+terraform import <address> <id>  # adopta un recurso ya existente en el estado
+terraform untaint <address>      # quita la marca "tainted" tras un apply fallido
+```
+
+### Provisionar el acceso a GCP
+
+1. Crear el proyecto y vincular billing (consola GCP).
+2. Instalar Google Cloud SDK y autenticarse con tu cuenta:
+
+```powershell
+gcloud auth login --no-browser        # --no-browser si el puerto local está ocupado
+gcloud config set project booksocial-infra
+gcloud auth application-default login # genera el ADC que usará Terraform (application_default_credentials.json)
+```
+
+3. Habilitar las APIs necesarias:
+
+```powershell
+gcloud services enable run.googleapis.com sqladmin.googleapis.com artifactregistry.googleapis.com compute.googleapis.com iam.googleapis.com cloudresourcemanager.googleapis.com
+```
+
+### `provider.tf`
+
+```hcl
+terraform {
+  required_version = ">= 1.9"
+
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 6.0"
+    }
+  }
+}
+
+provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+```
+
+- `required_version` y `required_providers`: fijan versiones reproducibles.
+- El provider usa la credencial ADC (Application Default Credentials) generada con `gcloud auth application-default login`.
+
+### `variables.tf`
+
+```hcl
+variable "project_id" {
+  description = "ID del proyecto GCP"
+  type        = string
+}
+
+variable "region" {
+  description = "Región donde se despliega"
+  type        = string
+  default     = "europe-west1"
+}
+
+variable "db_password" {
+  description = "Contraseña del usuario de la BD (la pasamos con -var o tfvars)"
+  type        = string
+  sensitive   = true
+}
+
+variable "jwt_secret" {
+  description = "APP_JWT_SECRET compartido por los servicios"
+  type        = string
+  sensitive   = true
+}
+
+variable "db_host" {
+  description = "IP pública del Cloud SQL"
+  type        = string
+}
+
+variable "frontend_url" {
+  description = "URL a la que apunta FRONTEND_URL (de momento localhost, luego el de Cloud Run)"
+  type        = string
+  default     = "http://localhost:4200"
+}
+```
+
+> `sensitive = true` evita que el valor se muestre en el plan/outputs. Los valores se pasan con `terraform.tfvars` (ignorado por Git).
+
+### `terraform.tfvars` (no se commitea)
+
+```hcl
+project_id = "booksocial-infra"
+region     = "us-central1"
+db_host    = "34.59.171.207"
+
+db_password = "TU_CONTRASEÑA_BD"
+jwt_secret  = "TU_SECRETO_JWT_BASE64URL"
+```
+
+> **Ojo**: `APP_JWT_SECRET` debe ser una cadena **base64url sin espacios**. Si contiene un espacio, `JwtService` lanza `Illegal base64 character: ' '` al arrancar el contenedor.
+
+## 3.1 — Cloud SQL Postgres (free tier)
+
+El tier `db-f1-micro` es el más barato de Cloud SQL (casi gratuito para desarrollo). Definición en `main.tf`:
+
+```hcl
+resource "google_sql_database_instance" "postgres" {
+  name             = "booksocial-db"
+  database_version = "POSTGRES_16"
+  region           = var.region
+
+  settings {
+    tier              = "db-f1-micro"
+    disk_size         = 20
+    disk_type         = "PD_SSD"
+    availability_type = "ZONAL"
+
+    ip_configuration {
+      authorized_networks {
+        name  = "public-access"
+        value = "0.0.0.0/0"
+      }
+      # Para pruebas de aprendizaje. NO usar en producción.
+    }
+
+    database_flags {
+      name  = "cloudsql.iam_authentication"
+      value = "off"
+    }
+  }
+
+  deletion_protection = false
+}
+
+resource "google_sql_database" "booksocial" {
+  name     = "booksocial"
+  instance = google_sql_database_instance.postgres.name
+}
+
+resource "google_sql_user" "booksocial_user" {
+  name     = "booksocial"
+  instance = google_sql_database_instance.postgres.name
+  password = var.db_password
+}
+```
+
+Conceptos:
+
+- **Dependencia explícita**: `databases` y `users` referencian `google_sql_database_instance.postgres.name` → Terraform crea la instancia primero.
+- **`authorized_networks 0.0.0.0/0`**: permite conexiones desde cualquier IP (Cloud Run accede por Internet). Es **solo para aprendizaje** — en producción se usaría el Cloud SQL Auth Proxy / connector.
+- **`deletion_protection = false`**: permite destruir la instancia con `terraform destroy` (en producción siempre `true`).
+- **Truco de la contraseña**: el `google_sql_user` recoge la contraseña del `tfvars`. Si aplicas una vez y luego cambias la contraseña, **Terraform la actualizará in-place** (el estado no conoce la contraseña real).
+
+> **Lección operativa**: el primer `apply` de Cloud SQL quedó colgado esperando el polling (la operación estaba DONE en GCP). Se resolvió **importando** los recursos existentes: `terraform import google_sql_database_instance.postgres booksocial-infra:us-central1:booksocial-db` (y lo mismo para la BD y el usuario). Tras el import, `terraform plan` mostró `No changes`.
+
+## 3.2 — Artifact Registry + imágenes Docker
+
+### Repositorio de imágenes
+
+```hcl
+resource "google_artifact_registry_repository" "apps" {
+  location      = var.region
+  repository_id = "apps"
+  description   = "Imágenes de los servicios de BookSocial"
+  format        = "DOCKER"
+}
+```
+
+### Build y push
+
+Autenticación de Docker contra el registry y build de cada servicio **desde la raíz del monorepo** (mismo contexto que usa el Dockerfile):
+
+```powershell
+gcloud auth configure-docker us-central1-docker.pkg.dev
+
+docker build -f identity-service/Dockerfile -t us-central1-docker.pkg.dev/booksocial-infra/apps/identity:latest .
+docker build -f gateway/Dockerfile      -t us-central1-docker.pkg.dev/booksocial-infra/apps/gateway:latest .
+docker push us-central1-docker.pkg.dev/booksocial-infra/apps/identity:latest
+docker push us-central1-docker.pkg.dev/booksocial-infra/apps/gateway:latest
+```
+
+La convención de tags es `us-central1-docker.pkg.dev/<project>/apps/<servicio>:latest` y Cloud Run referencia exactamente esa imagen.
+
+## 3.3 — Cloud Run: identity con Redis sidecar
+
+Cloud Run con **múltiples contenedores** permite acompañar la app de un **sidecar** (aquí, Redis para el rate-limiting). Regla de oro: **exactamente un contenedor con puerto expuesto**.
+
+```hcl
+resource "google_cloud_run_v2_service" "identity" {
+  name = "identity"
+  location = var.region
+  deletion_protection = false   # el default de Cloud Run v2 es true: sin esto, destroy falla
+
+  template {
+    scaling {
+      min_instance_count = 0     # escala a cero (ahorro)
+    }
+
+    containers {
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/identity:latest"
+
+      ports {
+        container_port = 8080
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      env {
+        name  = "SPRING_DATASOURCE_URL"
+        value = "jdbc:postgresql://${var.db_host}:5432/booksocial"
+      }
+      env {
+        name  = "SPRING_REDIS_HOST"
+        value = "localhost"
+      }
+      env {
+        name  = "APP_JWT_SECRET"
+        value = var.jwt_secret
+      }
+      env {
+        name  = "SPRING_DATASOURCE_PASSWORD"
+        value = var.db_password
+      }
+      env {
+        name  = "FRONTEND_URL"
+        value = var.frontend_url
+      }
+      env {
+        name  = "SERVER_PORT"
+        value = "8080"
+      }
+    }
+
+    containers {
+      image   = "redis:7-alpine"
+      command = ["redis-server"]
+    }
+  }
+}
+```
+
+Cuatro ajustes que son fruto de errores reales (ver Apéndice A):
+
+1. **`SPRING_DATASOURCE_PASSWORD`**: la app trae por defecto `password: booksocial`, pero el usuario de Cloud SQL tiene la de `var.db_password` → sin esto, `FATAL: password authentication failed`.
+2. **`SERVER_PORT=8080`**: `application.yml` fija `server.port: 8081`, pero Cloud Run sondea el puerto `$PORT` (8080). Si el contenedor escucha en otro puerto, el **startup probe falla** y Cloud Run mata la instancia.
+3. **`command = ["redis-server"]`** en el sidecar: la imagen `redis:7-alpine` ejecuta un entrypoint script que usa `su-exec` para bajar a usuario `redis`; en el sandbox de Cloud Run eso falla con `redis-server: I/O error`. Lanzando el binario directamente, funciona.
+4. **`deletion_protection = false`**: obligatorio si quieres poder hacer `terraform destroy`.
+
+## 3.4 — Cloud Run: gateway + IAM público
+
+```hcl
+resource "google_cloud_run_v2_service" "gateway" {
+  name = "gateway"
+  location = var.region
+  deletion_protection = false
+
+  template {
+    scaling {
+      min_instance_count = 0
+    }
+
+    containers {
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/gateway:latest"
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      env {
+        name  = "APP_JWT_SECRET"
+        value = var.jwt_secret
+      }
+      env {
+        name  = "IDENTITY_SERVICE_URI"
+        value = google_cloud_run_v2_service.identity.uri
+      }
+      env {
+        name  = "USER_SERVICE_URI"
+        value = "http://user-service:8082"   # placeholder hasta desplegar user/book
+      }
+      env {
+        name  = "BOOK_SERVICE_URI"
+        value = "http://book-service:8083"   # placeholder hasta desplegar book
+      }
+    }
+  }
+}
+```
+
+- **Referencia entre recursos**: el gateway recibe la URL de identity como `google_cloud_run_v2_service.identity.uri` (atributo que Terraform rellena con la URL `xxx.a.run.app` generada al crear el servicio).
+- **Sin login**: por defecto Cloud Run exige token IAM. Exponer `allUsers` con rol `roles/run.invoker` habilita el acceso HTTP público:
+
+```hcl
+resource "google_cloud_run_v2_service_iam_member" "public" {
+  for_each = {
+    identity = google_cloud_run_v2_service.identity.name
+    gateway  = google_cloud_run_v2_service.gateway.name
+  }
+  project  = var.project_id
+  location = var.region
+  name     = each.value
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+```
+
+- **Salidas** en `outputs.tf`:
+
+```hcl
+output "gateway_url" {
+  value = google_cloud_run_v2_service.gateway.uri
+}
+
+output "identity_url" {
+  value = google_cloud_run_v2_service.identity.uri
+}
+```
+
+### Quirk conocido: "Provider produced inconsistent final plan"
+
+Al crear **gateway e identity en el mismo apply**, `IDENTITY_SERVICE_URI` se referencia a un atributo aún desconocido durante el plan → el provider lo planifica como `""` y al aplicar, con el valor real, el plan "no correlaciona". **Solución operativa**: reaplicar. Como identity ya queda creado en el primer apply, en el segundo su `uri` ya está en el estado y todo correlaciona.
+
+## 3.5 — Despliegue y verificación end-to-end
+
+```powershell
+terraform init
+terraform plan
+terraform apply
+terraform output gateway_url identity_url
+```
+
+Resultado esperado (Fase 13, alcance A):
+
+| Servicio   | URL                                    |
+| ---------- | -------------------------------------- |
+| gateway    | `https://gateway-h6b4lrpgmq-uc.a.run.app` |
+| identity   | `https://identity-h6b4lrpgmq-uc.a.run.app` |
+
+Estado de los servicios:
+
+```powershell
+gcloud run services list --region us-central1 --format="table(SERVICE,URL,STATUS)"
+```
+
+### Health y flujo de auth
+
+```powershell
+# Health de identity (raíz, público)
+(Invoke-RestMethod -Uri "https://identity-h6b4lrpgmq-uc.a.run.app/actuator/health").Content
+```
+
+> El health raíz reporta `status: DOWN` porque el **indicador de SMTP falla** (no hay servidor de correo configurado). DB y Redis están UP; es inocuo para desarrollo. Se puede ocultar con `management.health.mail.enabled: false`.
+
+Registro y login (¡importante el JSON desde `Invoke-RestMethod`, no `curl.exe`! — ver Apéndice A):
+
+```powershell
+$r = Invoke-RestMethod -Method Post -Uri "https://identity-h6b4lrpgmq-uc.a.run.app/auth/register" -ContentType "application/json" -Body '{"email":"test3@test.com","password":"Test1234!","firstName":"Ana","lastName":"Lopez","birthDate":"1992-05-14"}'
+$r | ConvertTo-Json -Depth 5
+
+$r = Invoke-RestMethod -Method Post -Uri "https://gateway-h6b4lrpgmq-uc.a.run.app/auth/login" -ContentType "application/json" -Body '{"email":"admin@booksocial.com","password":"admin12345"}'
+$r | ConvertTo-Json -Depth 5
+```
+
+Respuesta esperada: `{ accessToken, refreshToken, expiresIn: 900, tokenType: "Bearer" }`.
+
+Endpoint protegido a través del gateway (prueba el filtro JWT + la inyección de headers `X-User-*`):
+
+```powershell
+$token = "TU_ACCESS_TOKEN"
+Invoke-WebRequest -Uri "https://gateway-h6b4lrpgmq-uc.a.run.app/users/me" -Headers @{Authorization="Bearer $token"} | Select-Object -ExpandProperty Content
+```
+
+## 3.6 — Qué queda fuera del alcance A
+
+- **user-service y book-service**: necesitan **MongoDB** y **RabbitMQ**. Las imágenes ya están en el registry, pero sin servicios de datos no son desplegables. Opciones gratuitas: MongoDB Atlas M0 + CloudAMQP (plan lemur).
+- **OAuth2 Google**: el container de identity necesita `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` reales + `redirect_uri` HTTPS (`https://<identity>.a.run.app/login/oauth2/code/google`). Sin ellos, el botón "Google" genera una URL con el placeholder `${GOOGLE_CLIENT_ID}`.
+- **Frontend**: Bloque 4 (Cloud Run para el SPA, o bien Vercel/Netlify como alternativa gratuita).
+- **Backend state cloud**: el `.tfstate` vive en local (`dev`); para trabajo en equipo, `terraform backend "gcs"` con un bucket.
+
+---
+
+# Apéndice A — Errores típicos del despliegue cloud
+
+| Síntoma | Causa raíz | Solución |
+| --- | --- | --- |
+| `Error: Provider produced inconsistent final plan` al aplicar gateway | `IDENTITY_SERVICE_URI` referencia `identity.uri`, desconocido en el mismo apply | Reaplicar: identity ya está en el estado y el valor correlaciona |
+| `terminated: Application failed to start: Waited too long for connection to be ready` | La app espera a una dependencia (Red/BD) y el startup probe expira | Revisar logs de la revisión: `gcloud logging read "resource.type=cloud_run_revision AND resource.labels.revision_name=<rev>"` |
+| `FATAL: password authentication failed for user "booksocial"` | La app usa su password por defecto; el Cloud SQL user tiene `var.db_password` | Añadir `SPRING_DATASOURCE_PASSWORD` al contenedor |
+| `Tomcat started on port 8081` pero el probe falla | `server.port` ≠ `$PORT` de Cloud Run | `SERVER_PORT=8080` (o `server.port=${PORT}`) |
+| `/usr/local/bin/docker-entrypoint.sh: redis-server: I/O error` | El entrypoint de `redis:7-alpine` usa `su-exec` (setuid), no permitido en el sandbox | `command = ["redis-server"]` en el sidecar |
+| `Illegal base64 character: ' '` en `JwtService` | El `APP_JWT_SECRET` del tfvars contenía un espacio (o la clave `APP_JWT_SECRET=` de más) | Valor base64url limpio, sin espacios |
+| `443` + "service seems down": `Ready` vacío al describir | La condición de Cloud Run v2 se llama `Active`, no siempre `Ready` | Comprobar con `gcloud run services list` o la URL directamente |
+| 401 `{"error":"unauthorized",...}` al probar `/auth/register` con `curl.exe` en PowerShell | **PowerShell roba las comillas dobles** del JSON (bug de quoting) → body malformado → 400 → error dispatch a `/error` → 401 | Usar `Invoke-RestMethod` con el body en comillas simples (o `curl.exe -d` con `\"` escapadas) |
+| `/actuator/health` → `DOWN` | `MailHealthIndicator` (sin `MAIL_HOST`) hace `testConnection()` y falla | Inocuo en dev; `management.health.mail.enabled: false` |
+| Apply se queda colgado creando Cloud SQL | El polling del provider no detecta operaciones DONE | `terraform import` de los recursos y continuar |
+
+---
+
+*Actualizado al cierre de la Fase 13 — bloque A (identity + gateway + Redis sidecar + Cloud SQL) desplegado y verificado en GCP.*

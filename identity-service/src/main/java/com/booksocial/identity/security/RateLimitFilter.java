@@ -45,7 +45,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             response.getWriter().write("{\"error\":\"too_many_requests\"}");
         }
     }
-    
+
     private String getClientIp(HttpServletRequest request) {
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {

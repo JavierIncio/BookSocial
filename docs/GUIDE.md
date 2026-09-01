@@ -14,6 +14,8 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 
 **Nivel de detalle**: se mantiene el código esencial (entidades, servicios, controladores, configuración) con explicaciones conceptuales. Los patrones de seguridad repetidos en varios servicios se consolidan en el Apéndice A para evitar redundancia.
 
+> **Guías temáticas**: la documentación se ha descentralizado en tres documentos — [GUIDE-BACKEND.md](./GUIDE-BACKEND.md) (servicios Java/Spring), [GUIDE-FRONTEND.md](./GUIDE-FRONTEND.md) (Angular) y [GUIDE-INFRA.md](./GUIDE-INFRA.md) (Docker, Compose, CI y **despliegue cloud con Terraform**, Fase 13). Este archivo conserva el histórico completo de bloques y apéndices.
+
 ---
 
 ## Tabla de contenidos
@@ -33,6 +35,7 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 | [10. i18n](#bloque-10--i18n-internacionalización-angular)                                                       | @angular/localize, en/es/pt            | i18n       |
 | [11. social + notification](#bloque-11--fase-9-feed-social-social-service--notificaciones-notification-service) | Feed por eventos, notificaciones STOMP | Fase 9     |
 | [12. Frontend feed + notificaciones](#bloque-12--fase-10-frontend-del-feed-social--notificaciones-en-tiempo-real) | `/feed` SPA, campana, STOMP, proxy     | Fase 10    |
+| [13. Deploy cloud Terraform](GUIDE-INFRA.md#bloque-3--despliegue-cloud-con-terraform-fase-13)                     | GCP, Cloud SQL, Cloud Run              | Fase 13    |
 | [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable)                                      | JwtService, filtros, config            | Referencia |
 | [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño)                                                    | Resumen arquitectónico                 | Referencia |
 | [C. Operación](#apéndice-c--operación-despliegue-logs-y-depuración)                                             | Despliegue, logs, depuración           | Referencia |
