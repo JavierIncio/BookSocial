@@ -1040,6 +1040,8 @@ Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y 
 
 Restan (siguientes pasos): review/shelf/social/notification en la nube (misma receta que B), OAuth2 Google real (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` + redirect_uri HTTPS), frontend (Bloque 4), estado remoto (`terraform backend "gcs"`).
 
+> **Revisión posterior (límite del `db-f1-micro`)**: al desplegar los 8 servicios en Cloud Run, varios con datosource arrancando en paralelo agotan las conexiones del `db-f1-micro` → `FATAL: remaining connection slots are reserved` (SQLState `53300`). El flag `max_connections` **no es editable** en tier shared-core. Se **revirtió** el terraform para dejar **identity + gateway + book-service** (los que caben de forma fiable), verificado E2E (login 200, `GET /books/...` 200). user-service, review, shelf, social y notification quedan fuera de Cloud Run. Para desplegarlos hace falta subir el tier de Cloud SQL (ver `GUIDE-INFRA.md` 3.7 y Apéndice A).
+
 ---
 
 ## Fase 11 — Reset de contraseña + directorio People + perfil público y follow ❖ Completada

@@ -139,87 +139,10 @@ resource "google_cloud_run_v2_service" "gateway" {
         value = google_cloud_run_v2_service.identity.uri
       }
       env {
-        name  = "USER_SERVICE_URI"
-        value = google_cloud_run_v2_service.user.uri
-      }
-      env {
         name  = "BOOK_SERVICE_URI"
         value = google_cloud_run_v2_service.book.uri
       }
-      # review/shelf/social/notification mantienen las URIs por defecto
-    }
-  }
-}
-
-# ---------- Cloud Run: user-service ----------
-resource "google_cloud_run_v2_service" "user" {
-  name                = "user-service"
-  location            = var.region
-  deletion_protection = false
-
-  template {
-    scaling {
-      min_instance_count = 0
-    }
-
-    containers {
-      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/user:latest"
-
-      ports {
-        container_port = 8080
-      }
-
-      resources {
-        limits = {
-          cpu    = "1"
-          memory = "512Mi"
-        }
-      }
-
-      env {
-        name  = "SPRING_DATASOURCE_URL"
-        value = "jdbc:postgresql://${var.db_host}:5432/booksocial"
-      }
-      env {
-        name  = "SPRING_DATASOURCE_PASSWORD"
-        value = var.db_password
-      }
-      env {
-        name  = "APP_JWT_SECRET"
-        value = var.jwt_secret
-      }
-      env {
-        name  = "SPRING_MONGODB_URI"
-        value = var.mongo_uri
-      }
-      env {
-        name  = "SPRING_RABBITMQ_HOST"
-        value = local.rabbitmq[2]
-      }
-      env {
-        name  = "SPRING_RABBITMQ_PORT"
-        value = local.rabbitmq_port
-      }
-      env {
-        name  = "SPRING_RABBITMQ_USERNAME"
-        value = local.rabbitmq[0]
-      }
-      env {
-        name  = "SPRING_RABBITMQ_PASSWORD"
-        value = local.rabbitmq[1]
-      }
-      env {
-        name  = "SPRING_RABBITMQ_VIRTUAL_HOST"
-        value = local.rabbitmq_vhost
-      }
-      env {
-        name  = "SPRING_RABBITMQ_SSL_ENABLED"
-        value = tostring(local.rabbitmq_tls)
-      }
-      env {
-        name  = "SERVER_PORT"
-        value = "8080"
-      }
+      # user/review/shelf/social/notification: remove o default en capa gratuita
     }
   }
 }
@@ -306,7 +229,6 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
   for_each = {
     identity     = google_cloud_run_v2_service.identity.name
     gateway      = google_cloud_run_v2_service.gateway.name
-    user-service = google_cloud_run_v2_service.user.name
     book-service = google_cloud_run_v2_service.book.name
   }
   project  = var.project_id
