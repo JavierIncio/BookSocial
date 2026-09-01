@@ -1038,9 +1038,9 @@ Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y 
 - [x] E2E nube: auth, perfiles, follow/unfollow, auto-import libros.
 - [x] Actualizar GUIDE-INFRA.md (3.6-3.7 + Apéndice A) + SESSION_STATE + ROADMAP.
 
-Restan (siguientes pasos): review/shelf/social/notification en la nube (misma receta que B), OAuth2 Google real (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` + redirect_uri HTTPS), frontend (Bloque 4), estado remoto (`terraform backend "gcs"`).
+Restan (siguientes pasos): user/review/shelf en la nube (con Postgres → requieren subir el tier de Cloud SQL por el límite de conexiones del `db-f1-micro`), OAuth2 Google real (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` + redirect_uri HTTPS), frontend (Bloque 4), estado remoto (`terraform backend "gcs"`).
 
-> **Revisión posterior (límite del `db-f1-micro`)**: al desplegar los 8 servicios en Cloud Run, varios con datosource arrancando en paralelo agotan las conexiones del `db-f1-micro` → `FATAL: remaining connection slots are reserved` (SQLState `53300`). El flag `max_connections` **no es editable** en tier shared-core. Se **revirtió** el terraform para dejar **identity + gateway + book-service** (los que caben de forma fiable), verificado E2E (login 200, `GET /books/...` 200). user-service, review, shelf, social y notification quedan fuera de Cloud Run. Para desplegarlos hace falta subir el tier de Cloud SQL (ver `GUIDE-INFRA.md` 3.7 y Apéndice A).
+> **Revisión posterior (límite del `db-f1-micro`)**: al desplegar los 8 servicios en Cloud Run, varios con datosource arrancando en paralelo agotan las conexiones del `db-f1-micro` → `FATAL: remaining connection slots are reserved` (SQLState `53300`). El flag `max_connections` **no es editable** en tier shared-core. Se reestructuró el terraform y quedaron **desplegados**: `identity` + `book-service` (con Postgres) **+ `social-service` + `notification-service`** (solo Mongo + Rabbit, no gastan slots Postgres). Verificado E2E: `GET /feed` (200), `GET /notifications` + `/unread-count` (200), consumers Rabbit vivos. **Fuera de Cloud Run** (con datasource, requieren subir tier): `user-service`, `review-service`, `shelf-service` (ver `GUIDE-INFRA.md` 3.7 y Apéndice A).
 
 ---
 

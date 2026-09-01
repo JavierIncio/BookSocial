@@ -142,7 +142,15 @@ resource "google_cloud_run_v2_service" "gateway" {
         name  = "BOOK_SERVICE_URI"
         value = google_cloud_run_v2_service.book.uri
       }
-      # user/review/shelf/social/notification: remove o default en capa gratuita
+      env {
+        name  = "SOCIAL_SERVICE_URI"
+        value = google_cloud_run_v2_service.social.uri
+      }
+      env {
+        name  = "NOTIFICATION_SERVICE_URI"
+        value = google_cloud_run_v2_service.notification.uri
+      }
+      # user/review/shelf: fuera de Cloud Run (limite de conexiones db-f1-micro)
     }
   }
 }
@@ -224,12 +232,144 @@ resource "google_cloud_run_v2_service" "book" {
   }
 }
 
+# ---------- Cloud Run: social-service (solo Mongo + Rabbit, sin Postgres) ----------
+resource "google_cloud_run_v2_service" "social" {
+  name                = "social-service"
+  location            = var.region
+  deletion_protection = false
+
+  template {
+    scaling {
+      min_instance_count = 0
+    }
+
+    containers {
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/social:latest"
+
+      ports {
+        container_port = 8080
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      env {
+        name  = "APP_JWT_SECRET"
+        value = var.jwt_secret
+      }
+      env {
+        name  = "SPRING_MONGODB_URI"
+        value = var.mongo_uri
+      }
+      env {
+        name  = "SPRING_RABBITMQ_HOST"
+        value = local.rabbitmq[2]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_PORT"
+        value = local.rabbitmq_port
+      }
+      env {
+        name  = "SPRING_RABBITMQ_USERNAME"
+        value = local.rabbitmq[0]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_PASSWORD"
+        value = local.rabbitmq[1]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_VIRTUAL_HOST"
+        value = local.rabbitmq_vhost
+      }
+      env {
+        name  = "SPRING_RABBITMQ_SSL_ENABLED"
+        value = tostring(local.rabbitmq_tls)
+      }
+      env {
+        name  = "SERVER_PORT"
+        value = "8080"
+      }
+    }
+  }
+}
+
+# ---------- Cloud Run: notification-service (solo Mongo + Rabbit, sin Postgres) ----------
+resource "google_cloud_run_v2_service" "notification" {
+  name                = "notification-service"
+  location            = var.region
+  deletion_protection = false
+
+  template {
+    scaling {
+      min_instance_count = 0
+    }
+
+    containers {
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/notification:latest"
+
+      ports {
+        container_port = 8080
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      env {
+        name  = "APP_JWT_SECRET"
+        value = var.jwt_secret
+      }
+      env {
+        name  = "SPRING_MONGODB_URI"
+        value = var.mongo_uri
+      }
+      env {
+        name  = "SPRING_RABBITMQ_HOST"
+        value = local.rabbitmq[2]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_PORT"
+        value = local.rabbitmq_port
+      }
+      env {
+        name  = "SPRING_RABBITMQ_USERNAME"
+        value = local.rabbitmq[0]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_PASSWORD"
+        value = local.rabbitmq[1]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_VIRTUAL_HOST"
+        value = local.rabbitmq_vhost
+      }
+      env {
+        name  = "SPRING_RABBITMQ_SSL_ENABLED"
+        value = tostring(local.rabbitmq_tls)
+      }
+      env {
+        name  = "SERVER_PORT"
+        value = "8080"
+      }
+    }
+  }
+}
+
 # ---------- Acceso público (sin login) ----------
 resource "google_cloud_run_v2_service_iam_member" "public" {
   for_each = {
-    identity     = google_cloud_run_v2_service.identity.name
-    gateway      = google_cloud_run_v2_service.gateway.name
-    book-service = google_cloud_run_v2_service.book.name
+    identity             = google_cloud_run_v2_service.identity.name
+    gateway              = google_cloud_run_v2_service.gateway.name
+    book-service         = google_cloud_run_v2_service.book.name
+    social-service       = google_cloud_run_v2_service.social.name
+    notification-service = google_cloud_run_v2_service.notification.name
   }
   project  = var.project_id
   location = var.region

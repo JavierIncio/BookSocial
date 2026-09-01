@@ -136,11 +136,11 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-12 están completadas** (1-1
 
 ### Active
 
-- **Revisión post-Fase 13 (límite de conexiones f1-micro) — revertido a configuración gratuita estable**: se intentó desplegar los 8 servicios en Cloud Run pero el tier `db-f1-micro` de Cloud SQL se satura con >2 servicios Spring+JPA (`FATAL: remaining connection slots are reserved` / SQLState `53300`). Se revirtió el terraform (`main.tf`) para dejar **solo identity + gateway + book-service** desplegados y verificado E2E (login vía gateway 200, `GET /books/...` 200). **user-service, review, shelf, social y notification quedan fuera de Cloud Run** en esta configuración (ver nota en `GUIDE-INFRA.md` 3.7 y Apéndice A). `main.tf` modificado sin commitear.
+- **Revisión post-Fase 13 (límite de conexiones f1-micro) — config gratuita estable**: el tier `db-f1-micro` de Cloud SQL se satura con >2 servicios Spring+JPA (`FATAL: remaining connection slots are reserved` / SQLState `53300`). Se reestructuró el terraform (`main.tf`) y quedaron **desplegados en Cloud Run**: `identity` + `book-service` (Postgres) **+ `social-service` + `notification-service`** (solo Mongo + Rabbit, no gastan slots Postgres). Verificado E2E: `GET /feed` (200, json), `GET /notifications` + `/unread-count` (200, json) vía gateway; consumers Rabbit `consumers=1` para las colas `social-service.*` y `notification-service.*`. **Fuera de Cloud Run** (chocan con límite Postgres): `user-service`, `review-service`, `shelf-service`. `main.tf` modificado sin commitear.
 
 ### Blocked
 
-- **Cloud SQL `db-f1-micro`** solo admite ~2 servicios Postgres simultáneos (53300). Para desplegar más servicio con datasource hay que subir el tier de la instancia (mayor coste). Pendientes de decisión (no bloquean): review/shelf/social/notification en la nube, Google OAuth2 real, y frontend (Bloque 4).
+- **Cloud SQL `db-f1-micro`** solo admite ~2 servicios con Postgres simultáneos (53300). `user-service`, `review-service`, `shelf-service` (tienen datasource) no pueden desplegarse sin subir el tier. Los servicios **solo Mongo + Rabbit** (social, notification) **sí caben** y ya están desplegados. Pendientes de decisión (no bloquean): Google OAuth2 real y frontend (Bloque 4).
 
 ## Next Move
 
@@ -149,7 +149,7 @@ La **Fase 13 (deploy cloud Terraform)** — alcance A (identity + gateway + Redi
 | Opción | Descripción |
 |--------|-------------|
 | **Commit de la Fase 13 alcance B** | Commitear `main.tf` y `variables.tf` modificados + documentación (`GUIDE-INFRA.md` secciones 3.6-3.7 + Apéndice A, `SESSION_STATE.md`, `ROADMAP.md`). |
-| **Resto de servicios en la nube** | review/shelf/social/notification: misma receta que book (Mongo Atlas + CloudAMQP ya activos) + nuevas URIs de interconexión (`REVIEW_SERVICE_URI`, `SHELF_SERVICE_URI`, `SOCIAL_SERVICE_URI`, `NOTIFICATION_SERVICE_URI`) en el gateway. **Ojo**: despliegan Postgres (review, shelf) → chocan con el límite del `db-f1-micro` (solo ~2 servicios con datasource); habría que subir el tier de Cloud SQL. |
+| **Resto de servicios en la nube** | **social + notification ya desplegados** (solo Mongo+Rabbit, no chocan con Postgres). Quedan **user/review/shelf** (tienen datasource → chocan con el límite del `db-f1-micro`); para desplegarlos habría que subir el tier de Cloud SQL o usar la IP/instancia más grande. |
 | **Google OAuth2 real** | Añadir `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` al contenedor Cloud Run de identity (envs) + `redirect_uri` HTTPS del identity (consola Google). El botón Google hoy genera una URL con el placeholder `${GOOGLE_CLIENT_ID}`. |
 | **Frontend (Bloque 4)** | Desplegar el SPA Angular: imagen nginx + Cloud Run, o alternativas gratuitas (Vercel/Netlify). `FRONTEND_URL` ya es una variable de Terraform. |
 | **Nota `packaging` futuro** | El `.tfstate` vive en local; para equipo moverse a `terraform backend "gcs"`. La IP pública `0.0.0.0/0` y los secretos en tfvars local son válidos solo para aprendizaje. |
