@@ -26,7 +26,7 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 | [0. Infraestructura local Docker](#bloque-0--infraestructura-local-docker-compose)         | Compose, healthchecks, volúmenes, puertos         | —          |
 | [1. Contenerización y CI](#bloque-1--contenerización-y-ci)                                 | Dockerfiles, `.dockerignore`, compose ampliado, CI | Fase 1    |
 | [2. Operación local](#bloque-2--operación-local)                                            | Comandos útiles, logs, redespliegue               | Referencia |
-| [3. Deploy cloud con Terraform](#bloque-3--despliegue-cloud-con-terraform-fase-13)         | GCP, Cloud SQL, Registry, Cloud Run, IAM          | Fase 13    |
+| [3. Deploy cloud con Terraform](#bloque-3--despliegue-cloud-con-terraform-fase-13)         | GCP, Cloud SQL, Registry, Cloud Run, IAM, Mongo/Rabbit externos | Fase 13    |
 | [A. Errores típicos del Bloque 3](#apéndice-a--errores-típicos-del-despliegue-cloud)      | Troubleshooting con solución directa              | Referencia |
 
 ---
@@ -370,7 +370,7 @@ docker exec booksocial-redis redis-cli del "203.0.113.7"   # resetear un bucket 
 
 # Bloque 3 — Despliegue cloud con Terraform (Fase 13)
 
-Despliegue del backend en **Google Cloud Platform** con **Terraform**, usando los servicios con **nivel gratis** de GCP: **Cloud SQL** (Postgres free tier), **Artifact Registry**, **Cloud Run** y **Cloud Shell/IAM**. El objetivo es probar el **camino 1** (Cloud Run) sobre un **alcance A** (identity + gateway + Redis sidecar; user/book quedan en cola porque necesitan Mongo y RabbitMQ).
+Despliegue del backend en **Google Cloud Platform** con **Terraform**, usando los servicios con **nivel gratis** de GCP: **Cloud SQL** (Postgres free tier), **Artifact Registry**, **Cloud Run** y **Cloud Shell/IAM**. El objetivo es probar el **camino 1** (Cloud Run). **Alcance A**: identity + gateway + Redis sidecar + Cloud SQL (Fase 13, primera parte). **Alcance B**: user-service + book-service con **MongoDB Atlas M0** y **CloudAMQP** como MongoDB/RabbitMQ externos gratuitos (segunda parte del tutorial).
 
 > El despliegue se hizo como **aprendizaje paso a paso**: se generan recursos reales (nivel free tier), se validan y —cuando aplica— se importan a Terraform las piezas que el plan no llegó a gestionar.
 
@@ -474,6 +474,25 @@ variable "frontend_url" {
   description = "URL a la que apunta FRONTEND_URL (de momento localhost, luego el de Cloud Run)"
   type        = string
   default     = "http://localhost:4200"
+}
+
+variable "mongo_uri" {
+  description = "URI de MongoDB Atlas (con el nombre de la BD en el path)"
+  type        = string
+  sensitive   = true
+}
+
+variable "rabbitmq_uri" {
+  description = "URI de CloudAMQP (amqps://user:pass@host[:port]/[vhost])"
+  type        = string
+  sensitive   = true
+}
+
+variable "google_books_api_key" {
+  description = "API key de Google Books (book-service)"
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 ```
 
@@ -677,11 +696,11 @@ resource "google_cloud_run_v2_service" "gateway" {
       }
       env {
         name  = "USER_SERVICE_URI"
-        value = "http://user-service:8082"   # placeholder hasta desplegar user/book
+        value = google_cloud_run_v2_service.user.uri   # tras desplegar user/book (sección 3.6)
       }
       env {
         name  = "BOOK_SERVICE_URI"
-        value = "http://book-service:8083"   # placeholder hasta desplegar book
+        value = google_cloud_run_v2_service.book.uri   # tras desplegar book
       }
     }
   }
@@ -694,8 +713,10 @@ resource "google_cloud_run_v2_service" "gateway" {
 ```hcl
 resource "google_cloud_run_v2_service_iam_member" "public" {
   for_each = {
-    identity = google_cloud_run_v2_service.identity.name
-    gateway  = google_cloud_run_v2_service.gateway.name
+    identity     = google_cloud_run_v2_service.identity.name
+    gateway      = google_cloud_run_v2_service.gateway.name
+    user-service = google_cloud_run_v2_service.user.name
+    book-service = google_cloud_run_v2_service.book.name
   }
   project  = var.project_id
   location = var.region
@@ -730,12 +751,14 @@ terraform apply
 terraform output gateway_url identity_url
 ```
 
-Resultado esperado (Fase 13, alcance A):
+Resultado esperado (Fase 13, alcances A + B):
 
-| Servicio   | URL                                    |
-| ---------- | -------------------------------------- |
-| gateway    | `https://gateway-h6b4lrpgmq-uc.a.run.app` |
-| identity   | `https://identity-h6b4lrpgmq-uc.a.run.app` |
+| Servicio      | URL                                        |
+| ------------- | ------------------------------------------ |
+| gateway       | `https://gateway-h6b4lrpgmq-uc.a.run.app`  |
+| identity      | `https://identity-h6b4lrpgmq-uc.a.run.app` |
+| user-service  | `https://user-service-h6b4lrpgmq-uc.a.run.app` |
+| book-service  | `https://book-service-h6b4lrpgmq-uc.a.run.app`  |
 
 Estado de los servicios:
 
@@ -771,11 +794,146 @@ $token = "TU_ACCESS_TOKEN"
 Invoke-WebRequest -Uri "https://gateway-h6b4lrpgmq-uc.a.run.app/users/me" -Headers @{Authorization="Bearer $token"} | Select-Object -ExpandProperty Content
 ```
 
-## 3.6 — Qué queda fuera del alcance A
+## 3.6 — user-service + book-service en Cloud Run (Mongo Atlas + CloudAMQP)
 
-- **user-service y book-service**: necesitan **MongoDB** y **RabbitMQ**. Las imágenes ya están en el registry, pero sin servicios de datos no son desplegables. Opciones gratuitas: MongoDB Atlas M0 + CloudAMQP (plan lemur).
+user-service y book-service necesitan **MongoDB** (read models CQRS) y **RabbitMQ** (broker de eventos). Para el despliegue cloud se usan **cuentas gratuitas externas**: **MongoDB Atlas** (cluster **M0**) y **CloudAMQP** (plan **lemur**, RabbitMQ 4). Este es el **alcance B** de la Fase 13.
+
+### 3.6.1 — Cuentas externas gratuitas
+
+| Servicio     | Cómo obtenerlo | Qué ofrece                                        |
+| ------------ | -------------- | ------------------------------------------------- |
+| MongoDB Atlas | https://www.mongodb.com/atlas → free M0 | Sierra M0 free tier, URI `mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/booksocial?retryWrites=true&w=majority&authSource=admin` |
+| CloudAMQP    | https://www.cloudamqp.com → plan lemur | Instancia RabbitMQ, URI `amqps://<user>:<pass>@<host>[:<port>]/[<vhost>]` |
+
+> **Ojo con la URI de Mongo**: el **nombre de la base de datos debe estar en el path** (`/booksocial`). Sin él, Spring lanza `java.lang.IllegalArgumentException: Database name must not be empty` y el contenedor de Cloud Run muere (`Error code 9`). Con Atlas M0 se añade `?authSource=admin` (usuario admin) y `retryWrites=true`.
+
+### 3.6.2 — Descomponer la URI de CloudAMQP en `main.tf` (locals)
+
+El `spring.rabbitmq.*` necesita **6 envs separados** (`HOST`, `PORT`, `USERNAME`, `PASSWORD`, `VIRTUAL_HOST`, `SSL_ENABLED`), pero CloudAMQP da una sola URI. Se descompone con `regex` en un bloque `locals`:
+
+```hcl
+locals {
+  rabbitmq        = regex("^amqps?://([^:]+):([^@]+)@([^/:]+)(?::([0-9]+))?(?:/([^/]*))?$", var.rabbitmq_uri)
+  rabbitmq_tls    = startswith(var.rabbitmq_uri, "amqps://")
+  rabbitmq_port   = coalesce(local.rabbitmq[3], local.rabbitmq_tls ? "5671" : "5672")
+  rabbitmq_vhost  = coalesce(local.rabbitmq[4], "/")
+}
+```
+
+- `rabbitmq[0]` = user, `[1]` = password, `[2]` = host, `[3]` = puerto (**opcional**), `[4]` = vhost (**opcional**).
+- El regex usa `[^/:]+` para el host (no `[^/]+`): si se captura con `[^/]+`, la ruta `/vhost` contamina el host.
+- `coalesce` resuelve los grupos opcionales: si no hay puerto, `amqps` → `5671`, `amqp` → `5672`; si no hay vhost → `/`.
+
+### 3.6.3 — Nuevas variables en `variables.tf`
+
+```hcl
+variable "mongo_uri" {
+  description = "URI de MongoDB Atlas (con el nombre de la BD en el path)"
+  type        = string
+  sensitive   = true
+}
+
+variable "rabbitmq_uri" {
+  description = "URI de CloudAMQP (amqps://user:pass@host[:port]/[vhost])"
+  type        = string
+  sensitive   = true
+}
+
+variable "google_books_api_key" {
+  description = "API key de Google Books (book-service)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+```
+
+Y en el `terraform.tfvars` (no se commitea):
+
+```hcl
+mongo_uri           = "mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/booksocial?retryWrites=true&w=majority&authSource=admin"
+rabbitmq_uri        = "amqps://<user>:<pass>@<host>"
+google_books_api_key = "AIza..."
+```
+
+### 3.6.4 — Cloud Run v2 para user-service y book-service
+
+Ambos recursos son gemelos (puerto `8080`, `SERVER_PORT=8080`, 512Mi, min instances 0). La diferencia son las envs: los dos usan Postgres (`SPRING_DATASOURCE_URL`/`SPRING_DATASOURCE_PASSWORD`), `SPRING_MONGODB_URI` y las 6 de RabbitMQ (descompuestas del `locals`); book-service además añade `GOOGLE_BOOKS_API_KEY`.
+
+```hcl
+resource "google_cloud_run_v2_service" "user" {
+  name                = "user-service"
+  location            = var.region
+  deletion_protection = false
+
+  template {
+    scaling { min_instance_count = 0 }
+
+    containers {
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/user:latest"
+
+      ports { container_port = 8080 }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      env { name = "SPRING_DATASOURCE_URL";      value = "jdbc:postgresql://${var.db_host}:5432/booksocial" }
+      env { name = "SPRING_DATASOURCE_PASSWORD"; value = var.db_password }
+      env { name = "APP_JWT_SECRET";             value = var.jwt_secret }
+      env { name = "SPRING_MONGODB_URI";         value = var.mongo_uri }
+      env { name = "SPRING_RABBITMQ_HOST";       value = local.rabbitmq[2] }
+      env { name = "SPRING_RABBITMQ_PORT";       value = local.rabbitmq_port }
+      env { name = "SPRING_RABBITMQ_USERNAME";   value = local.rabbitmq[0] }
+      env { name = "SPRING_RABBITMQ_PASSWORD";   value = local.rabbitmq[1] }
+      env { name = "SPRING_RABBITMQ_VIRTUAL_HOST"; value = local.rabbitmq_vhost }
+      env { name = "SPRING_RABBITMQ_SSL_ENABLED";  value = tostring(local.rabbitmq_tls) }
+      env { name = "SERVER_PORT";                value = "8080" }
+    }
+  }
+}
+```
+
+El `book` es idéntico (`name = "book-service"`, imagen `apps/book:latest`) más la env `GOOGLE_BOOKS_API_KEY`.
+
+> **Envs de Spring Boot 4.1**: Mongo usa el prefijo `spring.mongodb.*` → env `SPRING_MONGODB_URI` (el V3 `spring.data.mongodb.*` ya no). RabbitMQ usa `spring.rabbitmq.*` → `SPRING_RABBITMQ_HOST` etc. El **relaxed binding** de Spring Boot hace que una env var sobreescriba el valor hardcodeado de `application.yml` (p.ej. el `password: booksocial` se ve sustituido por `SPRING_DATASOURCE_PASSWORD`).
+
+### 3.6.5 — Apply y verificación
+
+```powershell
+terraform validate
+terraform plan
+terraform apply
+```
+
+El primer `apply` puede fallar con `Error code 9` (el contenedor murió) si la URI de Mongo **no tiene la BD en el path**: se ve en los logs `java.lang.IllegalArgumentException: Database name must not be empty`. Se corrige la URI en `tfvars` y se reaplica (Cloud Run recrea los servicios; el estado converge).
+
+Verificación E2E (JSON **desde archivo**, ver Apéndice A — el `curl.exe` en PowerShell rompe las comillas):
+
+```powershell
+# POST /books/{isbn} auto-importa desde Google Books (público, sin token)
+curl.exe -s -w "`nHTTP %{http_code}`n" "https://book-service-h6b4lrpgmq-uc.a.run.app/books/9780061120084"
+
+# Register vía gateway → tokens
+curl.exe -s -w "`nHTTP %{http_code}`n" -X POST "https://gateway-h6b4lrpgmq-uc.a.run.app/auth/register" -H "Content-Type: application/json" -d "@body.json"
+
+# Con el access token: materializar perfil, seguir a otro usuario, listar following
+curl.exe -s "https://gateway-h6b4lrpgmq-uc.a.run.app/profiles/me" -H "Authorization: Bearer $token"
+curl.exe -s -X POST "https://gateway-h6b4lrpgmq-uc.a.run.app/follows/6" -H "Authorization: Bearer $token" -H "Content-Length: 0"
+curl.exe -s "https://gateway-h6b4lrpgmq-uc.a.run.app/follows/3/following" -H "Authorization: Bearer $token"
+```
+
+> **Detalle curioso + lección**: los `GET /follows/following` y `/follows/followers` NO existen como rutas propias: el `FollowController` las expone con **path variable** (`/follows/{userId}/followers`, `/follows/{userId}/following`). Pedir `/follows/following` devuelve `401 Authentication required` (Spring lanza el entry point al no coincidir ninguna ruta autenticada). Usar siempre `/follows/{userId}/...`.
+
+> **POST sin body en Cloud Run**: los POST sin cuerpo (`POST /follows/6`) fallan con `411 Length Required` del balanceador de Google. Solución: `-H "Content-Length: 0"` (o `-d ""`).
+
+## 3.7 — Qué queda fuera del alcance B
+
 - **OAuth2 Google**: el container de identity necesita `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` reales + `redirect_uri` HTTPS (`https://<identity>.a.run.app/login/oauth2/code/google`). Sin ellos, el botón "Google" genera una URL con el placeholder `${GOOGLE_CLIENT_ID}`.
 - **Frontend**: Bloque 4 (Cloud Run para el SPA, o bien Vercel/Netlify como alternativa gratuita).
+- **resto de servicios** (review-service, shelf-service, social-service, notification-service): necesitan también Mongo + RabbitMQ (ya disponibles) + sus URIs de interconexión (`REVIEW_SERVICE_URI`, `SHELF_SERVICE_URI`, `SOCIAL_SERVICE_URI`, `NOTIFICATION_SERVICE_URI`) — misma receta que 3.6.4.
 - **Backend state cloud**: el `.tfstate` vive en local (`dev`); para trabajo en equipo, `terraform backend "gcs"` con un bucket.
 
 ---
@@ -791,10 +949,13 @@ Invoke-WebRequest -Uri "https://gateway-h6b4lrpgmq-uc.a.run.app/users/me" -Heade
 | `/usr/local/bin/docker-entrypoint.sh: redis-server: I/O error` | El entrypoint de `redis:7-alpine` usa `su-exec` (setuid), no permitido en el sandbox | `command = ["redis-server"]` en el sidecar |
 | `Illegal base64 character: ' '` en `JwtService` | El `APP_JWT_SECRET` del tfvars contenía un espacio (o la clave `APP_JWT_SECRET=` de más) | Valor base64url limpio, sin espacios |
 | `443` + "service seems down": `Ready` vacío al describir | La condición de Cloud Run v2 se llama `Active`, no siempre `Ready` | Comprobar con `gcloud run services list` o la URL directamente |
-| 401 `{"error":"unauthorized",...}` al probar `/auth/register` con `curl.exe` en PowerShell | **PowerShell roba las comillas dobles** del JSON (bug de quoting) → body malformado → 400 → error dispatch a `/error` → 401 | Usar `Invoke-RestMethod` con el body en comillas simples (o `curl.exe -d` con `\"` escapadas) |
-| `/actuator/health` → `DOWN` | `MailHealthIndicator` (sin `MAIL_HOST`) hace `testConnection()` y falla | Inocuo en dev; `management.health.mail.enabled: false` |
+| 401 `{"error":"unauthorized",...}` al probar cualquier endpoint con body JSON con `curl.exe` en PowerShell | **PowerShell roba las comillas dobles** del JSON (bug de quoting) → body malformado (p.ej. `{email:cloud...}`) → `HttpMessageNotReadableException` en los logs del servicio | Escribir el JSON a un fichero y usar `curl.exe -d "@archivo.json"` (o `Invoke-RestMethod` con body en comillas simples) |
+| `Error code 9` / `Database name must not be empty` al desplegar user/book | URI de MongoDB Atlas sin el nombre de BD en el path (`mongodb+srv://...@cluster.mongodb.net` sin `/booksocial`) | Añadir `/booksocial?retryWrites=true&w=majority&authSource=admin` a la URI y reaplicar |
+| `GET /follows/following` → `401 Authentication required` | El controller usa path variable: los endpoints reales son `/follows/{userId}/followers` y `/follows/{userId}/following` | Usar la ruta con `{userId}` |
+| `411 Length Required` en POST sin body (p.ej. `POST /follows/6`) | El balanceador de Google exige `Content-Length` | Añadir `-H "Content-Length: 0"` (curl) |
+| `/actuator/health` → `DOWN` con `MongoCommandException error 8000 (AtlasError): not authorized on local` | Atlas M0 no autoriza al usuario en la BD `local` (el `MongoHealthIndicator` de Spring Boot 4.1 ejecuta `hello` contra `local`) | Inocuo: los endpoints de negocio funcionan; los indicadores Mongo/DB son aparte. Opcional: `management.health.mongodb.enabled: false` |
 | Apply se queda colgado creando Cloud SQL | El polling del provider no detecta operaciones DONE | `terraform import` de los recursos y continuar |
 
 ---
 
-*Actualizado al cierre de la Fase 13 — bloque A (identity + gateway + Redis sidecar + Cloud SQL) desplegado y verificado en GCP.*
+*Actualizado al cierre de la Fase 13 — alcances A (identity + gateway + Redis sidecar + Cloud SQL) y B (user-service + book-service + MongoDB Atlas M0 + CloudAMQP) desplegados y verificados E2E en GCP.*

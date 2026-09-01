@@ -4,7 +4,7 @@ resource "google_sql_database_instance" "postgres" {
   region           = var.region
 
   settings {
-    tier              = "db-f1-micro" 
+    tier              = "db-f1-micro"
     disk_size         = 20
     disk_type         = "PD_SSD"
     availability_type = "ZONAL"
@@ -32,13 +32,20 @@ resource "google_sql_database" "booksocial" {
 }
 
 resource "google_sql_user" "booksocial_user" {
-  name       = "booksocial"
-  instance   = google_sql_database_instance.postgres.name
-  password   = var.db_password
+  name     = "booksocial"
+  instance = google_sql_database_instance.postgres.name
+  password = var.db_password
+}
+
+locals {
+  rabbitmq       = regex("^amqps?://([^:]+):([^@]+)@([^/:]+)(?::([0-9]+))?(?:/([^/]*))?$", var.rabbitmq_uri)
+  rabbitmq_tls   = startswith(var.rabbitmq_uri, "amqps://")
+  rabbitmq_port  = coalesce(local.rabbitmq[3], local.rabbitmq_tls ? "5671" : "5672")
+  rabbitmq_vhost = coalesce(local.rabbitmq[4], "/")
 }
 
 resource "google_artifact_registry_repository" "apps" {
-  location     = var.region
+  location      = var.region
   repository_id = "apps"
   description   = "Imágenes de los servicios de BookSocial"
   format        = "DOCKER"
@@ -46,8 +53,8 @@ resource "google_artifact_registry_repository" "apps" {
 
 # ---------- Cloud Run: identity (con Redis sidecar) ----------
 resource "google_cloud_run_v2_service" "identity" {
-  name     = "identity"
-  location = var.region
+  name                = "identity"
+  location            = var.region
   deletion_protection = false
 
   template {
@@ -96,7 +103,7 @@ resource "google_cloud_run_v2_service" "identity" {
     }
 
     containers {
-      image = "redis:7-alpine"
+      image   = "redis:7-alpine"
       command = ["redis-server"]
     }
   }
@@ -104,8 +111,8 @@ resource "google_cloud_run_v2_service" "identity" {
 
 # ---------- Cloud Run: gateway ----------
 resource "google_cloud_run_v2_service" "gateway" {
-  name     = "gateway"
-  location = var.region
+  name                = "gateway"
+  location            = var.region
   deletion_protection = false
 
   template {
@@ -133,13 +140,163 @@ resource "google_cloud_run_v2_service" "gateway" {
       }
       env {
         name  = "USER_SERVICE_URI"
-        value = "http://user-service:8082"
+        value = google_cloud_run_v2_service.user.uri
       }
       env {
         name  = "BOOK_SERVICE_URI"
-        value = "http://book-service:8083"
+        value = google_cloud_run_v2_service.book.uri
       }
       # review/shelf/social/notification mantienen las URIs por defecto
+    }
+  }
+}
+
+# ---------- Cloud Run: user-service ----------
+resource "google_cloud_run_v2_service" "user" {
+  name                = "user-service"
+  location            = var.region
+  deletion_protection = false
+
+  template {
+    scaling {
+      min_instance_count = 0
+    }
+
+    containers {
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/user:latest"
+
+      ports {
+        container_port = 8080
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      env {
+        name  = "SPRING_DATASOURCE_URL"
+        value = "jdbc:postgresql://${var.db_host}:5432/booksocial"
+      }
+      env {
+        name  = "SPRING_DATASOURCE_PASSWORD"
+        value = var.db_password
+      }
+      env {
+        name  = "APP_JWT_SECRET"
+        value = var.jwt_secret
+      }
+      env {
+        name  = "SPRING_MONGODB_URI"
+        value = var.mongo_uri
+      }
+      env {
+        name  = "SPRING_RABBITMQ_HOST"
+        value = local.rabbitmq[2]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_PORT"
+        value = local.rabbitmq_port
+      }
+      env {
+        name  = "SPRING_RABBITMQ_USERNAME"
+        value = local.rabbitmq[0]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_PASSWORD"
+        value = local.rabbitmq[1]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_VIRTUAL_HOST"
+        value = local.rabbitmq_vhost
+      }
+      env {
+        name  = "SPRING_RABBITMQ_SSL_ENABLED"
+        value = tostring(local.rabbitmq_tls)
+      }
+      env {
+        name  = "SERVER_PORT"
+        value = "8080"
+      }
+    }
+  }
+}
+
+# ---------- Cloud Run: book-service ----------
+resource "google_cloud_run_v2_service" "book" {
+  name                = "book-service"
+  location            = var.region
+  deletion_protection = false
+
+  template {
+    scaling {
+      min_instance_count = 0
+    }
+
+    containers {
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/book:latest"
+
+      ports {
+        container_port = 8080
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      env {
+        name  = "SPRING_DATASOURCE_URL"
+        value = "jdbc:postgresql://${var.db_host}:5432/booksocial"
+      }
+      env {
+        name  = "SPRING_DATASOURCE_PASSWORD"
+        value = var.db_password
+      }
+      env {
+        name  = "APP_JWT_SECRET"
+        value = var.jwt_secret
+      }
+      env {
+        name  = "SPRING_MONGODB_URI"
+        value = var.mongo_uri
+      }
+      env {
+        name  = "SPRING_RABBITMQ_HOST"
+        value = local.rabbitmq[2]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_PORT"
+        value = local.rabbitmq_port
+      }
+      env {
+        name  = "SPRING_RABBITMQ_USERNAME"
+        value = local.rabbitmq[0]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_PASSWORD"
+        value = local.rabbitmq[1]
+      }
+      env {
+        name  = "SPRING_RABBITMQ_VIRTUAL_HOST"
+        value = local.rabbitmq_vhost
+      }
+      env {
+        name  = "SPRING_RABBITMQ_SSL_ENABLED"
+        value = tostring(local.rabbitmq_tls)
+      }
+      env {
+        name  = "GOOGLE_BOOKS_API_KEY"
+        value = var.google_books_api_key
+      }
+      env {
+        name  = "SERVER_PORT"
+        value = "8080"
+      }
     }
   }
 }
@@ -147,8 +304,10 @@ resource "google_cloud_run_v2_service" "gateway" {
 # ---------- Acceso público (sin login) ----------
 resource "google_cloud_run_v2_service_iam_member" "public" {
   for_each = {
-    identity = google_cloud_run_v2_service.identity.name
-    gateway  = google_cloud_run_v2_service.gateway.name
+    identity     = google_cloud_run_v2_service.identity.name
+    gateway      = google_cloud_run_v2_service.gateway.name
+    user-service = google_cloud_run_v2_service.user.name
+    book-service = google_cloud_run_v2_service.book.name
   }
   project  = var.project_id
   location = var.region

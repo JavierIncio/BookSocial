@@ -17,7 +17,7 @@ Guía detallada del proceso de desarrollo del proyecto. Se actualiza **al final 
 | Comunicación     | REST síncrona vía API Gateway + eventos asíncronos con RabbitMQ                             |
 | Persistencia     | Cada servicio es propietario de sus datos: PostgreSQL (command side) + MongoDB (query side) |
 | CI/CD            | GitHub Actions (workflow `ci.yml`), filosofía GitOps, despliegue incremental                |
-| Infraestructura  | Docker + Docker Compose (local), Terraform (despliegue, fase posterior)                     |
+| Infraestructura  | Docker + Docker Compose (local), **Terraform (GCP: Cloud SQL + Cloud Run + Artifact Registry, con MongoDB Atlas + CloudAMQP gratuitos)** |
 | Observabilidad   | Prometheus + Grafana, logs JSON, traces distribuidas (fase posterior)                       |
 
 ### Entorno local verificado
@@ -30,7 +30,7 @@ Guía detallada del proceso de desarrollo del proyecto. Se actualiza **al final 
 | Angular CLI      | 21.2.21                                                                           |
 | Docker / Compose | 29.5.3 / v5.1.4                                                                   |
 | Git              | 2.51.2                                                                            |
-| Terraform        | 1.14.9                                                                            |
+| Terraform        | 1.15.8                                                                          |
 
 ---
 
@@ -1006,6 +1006,39 @@ Objetivo: construir el **feed social** de actividad (`social-service`, :8086) y 
 - `RateLimitFilter.getClientIp()` lee `X-Forwarded-For` (primer elemento de la lista) con fallback a `remoteAddr`, para que tras un proxy cada cliente tenga su bucket (antes todos compartían la IP del proxy).
 - E2E verificado por el usuario: 5×`200` + 6ª `429` con `X-Forwarded-For: 203.0.113.7`; `200` de nuevo con `203.0.113.8` (no comparten bucket). Contenedor Redis = `booksocial-redis`.
 - Nota de seguridad: sin proxy de confianza, `X-Forwarded-For` es spoofeable (anotado para producción).
+
+---
+
+## Fase 13 — Despliegue cloud con Terraform (GCP) ✅ Alcanzada (A + B)
+
+**Objetivo**: probar el camino 1 (Cloud Run) sobre el backend. **Alcance A**: identity + gateway + Redis sidecar + Cloud SQL. **Alcance B**: user-service + book-service con MongoDB Atlas M0 + CloudAMQP como Mongo/RabbitMQ externos gratuitos. Documentado en `docs/GUIDE-INFRA.md`.
+
+### Fase 13A — Cloud SQL + Registry + Cloud Run identity/gateway ✅ Completada
+
+- `infrastructure/terraform/environments/dev/`: `provider.tf`, `variables.tf`, `main.tf`, `outputs.tf`, `.terraform.lock.hcl` (tfvars/tfstate/.terraform ignorados).
+- Cloud SQL `booksocial-db` (POSTGRES_16, `db-f1-micro`, authorized `0.0.0.0/0`), BD + user; Artifact Registry `apps`; Cloud Run `identity` (con sidecar `redis:7-alpine` `command=["redis-server"]`) y `gateway`; IAM `allUsers` invoker.
+- Lecciones: `SPRING_DATASOURCE_PASSWORD`, `SERVER_PORT=8080`, sidecar `redis-server` directo, `deletion_protection=false`, "inconsistent final plan" (reaplicar), bodies JSON con `curl.exe` se rompen en PowerShell.
+
+### Fase 13B — user-service + book-service (Mongo Atlas + CloudAMQP) ✅ Completada
+
+- Cuentas gratuitas: **MongoDB Atlas M0** (URI `mongodb+srv://.../booksocial?authSource=admin`) y **CloudAMQP** (plan lemur, URI `amqps://user:pass@host`).
+- `variables.tf`: +`mongo_uri`, `rabbitmq_uri`, `google_books_api_key` (sensitive). `main.tf`: `locals` con regex de descomposición AMQP (host `[^/:]+`, puerto/vhost con `coalesce`), `google_cloud_run_v2_service` `user` y `book`, gateway con `USER_SERVICE_URI`/`BOOK_SERVICE_URI` reales, IAM ampliado a 4 servicios.
+- Lecciones: Mongo URI **debe llevar la BD en el path** (`Database name must not be empty` → Error code 9); `/follows/{userId}/following|followers` (con path variable); POST sin body en Cloud Run → `411 Length Required`; `/actuator/health` `DOWN` por Atlas M0 en BD `local` (inocuo).
+
+### Verificación de la Fase 13 (E2E en la nube)
+
+- **A**: `POST /auth/register` directo a identity (201 + tokens), `POST /auth/login` vía gateway (200).
+- **B**: register/login vía gateway (201/200); `GET /profiles/me` materializa perfil en Postgres; `POST /follows/6` (201) → `GET /follows/3/following` y `/follows/6/followers` listan el follow; `followersCount` 0→1; unfollow `DELETE /follows/6` (204) y reset; `GET /books/9780061120084` auto-importa desde Google Books (200).
+
+### Cierre de la Fase 13
+
+- [x] Fase 13A — Cloud SQL + Registry + Cloud Run identity/gateway + IAM.
+- [x] Fase 13B — user-service + book-service con Atlas M0 + CloudAMQP + URIs reales en gateway.
+- [x] `terraform validate`/`fmt` OK; apply OK.
+- [x] E2E nube: auth, perfiles, follow/unfollow, auto-import libros.
+- [x] Actualizar GUIDE-INFRA.md (3.6-3.7 + Apéndice A) + SESSION_STATE + ROADMAP.
+
+Restan (siguientes pasos): review/shelf/social/notification en la nube (misma receta que B), OAuth2 Google real (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` + redirect_uri HTTPS), frontend (Bloque 4), estado remoto (`terraform backend "gcs"`).
 
 ---
 
