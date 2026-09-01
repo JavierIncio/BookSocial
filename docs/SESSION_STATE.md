@@ -193,6 +193,31 @@ El **despliegue cloud en capa gratuita** está en su límite práctico: `identit
 
 - **Backend state cloud**: mover `.tfstate` local a `terraform backend "gcs"`.
 - **user/review/shelf a la nube**: solo si se sube el tier de Cloud SQL (mayor coste); hoy se prueban en el stack Docker local.
+- **Unit / Integration testing con JUnit 5 + Mockito** (véase apartado dedicado a continuación).
+
+### Unit / Integration testing (JUnit 5 + Mockito + AssertJ) — estado y plan
+
+**Stack disponible**: todos los servicios heredan de `booksocial-parent` → `spring-boot-starter-parent` 4.1.0, y ya declaran `spring-boot-starter-security-test` (que arrastra `starter-test` = **JUnit 5 + Mockito + AssertJ + Spring Test**). No hace falta añadir dependencias para JUnit/Mockito/AssertJ.
+
+**Estado actual (casi sin cobertura de lógica)**:
+- **Gateway**: `JwtAuthFilterTest` (JUnit 5 + AssertJ) — único test unitario de lógica real (5 casos: inyecta headers, limpia headers falseados, rechaza token refresh/inválido/sin-roles).
+- **Tests de contexto** (`@SpringBootTest`) presentes en book, gateway, identity, review, shelf, user (`*ApplicationTests.java`). El de identity usa `@MockitoBean RateLimitService` (fix CI sin Redis). En general solo arrancan el contexto, **no** ejercitan lógica de servicio.
+
+**Plan propuesto (por prioridad)**:
+1. **`common`/reutilizable — `JwtServiceTest`**: copiar el patrón del `JwtAuthFilterTest` para validar `parse()`, firma, issuer, claims `uid`/`type`/`roles`, excepción en token inválido. Es transversal a los 7 servicios que copian `JwtService` (Apéndice A de GUIDE-BACKEND).
+2. **Por servicio — tests de `Service`** con **Mockito** (mock de repositorios/`*Publisher`) y **no** spin del contexto (rápidos, sin infraestructura):
+   - `identity`: `RateLimitService` (bucket por IP), `PasswordResetService` (hash, caducidad, no-reveal), `AuthService` (register/login).
+   - `user`: `ProfileService` (transitorio sin persistir, `findOrCreateProfile`, `searchProfiles`), `FollowService` (dual-write).
+   - `book`: `BookService` (auto-import con `GoogleBooksClient`/`OpenLibraryClient` mockeados, `BookEventPublisher`), `AuthorService`.
+   - `review`: `ReviewService` (create con `ReviewStatsReadModel` + events), `ReviewEventConsumer`.
+   - `shelf`: `ShelfService` (create/update/delete + read model), `ShelfEventConsumer`.
+   - `social`: `FeedService` (fanout, paginación cursor), consumers.
+   - `notification`: `NotificationService` (fanout seguidores, idempotencia), `FollowEventConsumer`/`ReviewEventConsumer`.
+3. **Tests de controlador** con `@WebMvcTest` + Mockito (mock del `*Service`), validando status/JSON y seguridad (401 con/ sin token).
+4. **Integración** limitada: los `@SpringBootTest` existentes se pueden ampliar para un flujo feliz con dependencias reales (o `@AutoConfigureMockMvc`) sobre un par de servicios clave (identity + gateway).
+5. Verificar con `mvn test` (por módulo) y mantener la CI (`mvn verify`) verde.
+
+**Criterio de aceptación**: escribir los tests de los servicios con lógica de negocio de mayor riesgo (identity, user, review, social `FeedService`, notification idempotencia); no es necesario cubrir el 100% de getters/setters.
 
 | Opción | Descripción |
 |--------|-------------|
