@@ -136,24 +136,67 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-12 están completadas** (1-1
 
 ### Active
 
-- **Revisión post-Fase 13 (límite de conexiones f1-micro) — config gratuita estable**: el tier `db-f1-micro` de Cloud SQL se satura con >2 servicios Spring+JPA (`FATAL: remaining connection slots are reserved` / SQLState `53300`). Se reestructuró el terraform (`main.tf`) y quedaron **desplegados en Cloud Run**: `identity` + `book-service` (Postgres) **+ `social-service` + `notification-service`** (solo Mongo + Rabbit, no gastan slots Postgres). Verificado E2E: `GET /feed` (200, json), `GET /notifications` + `/unread-count` (200, json) vía gateway; consumers Rabbit `consumers=1` para las colas `social-service.*` y `notification-service.*`. **Fuera de Cloud Run** (chocan con límite Postgres): `user-service`, `review-service`, `shelf-service`. `main.tf` modificado sin commitear.
+- **Despliegue cloud gratuito estable (post-Fase 13) desplegado y commiteado**: el tier `db-f1-micro` de Cloud SQL satura con >2 servicios Spring+JPA (`FATAL: remaining connection slots are reserved` / SQLState `53300`). Configuración estable en Cloud Run (commiteada en commits `5d26fff` + `c52a9ac`):
+  - **Con Postgres**: `identity` + `book-service`.
+  - **Solo Mongo + Rabbit** (no gastan slots Postgres): `social-service` + `notification-service` — verificado E2E (`GET /feed` 200, `GET /notifications` + `/unread-count` 200 vía gateway; consumers Rabbit `consumers=1` en colas `social-service.*` y `notification-service.*`).
+  - **Gateway** enruta los 5.
+  - **Fuera de Cloud Run** (chocan con límite Postgres): `user-service`, `review-service`, `shelf-service`.
 
 ### Blocked
 
-- **Cloud SQL `db-f1-micro`** solo admite ~2 servicios con Postgres simultáneos (53300). `user-service`, `review-service`, `shelf-service` (tienen datasource) no pueden desplegarse sin subir el tier. Los servicios **solo Mongo + Rabbit** (social, notification) **sí caben** y ya están desplegados. Pendientes de decisión (no bloquean): Google OAuth2 real y frontend (Bloque 4).
+- **Cloud SQL `db-f1-micro`** solo admite ~2 servicios con Postgres simultáneos (53300); `user-service`, `review-service`, `shelf-service` (con datasource) requieren subir el tier. Los servicios **solo Mongo + Rabbit** (social, notification) ya están desplegados. Por tanto, el despliegue cloud se considera **prácticamente agotado** en capa gratuita salvo las 2 opciones de la próxima sesión (Google OAuth2 y Frontend Bloque 4), ninguna choca con el límite de Postgres.
 
 ## Next Move
 
-La **Fase 13 (deploy cloud Terraform)** — alcance A (identity + gateway + Redis sidecar + Cloud SQL) y **alcance B (user-service + book-service con MongoDB Atlas + CloudAMQP)** — está desplegada y verificada. Continuación posible:
+El **despliegue cloud en capa gratuita** está en su límite práctico: `identity` + `book-service` (Postgres) + `social-service` + `notification-service` (solo Mongo+Rabbit) en Cloud Run, todo verificado y commiteado. Los servicios con Postgres restantes (`user`, `review`, `shelf`) **no caben** sin subir el tier de Cloud SQL, y nada de su código cambió — están desarrollados y funcionan en el stack Docker local.
+
+**Dos caminos viables para la siguiente sesión** (ninguno require tocar el tier de Cloud SQL):
+
+| # | Opción | Alcance | Requiere |
+|---|--------|---------|----------|
+| **1** | **Google OAuth2 real** (identity en la nube) | Que el botón "Continuar con Google" funcione contra el `identity` de Cloud Run (hoy genera URL con placeholder `${GOOGLE_CLIENT_ID}`) | Credenciales OAuth2 reales + `redirect_uri` HTTPS del identity cloud |
+| **2** | **Frontend (Bloque 4)** | Desplegar el SPA Angular en la nube | Imagen nginx + Cloud Run, o Vercel/Netlify. `FRONTEND_URL` ya es variable de Terraform |
+
+> **Recomendado empezar por la opción 1** si el usuario dispone de credenciales OAuth2 de Google (es lo que desbloquea el flujo social completo en la nube). La opción 2 es independiente y puede ir después. Elegir una no bloquea la otra.
+
+### Opción 1 — Google OAuth2 real (identity cloud)
+
+**Objetivo**: sustituir el placeholder `${GOOGLE_CLIENT_ID}` del identity de Cloud Run por credenciales reales y que `/login/oauth2/code/google` complete el callback contra la consola de Google.
+
+**Pasos previstos**:
+1. En Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs → crear un ID de cliente tipo **Web application**:
+   - Authorized redirect URIs: `https://<identity-url>.a.run.app/login/oauth2/code/google` (URL real del identity Cloud Run).
+   - Authorized JavaScript origins: el origen del frontend (si está desplegado) o vacío para esta fase.
+2. Añadir estas **2 env vars al `google_cloud_run_v2_service.identity`** en `main.tf`:
+   - `GOOGLE_CLIENT_ID` = `<valor>` (sensitive, irá en `terraform.tfvars` como `google_client_id`).
+   - `GOOGLE_CLIENT_SECRET` = `<valor>` (sensitive, `google_client_secret`).
+   - Añadirlas también a `variables.tf` como sensitive.
+3. **Nota `redirect_uri`**: el `application.yml` del identity usa el provider default de Spring Security OAuth2, cuyo `redirect-uri` se autoconfigura a partir del Host (`https://<identity>.a.run.app/login/oauth2/code/google`). Verificar que la consola Google coincida exactamente.
+4. `frontend-redirect-uri` (en `app.oauth2.frontend-redirect-uri`) hoy apunta a `http://localhost:4200/oauth2/callback` — para la nube habría que apuntar al origen del frontend desplegado (via env `FRONTEND_URL` / una var dedicada). Dejar en localhost si solo se prueba el gateway con el browser apuntando a Cloud Run.
+5. `terraform validate`/`plan`/`apply`; verificar que login con Google devuelve `200`/`302` y el callback materializa/autentica al usuario (`/users/me` 200).
+
+**Ficheros implicados**: `main.tf`, `variables.tf`, `terraform.tfvars` (secretos, no commitear), `identity-service/src/main/resources/application.yml` (posible override de `redirect-uri` vía env).
+
+### Opción 2 — Frontend (Bloque 4)
+
+**Objetivo**: desplegar el SPA Angular 21 en la nube para llamar al gateway real.
+
+**Alcance y alternativas**:
+- **A. Imagen nginx multi-stage + Cloud Run**: añadir `Dockerfile` en `frontend/` (build `ng build --configuration production` + servir con nginx), crear `google_cloud_run_v2_service` llamado p.ej. `frontend` en `main.tf` (siempre min 0, sin Postgres → no choca), ampliar IAM, y en build apuntar la API base del SPA al gateway (`https://gateway-...a.run.app`).
+  - `FRONTEND_URL` ya es variable de Terraform y el identity la usa para `reset-base-url`; hoy apunta a `http://localhost:4200`.
+- **B. Vercel/Netlify (gratuito, sin tocar Terraform)**: `npm run build` y publicar `dist/browser/...`. Configurar los proxies: el SPA usa `proxy.conf.json` en dev, pero en producción llama a una API base que hay que apuntar al gateway. Hay que revisar los `environment`/constantes del frontend para el origen del gateway (buscar dónde se define la base de la API, hoy asumida `/api` del dev-server).
+- `proxy.conf.json` y `environment.ts` son los ficheros a revisar para la URL del gateway en producción.
+
+**Ficheros implicados**: `frontend/` (Dockerfile nuevo, `environment.prod`), `main.tf` + IAM (si Cloud Run), o config de Vercel/Netlify (si B).
+
+### Limpieza / opcional (no bloqueante, más adelante)
+
+- **Backend state cloud**: mover `.tfstate` local a `terraform backend "gcs"`.
+- **user/review/shelf a la nube**: solo si se sube el tier de Cloud SQL (mayor coste); hoy se prueban en el stack Docker local.
 
 | Opción | Descripción |
 |--------|-------------|
-| **Commit de la Fase 13 alcance B** | Commitear `main.tf` y `variables.tf` modificados + documentación (`GUIDE-INFRA.md` secciones 3.6-3.7 + Apéndice A, `SESSION_STATE.md`, `ROADMAP.md`). |
-| **Resto de servicios en la nube** | **social + notification ya desplegados** (solo Mongo+Rabbit, no chocan con Postgres). Quedan **user/review/shelf** (tienen datasource → chocan con el límite del `db-f1-micro`); para desplegarlos habría que subir el tier de Cloud SQL o usar la IP/instancia más grande. |
-| **Google OAuth2 real** | Añadir `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` al contenedor Cloud Run de identity (envs) + `redirect_uri` HTTPS del identity (consola Google). El botón Google hoy genera una URL con el placeholder `${GOOGLE_CLIENT_ID}`. |
-| **Frontend (Bloque 4)** | Desplegar el SPA Angular: imagen nginx + Cloud Run, o alternativas gratuitas (Vercel/Netlify). `FRONTEND_URL` ya es una variable de Terraform. |
-| **Nota `packaging` futuro** | El `.tfstate` vive en local; para equipo moverse a `terraform backend "gcs"`. La IP pública `0.0.0.0/0` y los secretos en tfvars local son válidos solo para aprendizaje. |
-| Nota | El `package.json` raíz (basura heredada, sin uso) ya está **ignorado** en el `.gitignore` raíz. El frontend real usa `frontend/package.json`. `gcloud` se ejecuta en el terminal del usuario (Git Bash/Windows PowerShell), no siempre disponible en la shell del agente. |
+| Nota | El `package.json` raíz (basura heredada) ya está **ignorado** en el `.gitignore` raíz; el frontend real usa `frontend/package.json`. `gcloud` se ejecuta en el terminal del usuario, no siempre disponible en la shell del agente. |
 
 ## Relevant Files
 
@@ -170,12 +213,12 @@ La **Fase 13 (deploy cloud Terraform)** — alcance A (identity + gateway + Redi
 - `docs/GUIDE-BACKEND.md` — guía de backend; sección **1.10** documenta el rate-limiting con Redis + Bucket4j (solución final correcta, verificación y procedimiento de prueba con JSON desde archivo + reset de bucket), incluido **`X-Forwarded-For`** para IP real.
 
 ### Infraestructura cloud (Fase 13)
-- `infrastructure/terraform/environments/dev/main.tf` — recursos Cloud SQL (`booksocial-db`, `db-f1-micro`, authorized `0.0.0.0/0`, `deletion_protection=false`) + BD + user (`booksocial`/`var.db_password`); Artifact Registry repo `apps`; **Cloud Run `identity` multi-container** (imagen `:latest`, port 8080, `SPRING_DATASOURCE_URL`, `SPRING_REDIS_HOST=localhost`, `SPRING_DATASOURCE_PASSWORD`, `APP_JWT_SECRET`, `FRONTEND_URL`, `SERVER_PORT=8080` + **sidecar `redis:7-alpine` con `command=["redis-server"]`**, min 0, 512Mi); **Cloud Run `gateway`** (`APP_JWT_SECRET`, `IDENTITY_SERVICE_URI=identity.uri`, `USER_SERVICE_URI=user.uri`, `BOOK_SERVICE_URI=book.uri` reales); **Cloud Run `user-service` y `book-service`** (Postgres + `SPRING_MONGODB_URI` + 6 envs RabbitMQ del `locals`, `SERVER_PORT=8080`; book añade `GOOGLE_BOOKS_API_KEY`); **IAM `allUsers` invoker (for_each identity+gateway+user-service+book-service)**; `locals` con la descomposición de `var.rabbitmq_uri` por regex.
+- `infrastructure/terraform/environments/dev/main.tf` — recursos Cloud SQL (`booksocial-db`, `db-f1-micro`, authorized `0.0.0.0/0`, `deletion_protection=false`) + BD + user (`booksocial`/`var.db_password`); Artifact Registry repo `apps`; **Cloud Run `identity` multi-container** (imagen `:latest`, port 8080, `SPRING_DATASOURCE_URL`, `SPRING_REDIS_HOST=localhost`, `SPRING_DATASOURCE_PASSWORD`, `APP_JWT_SECRET`, `FRONTEND_URL`, `SERVER_PORT=8080` + **sidecar `redis:7-alpine` con `command=["redis-server"]`**, min 0, 512Mi); **Cloud Run `gateway`** (`APP_JWT_SECRET`, `IDENTITY_SERVICE_URI`, `BOOK_SERVICE_URI`, `SOCIAL_SERVICE_URI`, `NOTIFICATION_SERVICE_URI` reales); **Cloud Run `book-service`** (Postgres + `SPRING_MONGODB_URI` + `GOOGLE_BOOKS_API_KEY` + 6 envs RabbitMQ); **Cloud Run `social-service` y `notification-service`** (solo Mongo + Rabbit: `SPRING_MONGODB_URI` + 6 envs RabbitMQ, sin datasource → no gastan slots Postgres); **IAM `allUsers` invoker (for_each identity+gateway+book-service+social-service+notification-service)**; `locals` con la descomposición de `var.rabbitmq_uri` por regex. **No incluye** `user-service`/`review-service`/`shelf-service` (con Postgres → límite del `db-f1-micro`).
 - `infrastructure/terraform/environments/dev/provider.tf` — `terraform` block (`>= 1.9`, `google ~> 6.0`) + provider con `project`/`region` desde variables.
-- `infrastructure/terraform/environments/dev/variables.tf` — `project_id`, `region` (default `europe-west1`), `db_password`/`jwt_secret` (sensitive), `db_host`, `frontend_url`, + **`mongo_uri`, `rabbitmq_uri` (sensitive), `google_books_api_key` (opcional, sensitive)**.
+- `infrastructure/terraform/environments/dev/variables.tf` — `project_id`, `region` (default `europe-west1`), `db_password`/`jwt_secret` (sensitive), `db_host`, `frontend_url`, + **`mongo_uri`, `rabbitmq_uri` (sensitive), `google_books_api_key` (opcional, sensitive)**. Pendiente (Opción 1): +`google_client_id`/`google_client_secret` (sensitive).
 - `infrastructure/terraform/environments/dev/outputs.tf` — `project_id`, `gateway_url`, `identity_url`.
-- `infrastructure/terraform/environments/dev/terraform.tfvars` — NO commiteada (secretos): incluye `mongo_uri` (con `/booksocial` en el path) y `rabbitmq_uri`. `.terraform.lock.hcl` sí.
-- Imágenes `:latest` de identity/gateway/user/book en `us-central1-docker.pkg.dev/booksocial-infra/apps/`.
+- `infrastructure/terraform/environments/dev/terraform.tfvars` — NO commiteada (secretos): incluye `mongo_uri` (con `/booksocial` en el path), `rabbitmq_uri`, `db_password`, `jwt_secret`, `frontend_url`. `.terraform.lock.hcl` sí.
+- Imágenes `:latest` de identity/gateway/book/social/notification (y review/shelf/user como backup) en `us-central1-docker.pkg.dev/booksocial-infra/apps/`.
 
 ### Frontend (Fases 8 + i18n + 10 + 11 completadas)
 - `frontend/` — Angular 21.2.21, login/registro/OAuth2/guardas/interceptor JWT + home con profile.
