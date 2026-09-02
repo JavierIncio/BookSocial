@@ -63,7 +63,7 @@ resource "google_cloud_run_v2_service" "identity" {
     }
 
     containers {
-      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/identity:latest"
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/identity@sha256:87a1832a2a3d58ae92b56eaf8692fe5c983d547f6e01d45d01bc81aa2d529ff0"
 
       ports {
         container_port = 8080
