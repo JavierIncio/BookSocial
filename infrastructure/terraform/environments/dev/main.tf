@@ -112,6 +112,10 @@ resource "google_cloud_run_v2_service" "identity" {
         name  = "OAUTH_FRONTEND_REDIRECT_URI"
         value = "${google_cloud_run_v2_service.frontend.uri}/en/oauth2/callback"
       }
+      env {
+        name  = "OAUTH_REDIRECT_URI"
+        value = "${var.identity_uri}/login/oauth2/code/google"
+      }
     }
 
     containers {

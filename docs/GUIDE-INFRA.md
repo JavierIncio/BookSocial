@@ -1648,7 +1648,7 @@ curl.exe -s -o NUL -w "%{http_code}" -X POST "https://frontend-h6b4lrpgmq-uc.a.r
 
 ## 3.9 — OAuth2 Google real en la nube
 
-La sección 3.8 ya cubre el frontend y el `OAUTH_FRONTEND_REDIRECT_URI`. Este apartado documenta los pasos que faltan para completar el flujo OAuth2 de Google en la nube.
+La sección 3.8 ya cubre el frontend y el `OAUTH_FRONTEND_REDIRECT_URI`. Este apartado documenta el flujo OAuth2 de Google en la nube, que quedó **verificado** (client_id real + redirect_uri HTTPS) tras el fix crítico de la subsección 3.9.6.
 
 ### 3.9.1 — Variables Terraform (ya preparadas)
 
@@ -1700,12 +1700,15 @@ google_client_secret = "GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxx"
 # Fase 14 — Frontend
 gateway_uri      = "https://gateway-h6b4lrpgmq-uc.a.run.app"
 notification_uri = "https://notification-service-h6b4lrpgmq-uc.a.run.app"
+
+# Fase 14 — redirect_uri OAuth2 (HTTPS del identity)
+identity_uri     = "https://identity-h6b4lrpgmq-uc.a.run.app"
 ```
 
 ### 3.9.4 — Apply
 
 ```powershell
-terraform plan    # muestra ~identity (2 envs nuevas: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
+terraform plan    # muestra ~identity (envs de OAuth2 + redirect)
 terraform apply
 ```
 
@@ -1720,6 +1723,33 @@ curl.exe -s -o NUL -w "%{redirect_url}" -I "https://identity-h6b4lrpgmq-uc.a.run
 ```
 
 Si la URL contiene `client_id=123456789-abcdefg.apps.googleusercontent.com` (el valor real), el despliegue fue exitoso. El flujo E2E se verifica desde el navegador: click "Login with Google" en `https://frontend-...a.run.app/en/login` → redirige a Google → callback exitoso → usuario autenticado en `/home`.
+
+### 3.9.6 — ⚠️ CRÍTICO: redirect_uri debe ser HTTPS (fix aplicado)
+
+**Síntoma**: la URL de Google devuelta por el identity traía `redirect_uri=http://identity-....a.run.app/...` (HTTP) aunque el request era HTTPS. Google rechaza el callback con `redirect_uri_mismatch` porque el URI autorizado en la consola es HTTPS.
+
+**Causa raíz (2 intentos fallidos)**:
+1. Cloud Run termina TLS en el load balancer; el contenedor ve HTTP plano con `X-Forwarded-Proto: https`. Spring no deduce HTTPS del request.
+2. `server.forward-headers-strategy: framework` **NO bastó** para el `redirect_uri` de Spring Security OAuth2 Client (que se construye aparte del request). `native` tampoco.
+
+**Solución real**: fijar el `redirect-uri` de la registration de Google de forma explícita y configurable por env, usando la URL física del identity Cloud Run:
+
+```yaml
+# identity-service/src/main/resources/application.yml
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+            google:
+                client-id: ${GOOGLE_CLIENT_ID}
+                client-secret: ${GOOGLE_CLIENT_SECRET}
+                redirect-uri: ${OAUTH_REDIRECT_URI:http://localhost:8081/login/oauth2/code/google}
+```
+
+Y en Terraform, el env `OAUTH_REDIRECT_URI` se compone de la URL del identity (`${var.identity_uri}/login/oauth2/code/google`). **Ojo**: no se puede referenciar `google_cloud_run_v2_service.identity.uri` dentro de su propio recurso (Terraform: "may not refer to itself") → hay que usar una variable `identity_uri` (idéntico patrón al que ya rompió el ciclo gateway/notification en 3.8.10).
+
+**Verificado**: tras el fix, `redirect_uri=https://identity-h6b4lrpgmq-uc.a.run.app/login/oauth2/code/google` → coincide con el URI autorizado y Google aceptará el callback.
 
 ---
 
@@ -1744,6 +1774,7 @@ Si la URL contiene `client_id=123456789-abcdefg.apps.googleusercontent.com` (el 
 | WebSocket se conecta pero el broker no responde (conexión abierta, sin frames)                                                                                                     | `allowedOriginPatterns("http://localhost:4200")` en `WebSocketConfig.java` rechaza el origin del frontend Cloud Run                                                       | Configurar `APP_WEBSOCKET_ALLOWED_ORIGINS` con el origin del frontend desplegado. Ver 3.8.7.                                                                                                                                                                                                                  |
 | OAuth2 callback no funciona con i18n (F5 en `/oauth2/callback` redirige a `/en/` y pierde el token)                                                                                 | `history.replaceState(null, '', '/oauth2/callback')` hardcodea la ruta sin el prefijo del locale (`/en/`)                                                                   | Usar `new URL('oauth2/callback', document.baseURI).pathname` para construir la ruta correcta (`/en/oauth2/callback`). Ver 3.8.8.                                                                                                                                                                               |
 | `google_auth_url` muestra `client_id=${GOOGLE_CLIENT_ID}` literal                                                                                                                  | El contenedor identity no tiene las env vars `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` configuradas                                                                        | Añadir las env vars al bloque `env` del identity en `main.tf` y los valores sensibles en `terraform.tfvars`. Ver 3.9.                                                                                                                                                                                          |
+| URL de Google devuelta por identity trae `redirect_uri=http://identity-...` (HTTP en vez de HTTPS) → Google devuelve `redirect_uri_mismatch` en el callback                                                                                     | Cloud Run termina TLS en el LB; el contenedor ve HTTP plano. `server.forward-headers-strategy` NO corrige el redirect_uri de Spring Security OAuth2 Client                                                                                        | Fijar `redirect-uri` de la registration Google en `application.yml` (`${OAUTH_REDIRECT_URI}`) a la URL HTTPS física del identity (`${var.identity_uri}/login/oauth2/code/google`). Ver 3.9.6.                                                   |
 | API a través del frontend devuelve **404 de Google** ("That's an error") pero directo al gateway funciona (200/400)                                                                   | nginx envía `Host: $host` (el host del frontend, p.ej. `frontend-....a.run.app`); Cloud Run enruta por el `Host` y no coincide con el gateway → 404                        | Usar `proxy_set_header Host $proxy_host` (host de la URL del `proxy_pass`) en vez de `Host $host`. Ver 3.8.3.                                                                                                                                                                                              |
 | Apply se queda colgado creando Cloud SQL                                                                                                                                              | El polling del provider no detecta operaciones DONE                                                                                                                         | `terraform import` de los recursos y continuar                                                                                                                                                                                                                                                                  |
 | `FATAL: remaining connection slots are reserved for roles with privileges of the "pg_use_reserved_connections" role` (SQLState `53300`) al arrancar cualquier servicio con datasource | El tier `db-f1-micro`/shared-core de Cloud SQL admite muy pocas conexiones (~25 máx.); varios servicios Spring+JPA arrancando en paralelo llenan los slots                  | Reducir el número de servicios con Postgres desplegados a los que caben (≈2), o subir el tier de la instancia. `max_connections` **no es editable** en tier `shared-core`. Los servicios que **solo usan Mongo + Rabbit** (social, notification) **no** chocan con este límite y pueden desplegarse en paralelo |
@@ -1777,4 +1808,4 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.revisi
 
 ---
 
-_Actualizado al cierre de la Fase 14 — frontend desplegable en Cloud Run (nginx multi-stage, locales i18n, proxy API/WS, environments prod/dev, Terraform Cloud Run frontend) + OAuth2 Google preparado en Terraform. Contenido previo: Fase 13 alcances A (identity + gateway + Redis sidecar + Cloud SQL) y B (user-service + book-service + MongoDB Atlas M0 + CloudAMQP) desplegados y verificados E2E en GCP. Revisión posterior: configuración estable en capa gratuita (identity + book-service + social-service + notification-service) por el límite de conexiones del `db-f1-micro`. Contenido pedagógico: [0.0](#00--docker) (Docker), [1.1.1](#111--el-ciclo-de-vida-de-maven-y-qué-hace-mvnw--b--pl-identity-service--am-package--dskiptests) (Maven), [3.0.1](#301--terraform-desde-cero-apuntes-para-principiantes) (Terraform), [3.7.1](#371--backend-remoto-gcs-mover-el-estado-local-a-la-nube) (backend GCS), [3.8](#38--frontend-desplegable-en-cloud-run-fase-14) (frontend Cloud Run: Dockerfile, nginx, envsubst, environments, WebSocket configurable, OAuth2 callback con i18n, ciclo de dependencias), [3.9](#39--oauth2-google-real-en-la-nube) (OAuth2 Google: Google Console, env vars, verificación) y [A.1](#a1--procedimiento-general-de-diagnóstico-un-servicio-no-despega-en-cloud-run) (diagnóstico)._
+_Actualizado al cierre de la Fase 14 — frontend desplegable en Cloud Run (nginx multi-stage, locales i18n, proxy API/WS, environments prod/dev, Terraform Cloud Run frontend) + OAuth2 Google verificado en la nube (client_id real + redirect_uri HTTPS; fixes críticos: `Host $proxy_host` en nginx y `redirect-uri` fijo en identity). Contenido previo: Fase 13 alcances A (identity + gateway + Redis sidecar + Cloud SQL) y B (user-service + book-service + MongoDB Atlas M0 + CloudAMQP) desplegados y verificados E2E en GCP. Revisión posterior: configuración estable en capa gratuita (identity + book-service + social-service + notification-service) por el límite de conexiones del `db-f1-micro`. Contenido pedagógico: [0.0](#00--docker) (Docker), [1.1.1](#111--el-ciclo-de-vida-de-maven-y-qué-hace-mvnw--b--pl-identity-service--am-package--dskiptests) (Maven), [3.0.1](#301--terraform-desde-cero-apuntes-para-principiantes) (Terraform), [3.7.1](#371--backend-remoto-gcs-mover-el-estado-local-a-la-nube) (backend GCS), [3.8](#38--frontend-desplegable-en-cloud-run-fase-14) (frontend Cloud Run: Dockerfile, nginx, envsubst, environments, WebSocket configurable, OAuth2 callback con i18n, ciclo de dependencias), [3.9](#39--oauth2-google-real-en-la-nube) (OAuth2 Google: Google Console, env vars, fix redirect_uri HTTPS, verificación) y [A.1](#a1--procedimiento-general-de-diagnóstico-un-servicio-no-despega-en-cloud-run) (diagnóstico)._

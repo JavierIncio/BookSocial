@@ -72,3 +72,8 @@ variable "notification_uri" {
   description = "URL pública del notification-service Cloud Run (upstream WebSocket/STOMP del frontend)"
   type        = string
 }
+
+variable "identity_uri" {
+  description = "URL pública del identity Cloud Run (redirect_uri de OAuth2/code/google)"
+  type        = string
+}
