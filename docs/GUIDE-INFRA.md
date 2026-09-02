@@ -376,6 +376,118 @@ Despliegue del backend en **Google Cloud Platform** con **Terraform**, usando lo
 
 ## 3.0 — Preparación y conceptos Terraform
 
+> Si es la **primera vez que usas Terraform**, lee primero este apartado (3.0.1). Es la base sobre la que se apoya todo el bloque: entender qué es el _estado_, un _provider_ y el ciclo `init → plan → apply` convierte el resto de la guía en sencillo.
+
+### 3.0.1 — Terraform desde cero (apuntes para principiantes)
+
+**¿Qué es Terraform?**
+
+Terraform es una herramienta de **Infraestructura como Código (IaC)**: describes los recursos de la nube (máquinas, bases de datos, servicios, permisos) en ficheros de texto (_`.tf`_) y Terraform los **crea, modifica o elimina** hacia el proveedor (aquí, **Google Cloud**). En vez de pulsar botones en la consola de GCP, "declaras" lo que quieres y Terraform se encarga de materializarlo y mantenerlo en el tiempo.
+
+Filosofía clave: **declarativo, no imperativo**. No dices "crea una instancia, luego añade una BD, luego un usuario"; dices "quiero una instancia con una BD y un usuario, con estos parámetros" y Terraform calcula el **plan** de acciones necesarias para llegar a ese estado.
+
+**Los 3 elementos mentales para entender todo Terraform**
+
+1. **El estado (`terraform.tfstate`)**: un **fichero JSON** donde Terraform guarda la "fotografía" de todo lo que ha creado (cada recurso, sus IDs reales en GCP y sus atributos). Es la memoria de Terraform: cuando vuelves a ejecutar `plan`, compara el **estado** (lo que existe) contra tu **configuración** (lo que quieres) para decidir cambios. Sin estado, Terraform no sabe qué crear/eliminar — de ahí que sea tan importante **no borrarlo** y protegerlo (se ignora en Git, ver `.gitignore`). Si se pierde, Terraform "pierde la cabeza" y crearía duplicados.
+
+2. **El provider (`hashicorp/google`)**: el "puente" entre Terraform y un proveedor de nube. Define con qué API de GCP hablar, cómo autenticarse y qué tipos de recurso existen (`google_sql_database_instance`, `google_cloud_run_v2_service`, ...). Se descarga con `terraform init` y su versión se fija en el `.terraform.lock.hcl`.
+
+3. **Los recursos (`resource "tipo" "nombre"`)**: cada bloque HCL que describe una pieza de infraestructura. Su **dirección** completa es `tipo.nombre` (p.ej. `google_sql_database_instance.postgres`) y es como Terraform se refiere a él en comandos (`terraform show google_sql_database_instance.postgres`), importaciones y referencias.
+
+**La sintaxis HCL (HashiCorp Configuration Language)**
+
+```hcl
+resource "google_sql_database_instance" "postgres" {   # "dirección" = google_sql_database_instance.postgres
+  name             = "booksocial-db"                    # argumento de tipo string
+  database_version = "POSTGRES_16"
+  settings {                                            # bloque anidado
+    tier = "db-f1-micro"
+  }
+}
+```
+
+- **`resource`**: palabra clave → describe un recurso a crear.
+- **`"google_sql_database_instance"`**: el **tipo** de recurso (definido por el provider).
+- **`"postgres"`**: el **nombre lógico** local (solo importa dentro de tu configuración, no es el nombre real en GCP). El **nombre real** en GCP es el del argumento `name = "booksocial-db"`.
+- **Argumentos** (`name = ...`), **bloques** anidados (`settings { ... }`). El orden de los argumentos dentro del bloque no importa.
+- Puedes usar **expresiones** que se evalúan en tiempo de plan, como `"jdbc:postgresql://${var.db_host}:5432/booksocial"` (interpolación `${...}`) o `${var.project_id}`.
+
+**Variables: `variables.tf`, `terraform.tfvars`, `sensitive`**
+
+Separamos la **definición** (qué variable existe) de los **valores** (cuánto vale). Esto permite reutilizar la configuración sin exponer secretos:
+
+```hcl
+# variables.tf — define la variable (tipo, descripción, si es sensible)
+variable "db_password" {
+  type        = string
+  sensitive   = true   # no se mostrará en plan/output
+}
+
+# terraform.tfvars — aporta el valor (NO se commitea)
+db_password = "mi_secreto"
+```
+
+- Sin `sensitive = true`, Terraform **imprimiría el secreto en pantalla** durante `plan`/`apply`. Con él, lo enmascara como `(sensitive value)`.
+- Los valores se pueden aportar por tres vías (en orden de prioridad): flags `-var`, el fichero `terraform.tfvars` (o `*.auto.tfvars`), o valores por defecto en `variables.tf`.
+- Cuando una variable **no tiene default y no se aporta valor**, `plan` la pide por teclado o falla. Esto fuerza a definirla en `tfvars`.
+- ⚠️ `terraform.tfvars` está en el `.gitignore`: no se sube a Git porque contiene secretos. El `.terraform.lock.hcl` **sí** se commitea (bloquea versiones de provider para reproducibilidad).
+
+**Dependencias implícitas y explícitas**
+
+Terraform **ordena solo** las creaciones siguiendo las referencias:
+
+```hcl
+resource "google_sql_database" "booksocial" {
+  name     = "booksocial"
+  instance = google_sql_database_instance.postgres.name   # referencia al recurso padre
+}
+```
+
+- **Implícita** (más común y recomendada): al escribir `google_sql_database_instance.postgres.name`, Terraform entiende que la BD depende de la instancia y la crea **después**. Es la forma idónea de expresar orden.
+- **Explícita**: `depends_on = [google_sql_database_instance.postgres]` cuando la relación no se puede deducir de un argumento pero el orden importa.
+
+**`terraform init → plan → apply`: la rutina que no falla**
+
+```
+terraform init    # 1ª vez y cada vez que cambian providers/modules. Descarga providers, prepara backend.
+terraform plan    # calcula los cambios (dry-run, NO aplica). Muestra + crear, ~ modificar, - eliminar.
+terraform apply   # aplica el plan. Pide "yes" (o -auto-approve para no preguntar).
+terraform output  # muestra las salidas definidas en outputs.tf (gateway_url, identity_url...).
+```
+
+- **`plan` es gratis y sin riesgo**: te dice exactamente qué hará `apply`, antes de tocar nada. **Debe darte total confianza** antes de aplicar.
+- `apply` también recalcula y muestra el plan; **siempre revisa** qué va a crear/modificar/eliminar (`+`,`~`,`-`) antes de escribir `yes`.
+
+**`terraform import` y por qué existe**
+
+`terraform import <dirección> <id-en-gcp>` **adopta** un recurso que ya existe en GCP pero que aún no está en el estado de Terraform. Sirve para "ponerse al día": si creaste algo a mano (o Terraform se quedó colgado y ya está creado en GCP), importas su ID real y Terraform pasa a gestionarlo desde entonces, sin duplicarlo. En esta guía se usó dos veces (Cloud SQL y para adoptar piezas). **Importante**: importar no modifica el recurso, solo introduce su estado; luego un `plan` mostrará si hay diferencias que corregir.
+
+**`terraform untaint` y `terraform destroy`**
+
+- `untaint <dirección>`: si un `apply` falló a medias, Terraform marca el recurso como _tainted_ (sospechoso) y en el siguiente plan lo **reescribe**. `untaint` quita esa marca para _forzar_ la recreación intencionada.
+- `destroy`: elimina **todo** lo gestionado (con `deletion_protection = false`). ⚠️ Destructivo e irreversible (borra BDs, datos...). Nunca en producción.
+
+**El bucle total del Bloque 3 (visión global)**
+
+Todos los `apply`/`plan` de esta guía siguen este flujo: editas `.tf` → `terraform validate` (sintaxis) → `terraform plan` (qué hará) → `terraform apply` (lo hace) → verificas con `curl`/`gcloud` que el servicio responde. Cuando cambias solo valores (`tfvars`), el plan muestra `~` (modificaciones in-place) y reaplicar es suficiente.
+
+**Referencia rápida de comandos usados en el Bloque 3**
+
+| Comando | Qué hace |
+| --- | --- |
+| `terraform init` | Descarga providers, prepara `.terraform/` y el estado local |
+| `terraform validate` | Valida sintaxis y estructura de los `.tf` (no conecta a GCP) |
+| `terraform plan` | Calcula los cambios (dry-run) |
+| `terraform apply` | Ejecuta los cambios (pide confirmación; `-auto-approve` no la pide) |
+| `terraform apply -auto-approve` | Idem sin preguntar (útil en scripts) |
+| `terraform output` / `terraform output gateway_url` | Muestra las salidas definidas en `outputs.tf` |
+| `terraform import <addr> <gcp-id>` | Adopta un recurso ya existente en GCP hacia el estado |
+| `terraform show <addr>` | Inspecciona un recurso del estado |
+| `terraform untaint <addr>` | Quita la marca "tainted" para gestionar una recreación |
+| `terraform state list` | Lista todos los recursos del estado |
+| `terraform destroy` | Elimina todo lo gestionado (¡cuidado!) |
+| `terraform fmt` | Formatea los `.tf` con estilo estándar |
+
 ### Estructura de carpetas
 
 ```
@@ -388,11 +500,11 @@ infrastructure/terraform/environments/dev/
   .terraform.lock.hcl  # SÍ se commitea (fija versiones de providers)
 ```
 
-Los ficheros `.tf` usan la sintaxis HashiCorp Configuration Language (HCL). El ciclo de vida básico:
+Los ficheros `.tf` usan la sintaxis HashiCorp Configuration Language (HCL). El ciclo de vida básico se ha detallado en [3.0.1](#301--terraform-desde-cero-apuntes-para-principiantes); en resumen:
 
 ```powershell
-terraform init     # descarga el provider y prepara el módulo
-terraform plan     # calcula el plan (sin aplicar): ler `+` crear, `-` eliminar, `~` cambiar
+terraform init     # 1ª vez: descarga providers y prepara el estado
+terraform plan     # calcula el plan (sin aplicar): `+` crear, `-` eliminar, `~` cambiar
 terraform apply    # aplica el plan (pide confirmación o `-auto-approve`)
 terraform output   # muestra las salidas definidas en outputs.tf
 terraform import <address> <id>  # adopta un recurso ya existente en el estado
@@ -934,7 +1046,53 @@ curl.exe -s "https://gateway-h6b4lrpgmq-uc.a.run.app/follows/3/following" -H "Au
 - **OAuth2 Google**: el container de identity necesita `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` reales + `redirect_uri` HTTPS (`https://<identity>.a.run.app/login/oauth2/code/google`). Sin ellos, el botón "Google" genera una URL con el placeholder `${GOOGLE_CLIENT_ID}`.
 - **Frontend**: Bloque 4 (Cloud Run para el SPA, o bien Vercel/Netlify como alternativa gratuita).
 - **resto de servicios** (review-service, shelf-service, social-service, notification-service): necesitan también Mongo + RabbitMQ (ya disponibles) + sus URIs de interconexión (`REVIEW_SERVICE_URI`, `SHELF_SERVICE_URI`, `SOCIAL_SERVICE_URI`, `NOTIFICATION_SERVICE_URI`) — misma receta que 3.6.4.
-- **Backend state cloud**: el `.tfstate` vive en local (`dev`); para trabajo en equipo, `terraform backend "gcs"` con un bucket.
+- **Backend state cloud**: el `.tfstate` vive en **local** (carpeta `dev`), protegido del Git por el `.gitignore`, pero **solo lo ve tu máquina**. Para trabajo en equipo hay que mover el estado a un **backend remoto**. Aprende cómo de forma pedagógica en [3.7.1](#371--backend-remoto-gcs-mover-el-estado-local-a-la-nube) justo debajo.
+
+### 3.7.1 — Backend remoto (GCS): mover el estado local a la nube
+
+**El problema**: el estado `terraform.tfstate` es un fichero **local**. Si eres solo tú, funciona. Pero si hay más personas (o quieres un historial seguro y compartido), cada una tendría **su propio estado**, y aplicar cambios desde dos sitios produciría conflictos, duplicados o borrados accidentales. El estado también es **sensible** (para los resources de tu nube) y conviene tenerlo a salvo y con versionado.
+
+**La solución**: un **backend remoto**. Terraform, en vez de guardar el estado en `./terraform.tfstate`, lo guarda en un **bucket de GCS** (Google Cloud Storage). De modo que:
+
+- El estado es **único y compartido** (todos leen/escriben el mismo fichero).
+- Terraform lo **bloquea** mientras aplica (evita dos `apply` simultáneos corruptos).
+- Puedes activar **versionado** del bucket: ante un estado roto, se recupera una versión anterior.
+
+**Cómo activarlo** (adaptado a este proyecto):
+
+1. Crear un bucket de GCS (manualmente una vez, con la CLI o la consola). Al crearlo fuera de Terraform se evita el "problema del huevo y la gallina" (Terraform no puede guardar el estado de su propio bucket en ese mismo bucket).
+
+```powershell
+gsutil mb -p booksocial-infra -l us-central1 -b on gs://tf-state-booksocial
+gsutil versioning set on gs://tf-state-booksocial   # opcional, recomendado
+```
+
+2. Configurar el backend en `provider.tf`:
+
+```hcl
+terraform {
+  backend "gcs" {
+    bucket = "tf-state-booksocial"
+    prefix = "terraform/environments/dev"
+  }
+  # ... el resto (required_version, required_providers) igual
+}
+```
+
+3. Migrar el estado local existente cambiando el backend y re-inicializando:
+
+```powershell
+terraform init -migrate-state   # detecta el estado local y lo sube al bucket preguntando confirmación
+```
+
+> `-migrate-state` copia el estado local actual al bucket **sin borrar nada** y deja desde entonces la nube como fuente de verdad. Sin él, `terraform init` simplemente usa el backend declarado (y si este `prefix` ya tiene estado, lo usa).
+
+**Consideraciones**
+
+- **No se mezcla backend local con remoto "a medias"**: al cambiar el `terraform {}` block de backend, siempre hay que re-ejecutar `terraform init` (o `init -migrate-state`); Terraform lo avisa si lo olvidas.
+- Los **secretos** del estado ya estaban protegidos del Git; al pasar a GCS asegúrate de que el bucket tenga **IAM restringido** (solo las cuentas del equipo) y, de nuevo, activa **versionado**.
+- El `.gitignore` sigue ignorando `*.tfstate`: no cambia nada ahí, simplemente el fichero local deja de generarse (o queda obsoleto).
+- Para una sola persona en modo aprendizaje (caso de esta guía), el backend local es suficiente; este apartado queda como **siguiente paso al trabajar en equipo**.
 
 > **Nota (revisión posterior a la Fase 13B)** — se intentó desplegar los 8 servicios (identity, gateway, user, book, review, shelf, social, notification) en Cloud Run. El `db-f1-micro` de Cloud SQL **no admite más de ~2 servicios Spring+JPA simultáneos**: al arrancar varios en paralelo se agotan los slots reservados y aparece `FATAL: remaining connection slots are reserved for roles with privileges of the "pg_use_reserved_connections" role` / SQLState `53300` (`too_many_connections`). El flag `max_connections` **no es editable** en tier `shared-core`. Configuración gratuita estable desplegada:
 >
@@ -963,6 +1121,33 @@ curl.exe -s "https://gateway-h6b4lrpgmq-uc.a.run.app/follows/3/following" -H "Au
 | Apply se queda colgado creando Cloud SQL | El polling del provider no detecta operaciones DONE | `terraform import` de los recursos y continuar |
 | `FATAL: remaining connection slots are reserved for roles with privileges of the "pg_use_reserved_connections" role` (SQLState `53300`) al arrancar cualquier servicio con datasource | El tier `db-f1-micro`/shared-core de Cloud SQL admite muy pocas conexiones (~25 máx.); varios servicios Spring+JPA arrancando en paralelo llenan los slots | Reducir el número de servicios con Postgres desplegados a los que caben (≈2), o subir el tier de la instancia. `max_connections` **no es editable** en tier `shared-core`. Los servicios que **solo usan Mongo + Rabbit** (social, notification) **no** chocan con este límite y pueden desplegarse en paralelo |
 
+### A.1 — Procedimiento general de diagnóstico: un servicio no despega en Cloud Run
+
+Cuando un Cloud Run "se queda en el intento", lo más útil es **seguir este orden** (en vez de tocar el `.tf` a ciegas). La mayoría de errores del Apéndice se resuelven con el paso 2.
+
+1. **¿Cuál es el estado?** `gcloud run services list --region us-central1`. Si el servicio no aparece con su URL o la condición no está `Active`, está fallando el arranque.
+
+2. **Lee los logs del arranque** (la fuente de verdad de la causa raíz). Sustituye `<rev>` por la revisión que toca:
+
+```powershell
+# últimos logs de la revisión (más directo que darle vueltas a la consola)
+gcloud beta run services logs tail --service <servicio> --region us-central1
+# o por nombre de revisión
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.revision_name=<rev>"
+```
+
+3. **Diagnóstico de los 4 tramos típicos** (todos salen en los logs si los miras):
+   - **El contenedor no arranca** (`Application failed to start`, `Error code 9`) → depende de la app: URI mal, secreto mal, password por defecto. Ver filas del Apéndice.
+   - **El startup probe falla pero la app arrancó** (`Tomcat started on port 8081` + no `Ready`) → el puerto NO coincide con `$PORT` (8080). Env `SERVER_PORT=8080`.
+   - **El entorno no tiene lo que la app espera** (Redis sidecar `I/O error`, Mongo `Database name must not be empty`) → ajustar el contenedor/sidecar, ver filas.
+   - **El servicio está sano pero Cloud Run lo ve lejos** (límite de slots, `53300`) → problema de capacidad, no de código. Ver última fila.
+
+4. **Aplica el cambio y verifica** (no asumas): edita `.tf` → `terraform plan` (confirma la `~`-modificación) → `terraform apply`. Cloud Run **recrea la revisión** sola; vuelve a leer los logs con el paso 2 para confirmar que el error cambió o desapareció.
+
+5. **Verifica por red/HTPP**: cuando la revisión levante (paso 1 muestra `Active`), prueba la URL con `curl -w "%{http_code}"` y, si devuelve un `4xx`/`5xx`, repite el paso 2 (el `HttpMessageNotReadableException` u otros salen ahí). El `401 {"error":"unauthorized"}` con body JSON suele ser el truco de comillas de PowerShell (ver tabla), no un problema del servicio.
+
+> **Regla de oro**: ante un fallo de Cloud Run, **casi siempre la causa está en los logs del contenedor**, no en el `.tf`. El `.tf` solo define el "quién y cómo" (envs, puerto, sidecar); los logs te dicen el "por qué muere". Orden recomendado: logs → ajuste de `.tf` → reapply → logs.
+
 ---
 
-*Actualizado al cierre de la Fase 13 — alcances A (identity + gateway + Redis sidecar + Cloud SQL) y B (user-service + book-service + MongoDB Atlas M0 + CloudAMQP) desplegados y verificados E2E en GCP. Revisión posterior: tras probar los 8 servicios, se revirtió a una configuración estable en capa gratuita (identity + gateway + book-service, **más social-service + notification-service por ser solo Mongo+Rabbit**) por el límite de conexiones del `db-f1-micro` (ver nota en 3.7 y Apéndice A).*
+*Actualizado al cierre de la Fase 13 — alcances A (identity + gateway + Redis sidecar + Cloud SQL) y B (user-service + book-service + MongoDB Atlas M0 + CloudAMQP) desplegados y verificados E2E en GCP. Revisión posterior: tras probar los 8 servicios, se revirtió a una configuración estable en capa gratuita (identity + gateway + book-service, **más social-service + notification-service por ser solo Mongo+Rabbit**) por el límite de conexiones del `db-f1-micro` (ver nota en 3.7 y Apéndice A). Se amplió la sección [3.0.1](#301--terraform-desde-cero-apuntes-para-principiantes) con conceptos de Terraform para principiantes (estado, providers, recursos, dependencias, `init`/`plan`/`apply`, `import`, secretos), la [3.7.1](#371--backend-remoto-gcs-mover-el-estado-local-a-la-nube) con el backend remoto GCS, y el [A.1](#a1--procedimiento-general-de-diagnóstico-un-servicio-no-despega-en-cloud-run) con el procedimiento de diagnóstico.*
