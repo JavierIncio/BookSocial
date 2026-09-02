@@ -1285,7 +1285,7 @@ server {
     location ~ ^/(?:auth|books|authors|reviews|shelves|profiles|follows)(?:/|$) {
         proxy_pass $GATEWAY_URI;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
@@ -1295,7 +1295,7 @@ server {
         rewrite ^/api/(.*)$ /$1 break;
         proxy_pass $GATEWAY_URI;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
@@ -1306,7 +1306,7 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
+        proxy_set_header Host $proxy_host;
         proxy_read_timeout 86400;
     }
 
@@ -1343,6 +1343,8 @@ server {
 **Sección 5 (SPA locales)**: Angular con `localize: true` produce `dist/frontend/browser/{en,es,pt}/`. Cada locale tiene su `base href` (`/en/`, `/es/`, `/pt/`). El `try_files` sirve archivos estáticos si existen y, si no, redirige a `index.html` para que Angular Router maneje la ruta en el lado del cliente.
 
 **Las variables `$GATEWAY_URI` y `$NOTIFICATION_URI`** no son resueltas por nginx en runtime — son sustituidas por `envsubst` antes de arrancar nginx (ver 3.8.4).
+
+**💡 CRÍTICO — `Host $proxy_host` (no `$host`)**: Cloud Run enruta cada petición por el header `Host`, que debe coincidir con la URL del servicio. Si usas `proxy_set_header Host $host` (el host del frontend, p.ej. `frontend-....a.run.app`), el request llega al gateway con un `Host` que no le corresponde y Google devuelve **404** (la página de error de GCP "That's an error"). `$proxy_host` es el host de la URL del `proxy_pass` (el gateway/notification). En local no se nota porque `$host` es `localhost`, pero en la nube rompe el proxy. Síntoma: `POST /auth/register` directo al gateway → 200/400, pero a través del frontend → 404.
 
 ### 3.8.4 — entrypoint.sh (resolución de variables)
 
@@ -1742,6 +1744,7 @@ Si la URL contiene `client_id=123456789-abcdefg.apps.googleusercontent.com` (el 
 | WebSocket se conecta pero el broker no responde (conexión abierta, sin frames)                                                                                                     | `allowedOriginPatterns("http://localhost:4200")` en `WebSocketConfig.java` rechaza el origin del frontend Cloud Run                                                       | Configurar `APP_WEBSOCKET_ALLOWED_ORIGINS` con el origin del frontend desplegado. Ver 3.8.7.                                                                                                                                                                                                                  |
 | OAuth2 callback no funciona con i18n (F5 en `/oauth2/callback` redirige a `/en/` y pierde el token)                                                                                 | `history.replaceState(null, '', '/oauth2/callback')` hardcodea la ruta sin el prefijo del locale (`/en/`)                                                                   | Usar `new URL('oauth2/callback', document.baseURI).pathname` para construir la ruta correcta (`/en/oauth2/callback`). Ver 3.8.8.                                                                                                                                                                               |
 | `google_auth_url` muestra `client_id=${GOOGLE_CLIENT_ID}` literal                                                                                                                  | El contenedor identity no tiene las env vars `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` configuradas                                                                        | Añadir las env vars al bloque `env` del identity en `main.tf` y los valores sensibles en `terraform.tfvars`. Ver 3.9.                                                                                                                                                                                          |
+| API a través del frontend devuelve **404 de Google** ("That's an error") pero directo al gateway funciona (200/400)                                                                   | nginx envía `Host: $host` (el host del frontend, p.ej. `frontend-....a.run.app`); Cloud Run enruta por el `Host` y no coincide con el gateway → 404                        | Usar `proxy_set_header Host $proxy_host` (host de la URL del `proxy_pass`) en vez de `Host $host`. Ver 3.8.3.                                                                                                                                                                                              |
 | Apply se queda colgado creando Cloud SQL                                                                                                                                              | El polling del provider no detecta operaciones DONE                                                                                                                         | `terraform import` de los recursos y continuar                                                                                                                                                                                                                                                                  |
 | `FATAL: remaining connection slots are reserved for roles with privileges of the "pg_use_reserved_connections" role` (SQLState `53300`) al arrancar cualquier servicio con datasource | El tier `db-f1-micro`/shared-core de Cloud SQL admite muy pocas conexiones (~25 máx.); varios servicios Spring+JPA arrancando en paralelo llenan los slots                  | Reducir el número de servicios con Postgres desplegados a los que caben (≈2), o subir el tier de la instancia. `max_connections` **no es editable** en tier `shared-core`. Los servicios que **solo usan Mongo + Rabbit** (social, notification) **no** chocan con este límite y pueden desplegarse en paralelo |
 
