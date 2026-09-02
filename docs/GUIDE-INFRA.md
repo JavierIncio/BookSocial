@@ -24,7 +24,9 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 | Bloque                                                                                     | Tema                                              | Fase       |
 | ------------------------------------------------------------------------------------------ | ------------------------------------------------- | ---------- |
 | [0. Infraestructura local Docker](#bloque-0--infraestructura-local-docker-compose)         | Compose, healthchecks, volúmenes, puertos         | —          |
+| [0.0. Qué es Docker](#00--qué-es-docker-apuntes-para-principiantes)                        | Imágenes, contenedores, volúmenes, puertos, Dockerfile | —      |
 | [1. Contenerización y CI](#bloque-1--contenerización-y-ci)                                 | Dockerfiles, `.dockerignore`, compose ampliado, CI | Fase 1    |
+| [1.1.1. Ciclo de vida Maven](#111--el-ciclo-de-vida-de-maven-y-qué-hace-mvnw--b--pl-identity-service--am-package--dskiptests) | Fases de Maven, `package`, `-pl`/`-am`/`-DskipTests` | Fase 1 |
 | [2. Operación local](#bloque-2--operación-local)                                            | Comandos útiles, logs, redespliegue               | Referencia |
 | [3. Deploy cloud con Terraform](#bloque-3--despliegue-cloud-con-terraform-fase-13)         | GCP, Cloud SQL, Registry, Cloud Run, IAM, Mongo/Rabbit externos | Fase 13    |
 | [A. Errores típicos del Bloque 3](#apéndice-a--errores-típicos-del-despliegue-cloud)      | Troubleshooting con solución directa              | Referencia |
@@ -32,6 +34,61 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 ---
 
 # Bloque 0 — Infraestructura local (Docker Compose)
+
+## 0.0 — ¿Qué es Docker? (apuntes para principiantes)
+
+> Si nunca has trabajado con Docker, lee este apartado primero. Es la base del Bloque 0 y del Bloque 1: todo lo que verás (compose, Dockerfiles, contenedores, imágenes) cae dentro de los conceptos que se explican aquí.
+
+**El problema que resuelve Docker**: las bases de datos (PostgreSQL, MongoDB, RabbitMQ, Redis) y las aplicaciones dependen de versiones exactas de ejecutables, bibliotecas y configuración. Instalarlas "a mano" en cada máquina da errores distintos según el sistema. Docker **empaqueta una aplicación y todo lo que necesita** en una unidad reproducible que corre igual en cualquier equipo.
+
+**Los conceptos esenciales (con la analogía del "pedido")**
+
+1. **Imagen** (`image`) — la *plantilla o receta*. Es un paquete de solo-lectura con el código, el runtime, las librerías y la config. Casos: `postgres:16-alpine`, `mongo:8.0`, `redis:7-alpine`, `eclipse-temurin:21-jre`. Se comparte y versiona. En Bloque 0 usamos **imágenes oficiales**; en Bloque 1 las **construimos nosotros** (Dockerfiles).
+
+   - Las imágenes se organizan por **`repositorio:etiqueta`** (repository:tag). `postgres:16-alpine` = repositorio `postgres`, tag `16-alpine`. El tag suele ser la versión; es lo que te asegura "esta imagen concreta".
+   - `-alpine` es una variante **ultraligera** (basada en Alpine Linux): ocupa menos. Ideal para desarrollo.
+
+2. **Contenedor** (`container`) — una *instancia en ejecución* de una imagen. La imagen es el plano; el contenedor es el barco corriendo. Puedes tener **muchos contenedores de la misma imagen**. Los contenedores son efímeros: se crean, corren y se destruyen; los **datos** se guardan aparte (volúmenes, ver abajo).
+
+3. **Volumen** (`volume`) — el **almacenamiento persistente** que sobrevive a la vida del contenedor. Si un contenedor se elimina y se recrea, sin volumen se pierden sus datos. Con volumen (`volumes: postgres-data:/var/lib/postgresql/data`), los datos quedan guardados en el host y sobreviven.
+
+4. **Puerto publicado** (`ports: "5432:5432"`) — el formato es `"HOST:CONTENEDOR"`. Expone el puerto del contenedor hacia la máquina que ejecuta Docker. Así un microservicio corriendo en el host se conecta a `localhost:5432` y llega al PostgreSQL del contenedor.
+
+5. **Red / nombre de contenedor** — los servicios del mismo `docker compose` comparten una red interna y se llaman **por su nombre de servicio** (`postgres`, `redis`, `identity-service`) en vez de por IP. Por eso `SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/...` funciona: dentro de la red Docker, `postgres` es el host.
+
+**Dockerfile: cómo se construye una imagen propia (Bloque 1)**
+
+Un `Dockerfile` es una receta que **dice paso a paso cómo construir** la imagen. Cada instrucción crea una **capa** del sistema de ficheros; Docker cachea capas, de modo que reconstruir es incremental (ver 2.2).
+
+```dockerfile
+FROM eclipse-temurin:21-jre          # parte de una base ya preparada
+WORKDIR /app                         # carpeta de trabajo dentro de la imagen
+COPY app.jar app.jar                 # copia el jar hacia la imagen
+ENTRYPOINT ["java", "-jar", "app.jar"]  # qué comando ejecuta al arrancar el contenedor
+```
+
+- **`FROM ... AS nombre`**: define una **etapa** (stage). En un Dockerfile multi-stage hay varios `FROM`, y el último define la imagen final. Las etapas intermedias se descartan salvo lo que copies de ellas → imagen final pequeña (ver 1.1).
+- **`COPY --from=build <origen> <destino>`**: copia un fichero **desde otra etapa** (`build`) a la imagen final. Es el mecanismo clave del multi-stage: compilas con herramientas gordas (Maven) y solo copias el artefacto (el JAR) a la imagen final mínima.
+- **`EXPOSE`**: documenta el puerto que la app escucha (no lo publica; es informativo).
+- **`RUN`**: ejecuta un comando durante la construcción (p.ej. instalar `curl`).
+
+**Healthcheck: por qué `healthy`/`unhealthy`**
+
+Un contenedor puede estar **arrancado** (Docker lo levantó) pero su servicio interno **todavía no listo** (PostgreSQL inicializando, la JVM cargando). El `healthcheck` interroga al servicio interno (p.ej. `pg_isready`) para saber cuándo está realmente preparado. `docker compose ps` lo muestra en la columna STATUS (`healthy | unhealthy | starting`), y es la base del `depends_on: condition: service_healthy` (un servicio no arranca hasta que su dependencia está sana). Ver [0.2].
+
+**Docker Compose: la "orquesta" de la infraestructura**
+
+Docker solo corre **un** contenedor. **Compose** (`infrastructure/docker-compose.yml`) define y levanta **varios contenedores relacionados** con una sola orden (`docker compose up -d --build`), gestionando red, volúmenes, healthchecks y orden de arranque (`depends_on`). En Bloque 0 Compose levanta solo la infraestructura (BBDD + broker); en Bloque 1 añade los microservicios contenerizados.
+
+**El término "contexto de build"** (`build.context`)
+
+Al construir una imagen, Docker manda **una carpeta íntegra** al demonio (el *contexto*, p.ej. `context: ..` → la raíz del monorepo). Solo puede copiar lo que está dentro de ese contexto (`COPY . .`). El `.dockerignore` excluye carpetas del contexto para que no viajen (véase `.dockerignore` en 1.2): así la imagen no manda `target/`, `node_modules/`, `.env` ni secretos.
+
+**El porqué de `docker compose ... up -d --build`**
+
+- `up`: crea e inicia los servicios definidos.
+- `-d` (detached): arranca en segundo plano y te devuelve la consola (no bloquea).
+- `--build`: reconstruye las imágenes propias **antes** de levantar los contenedores (imprescindible tras cambiar código en un microservicio, ver 2.2).
 
 ## 0.1 — Estructura de carpetas
 
@@ -189,6 +246,39 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 - **Stage de build**: una imagen de Maven compila solo ese módulo. `-pl <módulo>` ejecuta solo ese proyecto; `-am` (also make) compila también los proyectos de los que depende (el parent `booksocial-parent`); `-DskipTests` acelera el build (los tests ya corren en CI).
 - **Stage de runtime**: parte de una imagen Java mínima (`21-jre`, sin Maven, sin código fuente) y solo copia el JAR → imagen **pequeña**. Se instala `curl` porque el healthcheck de Docker Compose lo usa.
 - El nombre del JAR no es casual: Maven lo genera como `<artifactId>-<version>.jar`. Con `version = 0.1.0-SNAPSHOT` en el parent POM, cada módulo produce `X-0.1.0-SNAPSHOT.jar`.
+
+### 1.1.1 — El ciclo de vida de Maven y qué hace `./mvnw -B -pl identity-service -am package -DskipTests`
+
+**Qué es Maven**: una herramienta de **build de Java** que lee el `pom.xml` de cada módulo y sabe cómo compilar, empaquetar y gestionar dependencias. Tiene un **ciclo de vida** predefinido: una **secuencia fija de fases** que se ejecuta en orden. Invocar una fase ejecuta **todas las anteriores**.
+
+**Las fases del ciclo de vida (la cadena que cuenta aquí)**:
+
+| Fase | Qué hace |
+| --- | --- |
+| `validate` | Comprueba que el proyecto es correcto (estructura, dependencias). |
+| `compile` | Compila el código fuente (`.java` → `.class`). |
+| `test` | Compila y ejecuta los **tests** (`src/test/java`). |
+| `package` | Empaqueta lo compilado → genera el **artefacto** (`.jar`/`.war`). |
+| `verify`/`install`/`deploy` | Pasos posteriores (verificación, instalación local, despliegue). |
+
+Como las fases son **acumulativas**, decir `mvn package` = hacer `validate + compile + test + package`. Es decir, **Maven ya corre los tests durante `package`** (por eso `-DskipTests` "salta" algo que por defecto ocurre).
+
+**Desglose argumento por argumento de la línea del Dockerfile**:
+
+```
+./mvnw -B -pl identity-service -am package -DskipTests
+```
+
+- **`./mvnw`** — el **Maven Wrapper**: un script que descarga una versión concreta de Maven automáticamente. Garantiza que **todos** (local, CI, Docker) usen la **misma versión**, sin instalar Maven a mano. Vive en la raíz del monorepo. `./` lo ejecuta desde la carpeta actual.
+- **`-B`** (batch mode) — desactiva el progreso/animation y los `colorcodes` de Maven: salida limpia y estable para CI/scripts/Docker. Sin él, Maven asume que hay una terminal interactiva (puede dar problemas en un build no interactivo).
+- **`-pl identity-service`** (project-list) — dice: *"compila **solo** este proyecto",* **no todo el monorepo**. Acelera el build: en un monorepo con 7 módulos, construir solo el que toca es mucho más rápido.
+- **`-am`** (also-make) — imprescindible compañero de `-pl`: *"y también los proyectos de los que **depende**"*. Mientras `-pl` limita el alcance, `-am` lo re-expande **hacia arriba** para incluir los módulos-padre/dependencias necesarios (aquí, el parent `booksocial-parent`). El módulo `identity-service` hereda de `booksocial-parent`: para construirlo, Maven necesita compilar/escanear antes su POM padre.
+- **`package`** — la fase a ejecutar (ver tabla): compila, testea y genera el JAR `identity-service-0.1.0-SNAPSHOT.jar` en `target/`.
+- **`-DskipTests`** — *"compila los tests pero no los ejecutes"*. Es **distinto de `-Dmaven.test.skip=true`** (que ni siquiera compila los tests). `-DskipTests` los compila (valida que siguen compilando) pero **no los corre** → build más rápido. Los tests "reales" se ejecutan en la **CI** (no interesa repetirlos en cada `docker build`).
+
+**Por qué el `RUN` combina `chmod +x mvnw &&`**: el script `mvnw` necesita permiso de ejecución, pero el COPY de Docker puede no preservarlo según el sistema (Windows). Se le da `+x` justo antes de lanzarlo.
+
+**De dónde sale el nombre del JAR** (`identity-service-0.1.0-SNAPSHOT.jar`): Maven lo nombra como `<artifactId>-<version>.jar`. El `artifactId` (`identity-service`) y el `version` (`0.1.0-SNAPSHOT`) vienen del `pom.xml` (heredados del parent). Por eso, al copiar el JAR a la imagen final, la ruta **no es casual**: refleja exactamente esos dos campos del POM.
 
 El gateway es idéntico, cambiando el módulo (`-pl gateway`) y el JAR copiado (`gateway-0.1.0-SNAPSHOT.jar`).
 
@@ -1150,4 +1240,4 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.revisi
 
 ---
 
-*Actualizado al cierre de la Fase 13 — alcances A (identity + gateway + Redis sidecar + Cloud SQL) y B (user-service + book-service + MongoDB Atlas M0 + CloudAMQP) desplegados y verificados E2E en GCP. Revisión posterior: tras probar los 8 servicios, se revirtió a una configuración estable en capa gratuita (identity + gateway + book-service, **más social-service + notification-service por ser solo Mongo+Rabbit**) por el límite de conexiones del `db-f1-micro` (ver nota en 3.7 y Apéndice A). Se amplió la sección [3.0.1](#301--terraform-desde-cero-apuntes-para-principiantes) con conceptos de Terraform para principiantes (estado, providers, recursos, dependencias, `init`/`plan`/`apply`, `import`, secretos), la [3.7.1](#371--backend-remoto-gcs-mover-el-estado-local-a-la-nube) con el backend remoto GCS, y el [A.1](#a1--procedimiento-general-de-diagnóstico-un-servicio-no-despega-en-cloud-run) con el procedimiento de diagnóstico.*
+*Actualizado al cierre de la Fase 13 — alcances A (identity + gateway + Redis sidecar + Cloud SQL) y B (user-service + book-service + MongoDB Atlas M0 + CloudAMQP) desplegados y verificados E2E en GCP. Revisión posterior: tras probar los 8 servicios, se revirtió a una configuración estable en capa gratuita (identity + gateway + book-service, **más social-service + notification-service por ser solo Mongo+Rabbit**) por el límite de conexiones del `db-f1-micro` (ver nota en 3.7 y Apéndice A). Contenido pedagógico añadido para principiantes: [0.0](#00--qué-es-docker-apuntes-para-principiantes) (qué es Docker: imágenes, contenedores, volúmenes, puertos, Dockerfile, compose, contexto), [1.1.1](#111--el-ciclo-de-vida-de-maven-y-qué-hace-mvnw--b--pl-identity-service--am-package--dskiptests) (ciclo de vida de Maven y el comando del Dockerfile), [3.0.1](#301--terraform-desde-cero-apuntes-para-principiantes) (conceptos de Terraform), [3.7.1](#371--backend-remoto-gcs-mover-el-estado-local-a-la-nube) (backend remoto GCS) y [A.1](#a1--procedimiento-general-de-diagnóstico-un-servicio-no-despega-en-cloud-run) (diagnóstico).*
