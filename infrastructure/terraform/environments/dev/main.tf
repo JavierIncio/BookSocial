@@ -100,6 +100,14 @@ resource "google_cloud_run_v2_service" "identity" {
         name  = "SERVER_PORT"
         value = "8080"
       }
+      env {
+        name  = "GOOGLE_CLIENT_ID"
+        value = var.google_client_id
+      }
+      env {
+        name  = "GOOGLE_CLIENT_SECRET"
+        value = var.google_client_secret
+      }
     }
 
     containers {

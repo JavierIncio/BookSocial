@@ -50,3 +50,15 @@ variable "google_books_api_key" {
   default     = ""
   sensitive   = true
 }
+
+variable "google_client_id" {
+  description = "Google OAuth2 Client ID para identity-service (login con Google)"
+  type        = string
+  sensitive   = true
+}
+
+variable "google_client_secret" {
+  description = "Google OAuth2 Client Secret para identity-service (login con Google)"
+  type        = string
+  sensitive   = true
+}
