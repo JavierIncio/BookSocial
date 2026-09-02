@@ -29,6 +29,8 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 | [1.1.1. Ciclo de vida Maven](#111--el-ciclo-de-vida-de-maven-y-qué-hace-mvnw--b--pl-identity-service--am-package--dskiptests) | Fases de Maven, `package`, `-pl`/`-am`/`-DskipTests`            | Fase 1     |
 | [2. Operación local](#bloque-2--operación-local)                                                                              | Comandos útiles, logs, redespliegue                             | Referencia |
 | [3. Deploy cloud con Terraform](#bloque-3--despliegue-cloud-con-terraform-fase-13)                                            | GCP, Cloud SQL, Registry, Cloud Run, IAM, Mongo/Rabbit externos | Fase 13    |
+| [3.8. Frontend desplegable en Cloud Run](#38--frontend-desplegable-en-cloud-run-fase-14)                                      | nginx, multi-locale, proxy API/WS, environments, Terraform     | Fase 14    |
+| [3.9. OAuth2 Google real en la nube](#39--oauth2-google-real-en-la-nube)                                                      | Variables sensibles, env vars en identity, Google Console       | Fase 14    |
 | [A. Errores típicos del Bloque 3](#apéndice-a--errores-típicos-del-despliegue-cloud)                                          | Troubleshooting con solución directa                            | Referencia |
 
 ---
@@ -1140,11 +1142,11 @@ curl.exe -s "https://gateway-h6b4lrpgmq-uc.a.run.app/follows/3/following" -H "Au
 
 > **POST sin body en Cloud Run**: los POST sin cuerpo (`POST /follows/6`) fallan con `411 Length Required` del balanceador de Google. Solución: `-H "Content-Length: 0"` (o `-d ""`).
 
-## 3.7 — Qué queda fuera del alcance B
+## 3.7 — Pendientes que quedaron fuera del alcance B (Fase 13)
 
-- **OAuth2 Google**: el container de identity necesita `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` reales + `redirect_uri` HTTPS (`https://<identity>.a.run.app/login/oauth2/code/google`). Sin ellos, el botón "Google" genera una URL con el placeholder `${GOOGLE_CLIENT_ID}`.
-- **Frontend**: Bloque 4 (Cloud Run para el SPA, o bien Vercel/Netlify como alternativa gratuita).
-- **resto de servicios** (review-service, shelf-service, social-service, notification-service): necesitan también Mongo + RabbitMQ (ya disponibles) + sus URIs de interconexión (`REVIEW_SERVICE_URI`, `SHELF_SERVICE_URI`, `SOCIAL_SERVICE_URI`, `NOTIFICATION_SERVICE_URI`) — misma receta que 3.6.4.
+- **Frontend**: desplegado (Fase 14, sección 3.8).
+- **OAuth2 Google**: preparado en Terraform (Fase 14, sección 3.9); falta crear el OAuth Client ID en Google Console y añadir los valores a `tfvars`.
+- **resto de servicios** (review-service, shelf-service): necesitan Postgres (no disponibles en capa gratuita del `db-f1-micro`). social-service y notification-service **ya están desplegados** (solo Mongo + Rabbit).
 - **Backend state cloud**: el `.tfstate` vive en **local** (carpeta `dev`), protegido del Git por el `.gitignore`, pero **solo lo ve tu máquina**. Para trabajo en equipo hay que mover el estado a un **backend remoto**. Aprende cómo de forma pedagógica en [3.7.1](#371--backend-remoto-gcs-mover-el-estado-local-a-la-nube) justo debajo.
 
 ### 3.7.1 — Backend remoto (GCS): mover el estado local a la nube
@@ -1201,6 +1203,524 @@ terraform init -migrate-state   # detecta el estado local y lo sube al bucket pr
 
 ---
 
+## 3.8 — Frontend desplegable en Cloud Run (Fase 14)
+
+El SPA Angular se despliega como un **servicio Cloud Run** con una imagen **nginx multi-stage**. En local, `ng serve` proxea las llamadas API al gateway vía `proxy.conf.json`. En producción, **nginx dentro del contenedor** replic ese proxy pero apuntando a los servicios de Cloud Run reales.
+
+### 3.8.1 — Arquitectura del despliegue
+
+```
+Browser ──→ https://frontend-...a.run.app/
+                │
+                ├── /          → nginx 302 → /en/        (locale por defecto)
+                ├── /en/*      → nginx sirve archivos estáticos Angular
+                ├── /es/*      → nginx sirve archivos estáticos Angular
+                ├── /pt/*      → nginx sirve archivos estáticos Angular
+                ├── /auth/*, /books/*, /reviews/* ... → nginx proxy_pass → gateway
+                ├── /api/feed, /api/notifications ... → nginx rewrite /api/* → /* → gateway
+                └── /ws        → nginx proxy_pass → notification-service (WebSocket upgrade)
+```
+
+El frontend **nunca llama directamente** a los servicios backend. Todas las peticiones HTTP van al mismo origen (`frontend-...a.run.app`) y nginx las enruta. Esto significa que el SPA no necesita ningún `environment.apiBaseUrl` — sigue usando URLs relativas como en local.
+
+### 3.8.2 — Dockerfile multi-stage
+
+```dockerfile
+# Stage 1: build the Angular app
+FROM node:24-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# Stage 2: runtime with nginx
+FROM nginx:1.27-alpine
+RUN rm -rf /usr/share/nginx/html/*
+COPY --from=build /app/dist/frontend/browser/ /usr/share/nginx/html/
+COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+EXPOSE 8080
+ENTRYPOINT ["/entrypoint.sh"]
+```
+
+**Stage 1** (build): trae Node 24, instala dependencias con `npm ci` (determinista) y compila `ng build --configuration production` (i18n locales: `en/`, `es/`, `pt/`). El resultado vive en `dist/frontend/browser/`.
+
+**Stage 2** (runtime): parte de nginx alpine (~40MB). Solo copia:
+- Los archivos estáticos compilados (`dist/frontend/browser/` → `/usr/share/nginx/html/`).
+- La config de nginx (`nginx.conf.template`).
+- El entrypoint (`entrypoint.sh`).
+
+**Contexto de build**: la raíz del directorio `frontend/` (no el monorepo completo). El `.dockerignore` excluye `node_modules/`, `dist/`, `.angular/` y `.env` para que el build sea rápido y no incluya secretos.
+
+```dockerignore
+node_modules
+dist
+.angular
+*.log
+.env
+```
+
+### 3.8.3 — nginx.conf.template (el cerebro del proxy)
+
+```nginx
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    client_max_body_size 10m;
+
+    # ── 1. Archivos estáticos (cache agresiva) ──
+    location ~* \.(?:js|css|ico|png|svg|jpg|jpeg|gif|webp|woff2?|ttf)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # ── 2. API → gateway (sin rewrite) ──
+    location ~ ^/(?:auth|books|authors|reviews|shelves|profiles|follows)(?:/|$) {
+        proxy_pass $GATEWAY_URI;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ── 3. /api/* → gateway (con rewrite: /api/feed → /feed) ──
+    location ~ ^/api/(?:users|feed|notifications)(?:/|$) {
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass $GATEWAY_URI;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # ── 4. WebSocket → notification-service ──
+    location /ws {
+        proxy_pass $NOTIFICATION_URI;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400;
+    }
+
+    # ── 5. SPA locales (i18n) ──
+    location /en/ {
+        alias /usr/share/nginx/html/en/;
+        try_files $uri $uri/ /en/index.html;
+    }
+    location /es/ {
+        alias /usr/share/nginx/html/es/;
+        try_files $uri $uri/ /es/index.html;
+    }
+    location /pt/ {
+        alias /usr/share/nginx/html/pt/;
+        try_files $uri $uri/ /pt/index.html;
+    }
+
+    # ── 6. Redirección raíz ──
+    location = / {
+        return 302 /en/;
+    }
+    location / {
+        return 302 /en/;
+    }
+}
+```
+
+**Sección 2 (API → gateway)**: cuando el browser pide `https://frontend-.../auth/login`, nginx lo envía a `https://gateway-.../auth/login`. El SPA usa URLs relativas (`/auth/login`, `/books/search`), así que el proxy es transparente.
+
+**Sección 3 (rewrite /api/)**: el frontend usa `/api/feed`, `/api/notifications`, `/api/users/me` (con prefijo `/api/`), pero en el backend estas rutas son `/feed`, `/notifications`, `/users/me`. El `rewrite` elimina el prefijo antes de pasar al gateway. La frontera `(?:/|$)` evita colisiones con rutas que empiezan igual pero continúan (p.ej. `/api/notifications` no confunde con `/api/notification-service`).
+
+**Sección 4 (WebSocket)**: STOMP/WebSocket necesita los headers `Upgrade: websocket` y `Connection: upgrade` para la negociación HTTP→WS. `proxy_read_timeout 86400` evita que nginx cierre la conexión idle después de 60s (timeout por defecto).
+
+**Sección 5 (SPA locales)**: Angular con `localize: true` produce `dist/frontend/browser/{en,es,pt}/`. Cada locale tiene su `base href` (`/en/`, `/es/`, `/pt/`). El `try_files` sirve archivos estáticos si existen y, si no, redirige a `index.html` para que Angular Router maneje la ruta en el lado del cliente.
+
+**Las variables `$GATEWAY_URI` y `$NOTIFICATION_URI`** no son resueltas por nginx en runtime — son sustituidas por `envsubst` antes de arrancar nginx (ver 3.8.4).
+
+### 3.8.4 — entrypoint.sh (resolución de variables)
+
+```sh
+#!/bin/sh
+set -e
+
+envsubst '$GATEWAY_URI $NOTIFICATION_URI' \
+  < /etc/nginx/conf.d/default.conf.template \
+  > /etc/nginx/conf.d/default.conf
+
+exec nginx -g 'daemon off;'
+```
+
+**¿Por qué envsubst?** nginx puede usar variables (`$host`, `$uri`, `$scheme`) en sus config. Si usáramos `envsubst` sin filtro, intentaría reemplazar `$host` por una variable de entorno que no existe → la dejaría vacía y todo rompería.
+
+`envsubst '$GATEWAY_URI $NOTIFICATION_URI'` solo sustituye **esas dos variables**. Las variables de nginx (`$host`, `$uri`, `$scheme`, `$proxy_add_x_forwarded_for`, `$http_upgrade`) quedan intactas porque no están en la lista de filtro.
+
+**¿Por qué no resolver en runtime con `resolver`?** nginx puede resolver DNS en runtime con `resolver 8.8.8.8;`, pero el patrón `envsubst` + template es más explícito y evita dependencias de DNS en runtime.
+
+### 3.8.5 — Construcción de la imagen
+
+```powershell
+# Build (desde frontend/)
+docker build -t us-central1-docker.pkg.dev/booksocial-infra/apps/frontend:latest .
+
+# Push al registry
+gcloud auth configure-docker us-central1-docker.pkg.dev
+docker push us-central1-docker.pkg.dev/booksocial-infra/apps/frontend:latest
+
+# Verificar localmente
+docker run -p 8090:8080 \
+  -e GATEWAY_URI=http://localhost:8080 \
+  -e NOTIFICATION_URI=http://localhost:8087 \
+  booksocial-frontend:test
+# → GET / → 302 a /en/
+# → GET /en/ → 200 (SPA Angular)
+# → GET /en/feed → 200 (SPA fallback, Angular Router maneja la ruta)
+```
+
+### 3.8.6 — Configuración de environments (prod vs dev)
+
+El Angular builder soporta `fileReplacements` para intercambiar el fichero de environments según la configuración de build:
+
+```json
+// angular.json (production config)
+"fileReplacements": [{
+    "replace": "src/environments/environments.ts",
+    "with": "src/environments/environments.production.ts"
+}]
+```
+
+**`environments.ts`** (base, usado en desarrollo):
+```ts
+export const environment = {
+  production: false,
+  googleAuthUrl: 'http://localhost:8081/oauth2/authorization/google',
+  notificationWsUrl: 'ws://localhost:8087/ws',
+};
+```
+
+**`environments.production.ts`** (usado en `ng build` / Docker):
+```ts
+export const environment = {
+  production: true,
+  googleAuthUrl: 'https://identity-h6b4lrpgmq-uc.a.run.app/oauth2/authorization/google',
+  notificationWsUrl: undefined as string | undefined,
+};
+```
+
+**`notificationWsUrl: undefined`** es deliberado. En el servicio STOMP, cuando es `undefined`, el WebSocket se construye desde `window.location` (mismo origen a través de nginx):
+
+```ts
+private wsUrl(token: string): string {
+    const base =
+      environment.notificationWsUrl ??
+      `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
+    return `${base}?token=${encodeURIComponent(token)}`;
+}
+```
+
+**En local** (`ng serve`): `notificationWsUrl = 'ws://localhost:8087/ws'` → conexión directa al notification-service.
+**En Cloud Run**: `notificationWsUrl = undefined` → `wss://frontend-...a.run.app/ws` → proxy nginx → notification-service.
+
+Ventaja: **no hay que hardcodear la URL del notification-service en el frontend**. El proxy de nginx lo resuelve. Si el notification-service se mueve a otra URL, solo cambia el env var de Terraform, no el código.
+
+### 3.8.7 — WebSocket configurable en notification-service
+
+Antes del Fase 14, el `WebSocketConfig.java` hardcodeaba el origen permitido:
+
+```java
+// Antes — solo funciona con localhost
+registry.addEndpoint("/ws")
+        .setAllowedOriginPatterns("http://localhost:4200")
+```
+
+Ahora lee la env var `APP_WEBSOCKET_ALLOWED_ORIGINS`:
+
+```java
+@Value("${app.websocket.allowed-origins:http://localhost:4200}")
+private String allowedOrigins;
+
+// ...
+registry.addEndpoint("/ws")
+        .setAllowedOriginPatterns(allowedOrigins)
+```
+
+En `application.yaml`:
+```yaml
+app:
+  websocket:
+    allowed-origins: ${APP_WEBSOCKET_ALLOWED_ORIGINS:http://localhost:4200}
+```
+
+**Spring relaxed binding**: la env var `APP_WEBSOCKET_ALLOWED_ORIGINS` → la propiedad `app.websocket.allowed-origins` (guiones). En local, la env no existe → usa el default `http://localhost:4200`. En Cloud Run, se puede establecer a `https://frontend-...a.run.app` para aceptar conexiones desde el frontend desplegado.
+
+### 3.8.8 — OAuth2 callback y base href
+
+El componente `oauth2-callback` limpia la URL del fragment después de leer el token:
+
+**Antes** (rompe con i18n locales):
+```ts
+history.replaceState(null, '', '/oauth2/callback');
+```
+
+Esto hardcodea `/oauth2/callback` — pero con i18n la app vive en `/en/oauth2/callback`. Si el usuario hace F5, el servidor no encuentra `/oauth2/callback` → redirige a `/en/` y se pierde el estado.
+
+**Ahora** (respeta el locale):
+```ts
+history.replaceState(null, '', new URL('oauth2/callback', document.baseURI).pathname);
+```
+
+`document.baseURI` devuelve la URL base actual (`https://frontend-...a.run.app/en/`). `new URL('oauth2/callback', base)` construye `https://frontend-...a.run.app/en/oauth2/callback`. El `.pathname` extrae `/en/oauth2/callback`. Ahora F5 funciona correctamente en cualquier locale.
+
+### 3.8.9 — Terraform: Cloud Run frontend
+
+```hcl
+resource "google_cloud_run_v2_service" "frontend" {
+  name                = "frontend"
+  location            = var.region
+  deletion_protection = false
+
+  template {
+    scaling {
+      min_instance_count = 0     # escala a cero (ahorro)
+    }
+
+    containers {
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/frontend:latest"
+
+      ports {
+        container_port = 8080   # nginx
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      env {
+        name  = "GATEWAY_URI"
+        value = var.gateway_uri          # ← variable, NO resource ref (ver 3.8.10)
+      }
+      env {
+        name  = "NOTIFICATION_URI"
+        value = var.notification_uri     # ← variable, NO resource ref
+      }
+      env {
+        name  = "SERVER_PORT"
+        value = "8080"
+      }
+    }
+  }
+}
+```
+
+**`min_instance_count = 0`**: Cloud Run escala a cero cuando no hay tráfico (gratuito). Con la primera petición, cold start de ~2-3s.
+
+**`gateway_uri` y `notification_uri`** son variables, no referencias a recursos Terraform. La razón es el **ciclo de dependencias** (ver 3.8.10).
+
+### 3.8.10 — Rompiendo el ciclo de dependencias Terraform
+
+Terraform calcula automáticamente las dependencias por las referencias entre recursos. Pero surgió un ciclo:
+
+```
+frontend → (necesita) gateway.uri    [gateway existe]
+gateway   → (necesita) identity.uri  [identity existe]
+identity  → (necesita) frontend.uri  [frontend → ¡ciclo!]
+```
+
+Identity necesita la URL del frontend para el `OAUTH_FRONTEND_REDIRECT_URI`. Gateway necesita la URL de identity. Frontend necesita la URL de gateway y notification. Resultado: `Error: Cycle: google_cloud_run_v2_service.frontend, google_cloud_run_v2_service.identity, google_cloud_run_v2_service.gateway`.
+
+**Solución**: las variables `gateway_uri` y `notification_uri` rompen el ciclo porque Terraform no ve dependencias a través de variables (solo a través de `resource.X.Y`):
+
+```hcl
+# variables.tf — el usuario pone los valores conocidos en tfvars
+variable "gateway_uri" {
+  description = "URL del gateway (known: https://gateway-...a.run.app)"
+  type        = string
+}
+
+variable "notification_uri" {
+  description = "URL del notification-service (known: https://notification-...a.run.app)"
+  type        = string
+}
+```
+
+El ciclo se resuelve: `identity → frontend` (dependencia real), `frontend → variables` (sin dependencia de recursos). Identity sigue necesitando la URL del frontend, pero frontend ya no necesita las URLs de gateway/notification como referencias de recurso.
+
+### 3.8.11 — Cambios en identity-service (OAUTH_FRONTEND_REDIRECT_URI)
+
+El identity-service necesita saber a qué URL redirigir después del login con Google. Antes estaba hardcoded en `application.yml`:
+
+```yaml
+# Antes
+app:
+  oauth2:
+    frontend-redirect-uri: http://localhost:4200/oauth2/callback
+```
+
+Ahora es configurable por env var:
+
+```yaml
+# Ahora
+app:
+  oauth2:
+    frontend-redirect-uri: ${OAUTH_FRONTEND_REDIRECT_URI:http://localhost:4200/oauth2/callback}
+```
+
+En Terraform, el identity recibe la URL del frontend + `/en/oauth2/callback`:
+
+```hcl
+# En el bloque env del identity
+env {
+  name  = "OAUTH_FRONTEND_REDIRECT_URI"
+  value = "${google_cloud_run_v2_service.frontend.uri}/en/oauth2/callback"
+}
+```
+
+Esto crea una **dependencia real** (`identity → frontend`), que es correcta: el identity necesita saber la URL del frontend para redirigir el callback.
+
+### 3.8.12 — Flujo completo del OAuth2 con i18n en la nube
+
+1. Usuario visita `https://frontend-...a.run.app/` → nginx 302 a `/en/` → Angular carga
+2. Click "Login with Google" → `window.location.href = environment.googleAuthUrl`
+3. Browser navega a `https://identity-...a.run.app/oauth2/authorization/google`
+4. Spring genera URL de Google con `client_id=<REAL>&redirect_uri=https://identity-.../login/oauth2/code/google`
+5. Google autentica al usuario → redirige a `https://identity-.../login/oauth2/code/google`
+6. `OAuth2AuthenticationSuccessHandler` linka/crea el usuario, emite tokens
+7. `response.sendRedirect(frontendRedirect + "#access_token=" + tokens.accessToken())`
+8. Browser navega a `https://frontend-...a.run.app/en/oauth2/callback#access_token=eyJ...`
+9. Angular Router maneja la ruta `/en/oauth2/callback` → `Oauth2Callback` lee el fragment
+10. `history.replaceState(null, '', new URL('oauth2/callback', document.baseURI).pathname)` → limpia la URL a `/en/oauth2/callback`
+11. `auth.applyOAuthToken(token)` → redirige a `/home`
+
+**Nota**: el `/en/` del paso 8 es porque `OAUTH_FRONTEND_REDIRECT_URI` termina en `/en/oauth2/callback` (configurado en Terraform). Si el usuario tiene otro locale preferido, Angular lo cambiará después del primer login.
+
+### 3.8.13 — Variables necesarias en terraform.tfvars
+
+```hcl
+# Fase 14 — frontend
+gateway_uri      = "https://gateway-h6b4lrpgmq-uc.a.run.app"
+notification_uri = "https://notification-service-h6b4lrpgmq-uc.a.run.app"
+```
+
+Estas URLs son **conocidas después del primer `terraform apply`** de la Fase 13. Se copian de `terraform output gateway_url` (o de la tabla de servicios en GCP).
+
+### 3.8.14 — Apply y verificación
+
+```powershell
+# 1. Build y push de la imagen frontend
+docker build -t us-central1-docker.pkg.dev/booksocial-infra/apps/frontend:latest .
+docker push us-central1-docker.pkg.dev/booksocial-infra/apps/frontend:latest
+
+# 2. Terraform
+cd infrastructure/terraform/environments/dev
+terraform validate
+terraform plan        # solo 2-3 cambios: +frontend, ~identity (+OAUTH_FRONTEND_REDIRECT_URI), ~IAM (+frontend)
+terraform apply
+
+# 3. Verificar
+terraform output frontend_url
+# → "https://frontend-h6b4lrpgmq-uc.a.run.app"
+
+# 4. Comprobar SPA
+curl.exe -s -o NUL -w "%{http_code}" "https://frontend-h6b4lrpgmq-uc.a.run.app/"
+# → 302 (redirige a /en/)
+
+curl.exe -s -o NUL -w "%{http_code}" "https://frontend-h6b4lrpgmq-uc.a.run.app/en/"
+# → 200 (SPA Angular)
+
+# 5. Comprobar proxy de API (register vía gateway a través de nginx)
+curl.exe -s -o NUL -w "%{http_code}" -X POST "https://frontend-h6b4lrpgmq-uc.a.run.app/auth/register" \
+  -H "Content-Type: application/json" -d "@register.json"
+# → 201 (el request pasó a /auth/register → gateway → identity)
+```
+
+---
+
+## 3.9 — OAuth2 Google real en la nube
+
+La sección 3.8 ya cubre el frontend y el `OAUTH_FRONTEND_REDIRECT_URI`. Este apartado documenta los pasos que faltan para completar el flujo OAuth2 de Google en la nube.
+
+### 3.9.1 — Variables Terraform (ya preparadas)
+
+```hcl
+# variables.tf — ya existen desde la Fase 14
+variable "google_client_id" {
+  description = "Google OAuth2 Client ID para identity-service"
+  type        = string
+  sensitive   = true
+}
+
+variable "google_client_secret" {
+  description = "Google OAuth2 Client Secret para identity-service"
+  type        = string
+  sensitive   = true
+}
+```
+
+Y en el bloque `env` del identity (ya aplicado):
+
+```hcl
+env { name = "GOOGLE_CLIENT_ID";     value = var.google_client_id }
+env { name = "GOOGLE_CLIENT_SECRET"; value = var.google_client_secret }
+```
+
+### 3.9.2 — Crear OAuth 2.0 Client ID en Google Console
+
+1. Ir a [Google Cloud Console](https://console.cloud.google.com) → proyecto `booksocial-infra`
+2. **APIs & Services → Credentials → CREATE CREDENTIALS → OAuth client ID**
+3. **Application type**: `Web application`
+4. **Name**: `BookSocial Production`
+5. **Authorized redirect URIs** (exactamente):
+   ```
+   https://identity-h6b4lrpgmq-uc.a.run.app/login/oauth2/code/google
+   ```
+6. **Authorized JavaScript origins**:
+   ```
+   https://frontend-h6b4lrpgmq-uc.a.run.app
+   ```
+7. Copiar el **Client ID** y el **Client Secret**.
+
+### 3.9.3 — Añadir valores a terraform.tfvars
+
+```hcl
+# Fase 14 — OAuth2 Google
+google_client_id     = "123456789-abcdefg.apps.googleusercontent.com"
+google_client_secret = "GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Fase 14 — Frontend
+gateway_uri      = "https://gateway-h6b4lrpgmq-uc.a.run.app"
+notification_uri = "https://notification-service-h6b4lrpgmq-uc.a.run.app"
+```
+
+### 3.9.4 — Apply
+
+```powershell
+terraform plan    # muestra ~identity (2 envs nuevas: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
+terraform apply
+```
+
+### 3.9.5 — Verificación
+
+```powershell
+# Comprobar que el identity genera una URL válida
+curl.exe -s -o NUL -w "%{redirect_url}" -I "https://identity-h6b4lrpgmq-uc.a.run.app/oauth2/authorization/google"
+# Debe devolver una URL tipo:
+# https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=123456789-abcdefg.apps.googleusercontent.com&...
+# (sin el placeholder ${GOOGLE_CLIENT_ID})
+```
+
+Si la URL contiene `client_id=123456789-abcdefg.apps.googleusercontent.com` (el valor real), el despliegue fue exitoso. El flujo E2E se verifica desde el navegador: click "Login with Google" en `https://frontend-...a.run.app/en/login` → redirige a Google → callback exitoso → usuario autenticado en `/home`.
+
+---
+
 # Apéndice A — Errores típicos del despliegue cloud
 
 | Síntoma                                                                                                                                                                               | Causa raíz                                                                                                                                                                  | Solución                                                                                                                                                                                                                                                                                                        |
@@ -1217,6 +1737,11 @@ terraform init -migrate-state   # detecta el estado local y lo sube al bucket pr
 | `GET /follows/following` → `401 Authentication required`                                                                                                                              | El controller usa path variable: los endpoints reales son `/follows/{userId}/followers` y `/follows/{userId}/following`                                                     | Usar la ruta con `{userId}`                                                                                                                                                                                                                                                                                     |
 | `411 Length Required` en POST sin body (p.ej. `POST /follows/6`)                                                                                                                      | El balanceador de Google exige `Content-Length`                                                                                                                             | Añadir `-H "Content-Length: 0"` (curl)                                                                                                                                                                                                                                                                          |
 | `/actuator/health` → `DOWN` con `MongoCommandException error 8000 (AtlasError): not authorized on local`                                                                              | Atlas M0 no autoriza al usuario en la BD `local` (el `MongoHealthIndicator` de Spring Boot 4.1 ejecuta `hello` contra `local`)                                              | Inocuo: los endpoints de negocio funcionan; los indicadores Mongo/DB son aparte. Opcional: `management.health.mongodb.enabled: false`                                                                                                                                                                           |
+| `Error: Cycle: frontend, identity, gateway` al hacer `terraform plan`                                                                                                               | `identity` referencia `frontend.uri`, `frontend` referencia `gateway.uri`, `gateway` referencia `identity.uri`                                                              | Usar variables (`gateway_uri`, `notification_uri`) en vez de referencias a recursos en el bloque env del frontend → rompe el ciclo. Ver 3.8.10.                                                                                                                                                                |
+| `no resolver defined to resolve` en nginx al hacer proxy_pass con variable                                                                                                          | `proxy_pass` con una variable (`$GATEWAY_URI`) requiere un `resolver` de DNS en runtime                                                                                    | Usar `envsubst` en el entrypoint para sustituir la variable por el valor literal antes de que nginx arranque. Ver 3.8.4.                                                                                                                                                                                       |
+| WebSocket se conecta pero el broker no responde (conexión abierta, sin frames)                                                                                                     | `allowedOriginPatterns("http://localhost:4200")` en `WebSocketConfig.java` rechaza el origin del frontend Cloud Run                                                       | Configurar `APP_WEBSOCKET_ALLOWED_ORIGINS` con el origin del frontend desplegado. Ver 3.8.7.                                                                                                                                                                                                                  |
+| OAuth2 callback no funciona con i18n (F5 en `/oauth2/callback` redirige a `/en/` y pierde el token)                                                                                 | `history.replaceState(null, '', '/oauth2/callback')` hardcodea la ruta sin el prefijo del locale (`/en/`)                                                                   | Usar `new URL('oauth2/callback', document.baseURI).pathname` para construir la ruta correcta (`/en/oauth2/callback`). Ver 3.8.8.                                                                                                                                                                               |
+| `google_auth_url` muestra `client_id=${GOOGLE_CLIENT_ID}` literal                                                                                                                  | El contenedor identity no tiene las env vars `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` configuradas                                                                        | Añadir las env vars al bloque `env` del identity en `main.tf` y los valores sensibles en `terraform.tfvars`. Ver 3.9.                                                                                                                                                                                          |
 | Apply se queda colgado creando Cloud SQL                                                                                                                                              | El polling del provider no detecta operaciones DONE                                                                                                                         | `terraform import` de los recursos y continuar                                                                                                                                                                                                                                                                  |
 | `FATAL: remaining connection slots are reserved for roles with privileges of the "pg_use_reserved_connections" role` (SQLState `53300`) al arrancar cualquier servicio con datasource | El tier `db-f1-micro`/shared-core de Cloud SQL admite muy pocas conexiones (~25 máx.); varios servicios Spring+JPA arrancando en paralelo llenan los slots                  | Reducir el número de servicios con Postgres desplegados a los que caben (≈2), o subir el tier de la instancia. `max_connections` **no es editable** en tier `shared-core`. Los servicios que **solo usan Mongo + Rabbit** (social, notification) **no** chocan con este límite y pueden desplegarse en paralelo |
 
@@ -1249,4 +1774,4 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.revisi
 
 ---
 
-_Actualizado al cierre de la Fase 13 — alcances A (identity + gateway + Redis sidecar + Cloud SQL) y B (user-service + book-service + MongoDB Atlas M0 + CloudAMQP) desplegados y verificados E2E en GCP. Revisión posterior: tras probar los 8 servicios, se revirtió a una configuración estable en capa gratuita (identity + gateway + book-service, **más social-service + notification-service por ser solo Mongo+Rabbit**) por el límite de conexiones del `db-f1-micro` (ver nota en 3.7 y Apéndice A). Contenido pedagógico añadido para principiantes: [0.0](#00--qué-es-docker-apuntes-para-principiantes) (qué es Docker: imágenes, contenedores, volúmenes, puertos, Dockerfile, compose, contexto), [1.1.1](#111--el-ciclo-de-vida-de-maven-y-qué-hace-mvnw--b--pl-identity-service--am-package--dskiptests) (ciclo de vida de Maven y el comando del Dockerfile), [3.0.1](#301--terraform-desde-cero-apuntes-para-principiantes) (conceptos de Terraform), [3.7.1](#371--backend-remoto-gcs-mover-el-estado-local-a-la-nube) (backend remoto GCS) y [A.1](#a1--procedimiento-general-de-diagnóstico-un-servicio-no-despega-en-cloud-run) (diagnóstico)._
+_Actualizado al cierre de la Fase 14 — frontend desplegable en Cloud Run (nginx multi-stage, locales i18n, proxy API/WS, environments prod/dev, Terraform Cloud Run frontend) + OAuth2 Google preparado en Terraform. Contenido previo: Fase 13 alcances A (identity + gateway + Redis sidecar + Cloud SQL) y B (user-service + book-service + MongoDB Atlas M0 + CloudAMQP) desplegados y verificados E2E en GCP. Revisión posterior: configuración estable en capa gratuita (identity + book-service + social-service + notification-service) por el límite de conexiones del `db-f1-micro`. Contenido pedagógico: [0.0](#00--docker) (Docker), [1.1.1](#111--el-ciclo-de-vida-de-maven-y-qué-hace-mvnw--b--pl-identity-service--am-package--dskiptests) (Maven), [3.0.1](#301--terraform-desde-cero-apuntes-para-principiantes) (Terraform), [3.7.1](#371--backend-remoto-gcs-mover-el-estado-local-a-la-nube) (backend GCS), [3.8](#38--frontend-desplegable-en-cloud-run-fase-14) (frontend Cloud Run: Dockerfile, nginx, envsubst, environments, WebSocket configurable, OAuth2 callback con i18n, ciclo de dependencias), [3.9](#39--oauth2-google-real-en-la-nube) (OAuth2 Google: Google Console, env vars, verificación) y [A.1](#a1--procedimiento-general-de-diagnóstico-un-servicio-no-despega-en-cloud-run) (diagnóstico)._
