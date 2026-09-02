@@ -1680,7 +1680,7 @@ env { name = "GOOGLE_CLIENT_SECRET"; value = var.google_client_secret }
 2. **APIs & Services → Credentials → CREATE CREDENTIALS → OAuth client ID**
 3. **Application type**: `Web application`
 4. **Name**: `BookSocial Production`
-5. **Authorized redirect URIs** (exactamente):
+5. **Authorized redirect URIs** (exactamente, **imprescindible** — sin ella el callback de Google falla):
    ```
    https://identity-h6b4lrpgmq-uc.a.run.app/login/oauth2/code/google
    ```
@@ -1723,6 +1723,8 @@ curl.exe -s -o NUL -w "%{redirect_url}" -I "https://identity-h6b4lrpgmq-uc.a.run
 ```
 
 Si la URL contiene `client_id=123456789-abcdefg.apps.googleusercontent.com` (el valor real), el despliegue fue exitoso. El flujo E2E se verifica desde el navegador: click "Login with Google" en `https://frontend-...a.run.app/en/login` → redirige a Google → callback exitoso → usuario autenticado en `/home`.
+
+> **✅ Verificado E2E en navegador (cierre de Fase 14)**: el login con Google funciona de extremo a extremo. **Único requisito previo en la Google Console**: además del Client ID / Secret, el **redirect URI autorizado** (`https://identity-h6b4lrpgmq-uc.a.run.app/login/oauth2/code/google`) debía existir en la consola — sin él, el callback daba error. Con la redirect URL añadida en la consola y el identity desplegado, el flujo completa: Google → identity (`/login/oauth2/code/google`) → éxito → redirección al frontend con `#access_token=` → el SPA lee el fragment en `/oauth2/callback` → `applyOAuthToken` → `/home` autenticado.
 
 ### 3.9.6 — ⚠️ CRÍTICO: redirect_uri debe ser HTTPS (fix aplicado)
 

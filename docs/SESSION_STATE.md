@@ -143,6 +143,7 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-12 están completadas** (1-1
   - **Proxy API → gateway**: `POST /auth/register` vía `https://frontend-h6b4lrpgmq-uc.a.run.app/auth/register` → **201** con tokens (flujo browser → nginx → gateway → identity).
   - **OAuth2 Google ya funcional**: `GET /identity.../oauth2/authorization/google` → 302 a `accounts.google.com` con `client_id` real (`1011242572347-...`) y **`redirect_uri` HTTPS** (`https://identity-h6b4lrpgmq-uc.a.run.app/login/oauth2/code/google`) al identity. Credenciales en `terraform.tfvars`.
   - **Fix crítico #2 (redirect_uri HTTP→HTTPS)**: la URL de Google traía `redirect_uri=http://...` (HTTP) porque Cloud Run termina TLS en el LB y Spring no deducía HTTPS. `server.forward-headers-strategy: framework` NO bastó (el redirect_uri de OAuth2 Client se construye aparte). Fix: `redirect-uri: ${OAUTH_REDIRECT_URI}` fijo en `application.yml` + env en Terraform (`${var.identity_uri}/login/oauth2/code/google`). Terraform no permite auto-ref (`identity.uri` dentro de sí mismo) → nueva variable `identity_uri`. **Verificado: `redirect_uri=https://...` coincide con el URI autorizado en consola Google.**
+  - **✅ OAuth2 E2E verificado en navegador (cierre de Fase 14)**: el login "Continuar con Google" funciona de extremo a extremo (Google → identity callback → redirección `#access_token=` → SPA `/oauth2/callback` → `/home` autenticado). **Único requisito previo**: la **redirect URL** del identity (`/login/oauth2/code/google`) debía estar añadida en la Google Console (Authorized redirect URIs) — sin ella el callback fallaba; añadida, el flujo completo es correcto.
   - **Bug crítico corregido esta sesión**: nginx usaba `proxy_set_header Host $host` (host del frontend) → Cloud Run devolvía **404** ("That's an error") al proxear API. Fix: `proxy_set_header Host $proxy_host` (host de la URL del `proxy_pass`). Verificado: directo al gateway 400, vía frontend 404 (antes) → 201 (después). Documentado en GUIDE-INFRA 3.8.3 + Apéndice A.
   - **`/actuator/health` del identity → DOWN** (grupos liveness/readiness). En investigación: posible indicador de salud de BD/Redis/contexto; los endpoints de negocio (login/register/OAuth2) funcionan.
 
@@ -159,13 +160,14 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-12 están completadas** (1-1
 
 ## Next Move
 
-El **despliegue cloud en capa gratuita** está completo salvo servicios con Postgres: `identity` + `book-service` (Postgres) + `social-service` + `notification-service` (solo Mongo+Rabbit) + **frontend** (nginx, sin BD) en Cloud Run, todo verificado y commiteado. **Fase 14 (frontend cloud + Google OAuth2) COMPLETADA**: imagen pusheada, `terraform apply` OK, SPA sirviendo en `/en/` `/es/` `/pt/`, proxy API→gateway funcionando (201 en register), y OAuth2 generando URL de Google con `client_id` real. Los servicios con Postgres restantes (`user`, `review`, `shelf`) **no caben** sin subir el tier de Cloud SQL.
+El **despliegue cloud en capa gratuita** está completo salvo servicios con Postgres: `identity` + `book-service` (Postgres) + `social-service` + `notification-service` (solo Mongo+Rabbit) + **frontend** (nginx, sin BD) en Cloud Run, todo verificado y commiteado. **Fase 14 (frontend cloud + Google OAuth2) COMPLETADA y verificada E2E**: imagen pusheada, `terraform apply` OK, SPA sirviendo en `/en/` `/es/` `/pt/`, proxy API→gateway funcionando (201 en register), y **Google OAuth2 funcionando en navegador** (client_id real + redirect_uri HTTPS + redirect URL añadida en la consola). Los servicios con Postgres restantes (`user`, `review`, `shelf`) **no caben** sin subir el tier de Cloud SQL.
 
 **Pendientes / siguientes pasos posibles** (ninguno toca el tier de Cloud SQL):
-- **Verificación real del flujo OAuth2 completo en navegador** (lo único que queda): abrir `https://frontend-h6b4lrpgmq-uc.a.run.app/en/login`, hacer clic en "Continuar con Google", completar el consentimiento, y comprobar que el callback `/en/oauth2/callback` autentica al usuario y materializa el perfil. La URL de Google ya es correcta (client_id real + redirect_uri HTTPS); solo falta el paso humano del consentimiento.
-- **Investigar el `/actuator/health: DOWN` del identity** (posible indicador DB/Redis/security health que lo baja; los endpoints de negocio funcionan).
+- **Despliegue cloud en capa gratuita COMPLETADO E2E**: identity + book-service (Postgres) + social-service + notification-service (solo Mongo+Rabbit) + **frontend** (nginx) + **Google OAuth2** (login real en navegador verificado). Todo commiteado y pusheado.
+- **Investigar el `/actuator/health: DOWN` del identity** (posible indicador DB/Redis/security health que lo baja; los endpoints de negocio y el login Google funcionan).
 - **Backend state cloud**: mover `.tfstate` local a `terraform backend "gcs"` — recomendado.
 - **Unit / Integration testing con JUnit 5 + Mockito** (plan detallado arriba).
+- **user/review/shelf a la nube**: solo si se sube el tier de Cloud SQL (mayor coste); hoy se prueban en el stack Docker local.
 
 ### Unit / Integration testing (JUnit 5 + Mockito + AssertJ) — estado y plan
 
