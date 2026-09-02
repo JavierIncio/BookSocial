@@ -163,11 +163,11 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-12 están completadas** (1-1
 El **despliegue cloud en capa gratuita** está completo salvo servicios con Postgres: `identity` + `book-service` (Postgres) + `social-service` + `notification-service` (solo Mongo+Rabbit) + **frontend** (nginx, sin BD) en Cloud Run, todo verificado y commiteado. **Fase 14 (frontend cloud + Google OAuth2) COMPLETADA y verificada E2E**: imagen pusheada, `terraform apply` OK, SPA sirviendo en `/en/` `/es/` `/pt/`, proxy API→gateway funcionando (201 en register), y **Google OAuth2 funcionando en navegador** (client_id real + redirect_uri HTTPS + redirect URL añadida en la consola). Los servicios con Postgres restantes (`user`, `review`, `shelf`) **no caben** sin subir el tier de Cloud SQL.
 
 **Pendientes / siguientes pasos posibles** (ninguno toca el tier de Cloud SQL):
-- **Despliegue cloud en capa gratuita COMPLETADO E2E**: identity + book-service (Postgres) + social-service + notification-service (solo Mongo+Rabbit) + **frontend** (nginx) + **Google OAuth2** (login real en navegador verificado) + **`/actuator/health` del identity UP**. Todo commiteado y pusheado.
-- **Consistencia de imágenes**: los demás servicios (book, social, notification, gateway, frontend) usan `:latest` en `main.tf` — mismo quirk de no-redespliegue del identity. Opcional: pasarlos a digest inmutable.
+- **Despliegue cloud en capa gratuita COMPLETADO E2E**: identity + book-service (Postgres) + social-service + notification-service (solo Mongo+Rabbit) + **frontend** (nginx) + **Google OAuth2** (login real en navegador verificado) + **`/actuator/health` del identity UP** + **todas las imágenes fijadas a digest inmutable** (identity, gateway, book, social, notification, frontend). Todo commiteado y pusheado.
 - **Backend state cloud**: mover `.tfstate` local a `terraform backend "gcs"` — recomendado.
 - **Unit / Integration testing con JUnit 5 + Mockito** (plan detallado arriba).
 - **user/review/shelf a la nube**: solo si se sube el tier de Cloud SQL (mayor coste); hoy se prueban en el stack Docker local.
+- **Conocido y aceptado**: `/actuator/health` de book/social/notification devuelve `503 DOWN` por el `MongoHealthIndicator` (el ping Mongo a la BD de datos no responde; la app funciona). Decisión del equipo: dejarlo como está (documentado en Apéndice A, GUIDE-INFRA).
 
 ### Unit / Integration testing (JUnit 5 + Mockito + AssertJ) — estado y plan
 

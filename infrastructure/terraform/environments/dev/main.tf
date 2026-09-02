@@ -137,7 +137,7 @@ resource "google_cloud_run_v2_service" "gateway" {
     }
 
     containers {
-      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/gateway:latest"
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/gateway@sha256:3b3bc4b28294a8119bc52b03110769e1b25f9433d83259c6368c4806a32fa2b9"
 
       resources {
         limits = {
@@ -183,7 +183,7 @@ resource "google_cloud_run_v2_service" "book" {
     }
 
     containers {
-      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/book:latest"
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/book@sha256:8a77d584695706695d1f41c64ddfb3be7276f0a1e7479384fb90701fd5e1fea0"
 
       ports {
         container_port = 8080
@@ -260,7 +260,7 @@ resource "google_cloud_run_v2_service" "social" {
     }
 
     containers {
-      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/social:latest"
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/social@sha256:40ae3ef8616e4369054d41078138aa00c1df57cee2635361edaa4d5331d26bf5"
 
       ports {
         container_port = 8080
@@ -325,7 +325,7 @@ resource "google_cloud_run_v2_service" "notification" {
     }
 
     containers {
-      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/notification:latest"
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/notification@sha256:d90805af0970e35f2d4ecc3536954bed525b2593ce312b9cc4b28dddf0ad41d4"
 
       ports {
         container_port = 8080
@@ -390,7 +390,7 @@ resource "google_cloud_run_v2_service" "frontend" {
     }
 
     containers {
-      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/frontend:latest"
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/frontend@sha256:28af2ff9e583b86f1a4091c4a10db7c8b9689d0994523b1c8b18864c7413444d"
 
       ports {
         container_port = 8080
