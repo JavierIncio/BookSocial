@@ -108,6 +108,10 @@ resource "google_cloud_run_v2_service" "identity" {
         name  = "GOOGLE_CLIENT_SECRET"
         value = var.google_client_secret
       }
+      env {
+        name  = "OAUTH_FRONTEND_REDIRECT_URI"
+        value = "${google_cloud_run_v2_service.frontend.uri}/en/oauth2/callback"
+      }
     }
 
     containers {
@@ -370,6 +374,47 @@ resource "google_cloud_run_v2_service" "notification" {
   }
 }
 
+# ---------- Cloud Run: frontend (nginx SPA) ----------
+resource "google_cloud_run_v2_service" "frontend" {
+  name                = "frontend"
+  location            = var.region
+  deletion_protection = false
+
+  template {
+    scaling {
+      min_instance_count = 0
+    }
+
+    containers {
+      image = "us-central1-docker.pkg.dev/${var.project_id}/apps/frontend:latest"
+
+      ports {
+        container_port = 8080
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+      }
+
+      env {
+        name  = "GATEWAY_URI"
+        value = var.gateway_uri
+      }
+      env {
+        name  = "NOTIFICATION_URI"
+        value = var.notification_uri
+      }
+      env {
+        name  = "SERVER_PORT"
+        value = "8080"
+      }
+    }
+  }
+}
+
 # ---------- Acceso público (sin login) ----------
 resource "google_cloud_run_v2_service_iam_member" "public" {
   for_each = {
@@ -378,6 +423,7 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
     book-service         = google_cloud_run_v2_service.book.name
     social-service       = google_cloud_run_v2_service.social.name
     notification-service = google_cloud_run_v2_service.notification.name
+    frontend             = google_cloud_run_v2_service.frontend.name
   }
   project  = var.project_id
   location = var.region

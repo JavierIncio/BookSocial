@@ -1,0 +1,67 @@
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    client_max_body_size 10m;
+
+    # Static assets (hashed, cacheable)
+    location ~* \.(?:js|css|ico|png|svg|jpg|jpeg|gif|webp|woff2?|ttf)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # API routes -> gateway (passed through unchanged)
+    location ~ ^/(?:auth|books|authors|reviews|shelves|profiles|follows)(?:/|$) {
+        proxy_pass $GATEWAY_URI;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # /api/* routes -> gateway with /api prefix stripped
+    location ~ ^/api/(?:users|feed|notifications)(?:/|$) {
+        rewrite ^/api/(.*)$ /$1 break;
+        proxy_pass $GATEWAY_URI;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket -> notification-service
+    location /ws {
+        proxy_pass $NOTIFICATION_URI;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400;
+    }
+
+    # Locale-specific SPA roots
+    location /en/ {
+        alias /usr/share/nginx/html/en/;
+        try_files $uri $uri/ /en/index.html;
+    }
+    location /es/ {
+        alias /usr/share/nginx/html/es/;
+        try_files $uri $uri/ /es/index.html;
+    }
+    location /pt/ {
+        alias /usr/share/nginx/html/pt/;
+        try_files $uri $uri/ /pt/index.html;
+    }
+
+    # Default to English locale
+    location = / {
+        return 302 /en/;
+    }
+    location / {
+        return 302 /en/;
+    }
+}

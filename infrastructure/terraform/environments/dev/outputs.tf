@@ -9,3 +9,7 @@ output "gateway_url" {
 output "identity_url" {
   value = google_cloud_run_v2_service.identity.uri
 }
+
+output "frontend_url" {
+  value = google_cloud_run_v2_service.frontend.uri
+}

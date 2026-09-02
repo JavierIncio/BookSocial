@@ -56,7 +56,7 @@ app:
     issuer: booksocial-identity
 
   oauth2:
-    frontend-redirect-uri: http://localhost:4200/oauth2/callback
+    frontend-redirect-uri: ${OAUTH_FRONTEND_REDIRECT_URI:http://localhost:4200/oauth2/callback}
 
   mail:
     from: ${MAIL_FROM:no-reply@booksocial.com}

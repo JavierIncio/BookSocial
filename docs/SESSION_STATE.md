@@ -136,6 +136,8 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-12 están completadas** (1-1
 
 ### Active
 
+- **Fase 14 (frontend cloud) implementada, pendiente de aplicar**: imagen nginx + Cloud Run `frontend` listos en `frontend/` (Dockerfile, nginx.conf.template, entrypoint.sh, environments.production.ts + fileReplacements, WebSocket configurable) y en Terraform (servicio `frontend` + IAM + output; identity con `OAUTH_FRONTEND_REDIRECT_URI`). Docker build + run local verificado (SPA 200 en `/en/` `/es/` `/pt/`, redirige `/`→`/en/`, envsubst de `GATEWAY_URI`/`NOTIFICATION_URI` correcto). **Falta**: `docker build`/push de `frontend:latest`, añadir `google_client_id`/`google_client_secret`/`gateway_uri`/`notification_uri` a `terraform.tfvars`, crear OAuth Client ID en consola Google, y `terraform apply` + verificación E2E.
+
 - **Despliegue cloud gratuito estable (post-Fase 13) desplegado y commiteado**: el tier `db-f1-micro` de Cloud SQL satura con >2 servicios Spring+JPA (`FATAL: remaining connection slots are reserved` / SQLState `53300`). Configuración estable en Cloud Run (commiteada en commits `5d26fff` + `c52a9ac`):
   - **Con Postgres**: `identity` + `book-service`.
   - **Solo Mongo + Rabbit** (no gastan slots Postgres): `social-service` + `notification-service` — verificado E2E (`GET /feed` 200, `GET /notifications` + `/unread-count` 200 vía gateway; consumers Rabbit `consumers=1` en colas `social-service.*` y `notification-service.*`).
@@ -148,47 +150,43 @@ Continuar el monorepo **BookSocial**. Las **Fases 1-12 están completadas** (1-1
 
 ## Next Move
 
-El **despliegue cloud en capa gratuita** está en su límite práctico: `identity` + `book-service` (Postgres) + `social-service` + `notification-service` (solo Mongo+Rabbit) en Cloud Run, todo verificado y commiteado. Los servicios con Postgres restantes (`user`, `review`, `shelf`) **no caben** sin subir el tier de Cloud SQL, y nada de su código cambió — están desarrollados y funcionan en el stack Docker local.
+El **despliegue cloud en capa gratuita** está en su límite práctico: `identity` + `book-service` (Postgres) + `social-service` + `notification-service` (solo Mongo+Rabbit) en Cloud Run, todo verificado y commiteado. **Fase 14 (frontend cloud) implementada**: imagen nginx + servicio Cloud Run `frontend` preparado en Terraform (falta `docker build`/push + `terraform apply`). Los servicios con Postgres restantes (`user`, `review`, `shelf`) **no caben** sin subir el tier de Cloud SQL, y nada de su código cambió — están desarrollados y funcionan en el stack Docker local.
 
-**Dos caminos viables para la siguiente sesión** (ninguno require tocar el tier de Cloud SQL):
+**Caminos viables restantes** (ninguno toca el tier de Cloud SQL):
 
 | # | Opción | Alcance | Requiere |
 |---|--------|---------|----------|
-| **1** | **Google OAuth2 real** (identity en la nube) | Que el botón "Continuar con Google" funcione contra el `identity` de Cloud Run (hoy genera URL con placeholder `${GOOGLE_CLIENT_ID}`) | Credenciales OAuth2 reales + `redirect_uri` HTTPS del identity cloud |
-| **2** | **Frontend (Bloque 4)** | Desplegar el SPA Angular en la nube | Imagen nginx + Cloud Run, o Vercel/Netlify. `FRONTEND_URL` ya es variable de Terraform |
+| **1** | **Google OAuth2 real** (identity en la nube) | Que el botón "Continuar con Google" funcione contra el `identity` de Cloud Run | Credenciales OAuth2 reales + `redirect_uri` HTTPS del identity cloud (Terraform ya preparado) |
+| **2** | **Frontend (Bloque 4)** | Desplegar el SPA Angular en la nube (imagen nginx + Cloud Run, **implementado, falta aplicar**) | `docker build` + push imagen `frontend:latest`, `terraform apply`, `gateway_uri`/`notification_uri` en tfvars |
 
-> **Recomendado empezar por la opción 1** si el usuario dispone de credenciales OAuth2 de Google (es lo que desbloquea el flujo social completo en la nube). La opción 2 es independiente y puede ir después. Elegir una no bloquea la otra.
+> **Ambas están listas para aplicar** en una misma sesión: subir la imagen `frontend:latest`, añadir `google_client_id`/`google_client_secret`/`gateway_uri`/`notification_uri` a `terraform.tfvars`, y `terraform apply`.
 
 ### Opción 1 — Google OAuth2 real (identity cloud)
 
 **Objetivo**: sustituir el placeholder `${GOOGLE_CLIENT_ID}` del identity de Cloud Run por credenciales reales y que `/login/oauth2/code/google` complete el callback contra la consola de Google.
 
-**Estado**: Terraform preparado — `variables.tf` tiene `google_client_id`/`google_client_secret` (sensitive) y `main.tf` inyecta `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` como env vars en el identity. Falta: (1) crear OAuth 2.0 Client ID en Google Cloud Console, (2) añadir valores a `terraform.tfvars`, (3) `terraform apply`, (4) verificar.
+**Estado**: Terraform preparado — `variables.tf` tiene `google_client_id`/`google_client_secret` (sensitive) y `main.tf` inyecta `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` como env vars en el identity, además de `OAUTH_FRONTEND_REDIRECT_URI` = `${frontend.uri}/en/oauth2/callback` (el callback del SPA desplegado). Falta: (1) crear OAuth 2.0 Client ID en Google Cloud Console (redirect URI = identity + `/login/oauth2/code/google`, **origin JS** = la URL del frontend Cloud Run), (2) añadir valores a `terraform.tfvars`, (3) subir la imagen del frontend, (4) `terraform apply`, (5) verificar.
 
 **Pasos previstos**:
 1. En Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs → crear un ID de cliente tipo **Web application**:
    - Authorized redirect URIs: `https://<identity-url>.a.run.app/login/oauth2/code/google` (URL real del identity Cloud Run).
-   - Authorized JavaScript origins: el origen del frontend (si está desplegado) o vacío para esta fase.
-2. Añadir estos 2 valores a `terraform.tfvars` (sensitive, no commitear):
+   - Authorized JavaScript origins: `https://<frontend-url>.a.run.app` (origen del frontend desplegado).
+2. Añadir los 4 valores a `terraform.tfvars` (sensitive, no commitear):
    - `google_client_id = "<valor>"`
    - `google_client_secret = "<valor>"`
-3. `terraform plan` → solo 2 cambios (identity: +GOOGLE_CLIENT_ID, +GOOGLE_CLIENT_SECRET).
+   - `gateway_uri = "https://gateway-h6b4lrpgmq-uc.a.run.app"` (real)
+   - `notification_uri = "https://notification-service-h6b4lrpgmq-uc.a.run.app"` (real)
+3. `docker build`/push de `frontend:latest` al registry `apps`.
 4. `terraform apply`.
-5. Verificar: `GET https://identity-h6b4lrpgmq-uc.a.run.app/oauth2/authorization/google` → 302 a `accounts.google.com/o/oauth2/v2/auth?client_id=<real>` (sin placeholder `${}`).
+5. Verificar: `GET https://identity-h6b4lrpgmq-uc.a.run.app/oauth2/authorization/google` → 302 con `client_id` real; login con Google desde `https://frontend...a.run.app/en/login` → callback materializa/autentica al usuario.
 
-**Ficheros implicados**: `main.tf`, `variables.tf`, `terraform.tfvars` (secretos, no commitear), `identity-service/src/main/resources/application.yml` (posible override de `redirect-uri` vía env).
+**Ficheros implicados**: `main.tf`, `variables.tf`, `terraform.tfvars` (secretos, no commitear), `identity-service/src/main/resources/application.yml` (env `OAUTH_FRONTEND_REDIRECT_URI`).
 
-### Opción 2 — Frontend (Bloque 4)
+### Opción 2 — Frontend (Bloque 4) — Fase 14, implementada
 
-**Objetivo**: desplegar el SPA Angular 21 en la nube para llamar al gateway real.
+**Objetivo**: desplegar el SPA Angular 21 en la nube. **Implementado (falta aplicar)**: `frontend/Dockerfile` multi-stage (Node 24 build `ng build --configuration production` + nginx), `frontend/nginx.conf.template` (sirve locales `/en/` `/es/` `/pt/`, redirige `/`→`/en/`, proxea API→gateway y `/ws`→notification con `envsubst`), `frontend/entrypoint.sh` (sustituye `$GATEWAY_URI`/`$NOTIFICATION_URI`), `environments.production.ts` (googleAuthUrl → identity cloud), `fileReplacements` de producción/desarrollo en `angular.json`, WebSocket URL configurable vía `environment` (la nube deriva `wss://<host>/ws` a través de nginx), `notification-service` con `app.websocket.allowed-origins` configurable por env `APP_WEBSOCKET_ALLOWED_ORIGINS`, y Cloud Run `frontend` en Terraform (envs `GATEWAY_URI`/`NOTIFICATION_URI`/`SERVER_PORT`, min 0, sin Postgres → no choca) + IAM + output `frontend_url`. Docker build + run local verificado (SPA sirve, locales OK, `proxy_pass` con envsubst correcto).**Nota i18n**: el build con `localize: true` produce `dist/frontend/browser/{en,es,pt}` con `base href /en/` etc.; el callback OAuth se sirve en `/en/oauth2/callback`.
 
-**Alcance y alternativas**:
-- **A. Imagen nginx multi-stage + Cloud Run**: añadir `Dockerfile` en `frontend/` (build `ng build --configuration production` + servir con nginx), crear `google_cloud_run_v2_service` llamado p.ej. `frontend` en `main.tf` (siempre min 0, sin Postgres → no choca), ampliar IAM, y en build apuntar la API base del SPA al gateway (`https://gateway-...a.run.app`).
-  - `FRONTEND_URL` ya es variable de Terraform y el identity la usa para `reset-base-url`; hoy apunta a `http://localhost:4200`.
-- **B. Vercel/Netlify (gratuito, sin tocar Terraform)**: `npm run build` y publicar `dist/browser/...`. Configurar los proxies: el SPA usa `proxy.conf.json` en dev, pero en producción llama a una API base que hay que apuntar al gateway. Hay que revisar los `environment`/constantes del frontend para el origen del gateway (buscar dónde se define la base de la API, hoy asumida `/api` del dev-server).
-- `proxy.conf.json` y `environment.ts` son los ficheros a revisar para la URL del gateway en producción.
-
-**Ficheros implicados**: `frontend/` (Dockerfile nuevo, `environment.prod`), `main.tf` + IAM (si Cloud Run), o config de Vercel/Netlify (si B).
+**Ficheros implicados**: `frontend/Dockerfile`, `frontend/nginx.conf.template`, `frontend/entrypoint.sh`, `frontend/.dockerignore`, `frontend/src/environments/environments.production.ts`, `frontend/angular.json`, `frontend/src/app/core/services/notification.realtime.service.ts`, `frontend/src/app/features/auth/oauth2-callback/oauth2-callback.ts`, `notification-service/WebSocketConfig.java` + `application.yaml`, `identity-service/application.yml`, `main.tf` + `variables.tf` + `outputs.tf`.
 
 ### Limpieza / opcional (no bloqueante, más adelante)
 

@@ -2,6 +2,7 @@ import { inject, Injectable, signal } from '@angular/core';
 import { Client } from '@stomp/stompjs';
 import { AuthService } from '@core/services/auth.service';
 import { NotificationResponse } from '@core/models/notification.models';
+import { environment } from '@env/environments';
 
 @Injectable({ providedIn: 'root' })
 export class NotificationRealtimeService {
@@ -11,6 +12,13 @@ export class NotificationRealtimeService {
 
   readonly connected = signal<boolean>(false);
 
+  private wsUrl(token: string): string {
+    const base =
+      environment.notificationWsUrl ??
+      `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`;
+    return `${base}?token=${encodeURIComponent(token)}`;
+  }
+
   connect(onNotification: (notification: NotificationResponse) => void): void {
     this.disconnect();
 
@@ -19,7 +27,7 @@ export class NotificationRealtimeService {
     if (!token || userId === null) return;
 
     this.client = new Client({
-      brokerURL: `ws://localhost:8087/ws?token=${encodeURIComponent(token)}`,
+      brokerURL: this.wsUrl(token),
       reconnectDelay: 5000,
     });
 

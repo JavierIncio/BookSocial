@@ -16,7 +16,7 @@ export class Oauth2Callback implements OnInit {
 
   ngOnInit(): void {
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    history.replaceState(null, '', '/oauth2/callback');
+    history.replaceState(null, '', new URL('oauth2/callback', document.baseURI).pathname);
 
     const token = params.get('access_token');
     const error = params.get('error');

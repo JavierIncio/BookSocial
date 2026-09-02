@@ -62,3 +62,13 @@ variable "google_client_secret" {
   type        = string
   sensitive   = true
 }
+
+variable "gateway_uri" {
+  description = "URL pública del gateway Cloud Run (upstream para el nginx del frontend)"
+  type        = string
+}
+
+variable "notification_uri" {
+  description = "URL pública del notification-service Cloud Run (upstream WebSocket/STOMP del frontend)"
+  type        = string
+}

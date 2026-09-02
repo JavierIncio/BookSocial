@@ -21,6 +21,8 @@ app:
   jwt:
     secret: ${APP_JWT_SECRET}
     issuer: booksocial-identity
+  websocket:
+    allowed-origins: ${APP_WEBSOCKET_ALLOWED_ORIGINS:http://localhost:4200}
 
 management:
   endpoints:
