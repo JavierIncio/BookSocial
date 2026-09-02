@@ -1,7 +1,4 @@
 name: CI
-#  Se dispara en cada push a main y en cada pull request.
-#  Usa el runner de GitHub (Ubuntu), instala JDK 21 Temurin con caché de dependencias Maven, y ejecuta el build del parent POM con el wrapper (así CI no depende de Maven instalado).
-#  El contenedor de servicio PostgreSQL cubre la dependencia de identity-service (datasource booksocial/booksocial en localhost:5432).
 
 on:
   push:

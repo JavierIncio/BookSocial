@@ -268,8 +268,10 @@ El **despliegue cloud en capa gratuita** está en su límite práctico: `identit
 - Convenciones: **signals** + `inject()` (standalone, sin constructor). Obligatorio en zoneless. UI multilingüe (en/es/pt) con `@angular/localize`.
 
 ### Docs
-- `docs/GUIDE.md` — Bloques 0-13, Apéndices A-E (C: operación — despliegue, logs, depuración; E: WebSocket STOMP). Nota + TOC actualizados con la referencia a la guía de infra (`GUIDE-INFRA.md`, Fase 13).
-- `docs/GUIDE-BACKEND.md` — guía de backend; sección **1.10** documenta el rate-limiting (Redis + Bucket4j + `X-Forwarded-For`) con verificación y procedimiento de prueba.
-- `docs/GUIDE-INFRA.md` — **tercera guía** (nueva): Docker extraído de la guía (compose, Dockerfiles, `.dockerignore`, CI, operación local) + **Bloque 3 Terraform detallado** (estructura, import, Cloud SQL, Registry, Cloud Run multi-container, IAM, verificación E2E) + **Apéndice A de errores** del despliegue.
+- `docs/GUIDE-BACKEND.md` — guía de backend (servicios Java/Spring, build backend, Gateway, seguridad, RabbitMQ/STOMP, operación backend). Sección **1.10** documenta el rate-limiting (Redis + Bucket4j + `X-Forwarded-For`) con verificación y procedimiento de prueba.
+- `docs/GUIDE-FRONTEND.md` — guía de frontend (Angular: auth, feed, notificaciones, People, i18n, operación frontend).
+- `docs/GUIDE-INFRA.md` — guía de infraestructura: Docker (compose, Dockerfiles, `.dockerignore`, CI), operación local y **Bloque 3 Terraform** (estructura, import, Cloud SQL, Registry, Cloud Run multi-container, IAM, verificación E2E) + **Apéndice A de errores** del despliegue.
+
+> Nota: la antigua guía global `GUIDE.md` (Bloques 0-13, Apéndices A-E) se consolidó en las tres guías temáticas anteriores (BACKEND / FRONTEND / INFRA) y se eliminó. El contenido único (verificación E2E Fase 1, errores de Fase 1, decisiones) se repartió entre ellas.
 - `docs/ROADMAP.md` — Fases 1-12 documentadas (8.1-8.6 + i18n + Fase 9.1-9.4 + Fase 10 + Fase 11 + Fase 12 + fix rate-limit).
 - `docs/SESSION_STATE.md` — Este archivo.

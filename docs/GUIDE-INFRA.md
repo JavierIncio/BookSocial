@@ -2,7 +2,7 @@
 
 Guía de la **infraestructura** de BookSocial: entorno local con Docker Compose, contenerización de los microservicios, y despliegue cloud con Terraform en Google Cloud Platform (GCP).
 
-> El contenido relativo a Docker (compose, Dockerfiles, CI) se ha extraído de `GUIDE.md` y se amplía aquí con el despliegue cloud. Para el backend Java ver [GUIDE-BACKEND.md](./GUIDE-BACKEND.md); para el frontend Angular ver [GUIDE-FRONTEND.md](./GUIDE-FRONTEND.md).
+> Guía temática de infraestructura: Docker (compose, Dockerfiles, CI), operación local y despliegue cloud con Terraform. Para el backend Java ver [GUIDE-BACKEND.md](./GUIDE-BACKEND.md); para el frontend Angular ver [GUIDE-FRONTEND.md](./GUIDE-FRONTEND.md).
 
 ---
 
@@ -21,34 +21,31 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 
 ## Tabla de contenidos
 
-| Bloque                                                                                     | Tema                                              | Fase       |
-| ------------------------------------------------------------------------------------------ | ------------------------------------------------- | ---------- |
-| [0. Infraestructura local Docker](#bloque-0--infraestructura-local-docker-compose)         | Compose, healthchecks, volúmenes, puertos         | —          |
-| [0.0. Qué es Docker](#00--qué-es-docker-apuntes-para-principiantes)                        | Imágenes, contenedores, volúmenes, puertos, Dockerfile | —      |
-| [1. Contenerización y CI](#bloque-1--contenerización-y-ci)                                 | Dockerfiles, `.dockerignore`, compose ampliado, CI | Fase 1    |
-| [1.1.1. Ciclo de vida Maven](#111--el-ciclo-de-vida-de-maven-y-qué-hace-mvnw--b--pl-identity-service--am-package--dskiptests) | Fases de Maven, `package`, `-pl`/`-am`/`-DskipTests` | Fase 1 |
-| [2. Operación local](#bloque-2--operación-local)                                            | Comandos útiles, logs, redespliegue               | Referencia |
-| [3. Deploy cloud con Terraform](#bloque-3--despliegue-cloud-con-terraform-fase-13)         | GCP, Cloud SQL, Registry, Cloud Run, IAM, Mongo/Rabbit externos | Fase 13    |
-| [A. Errores típicos del Bloque 3](#apéndice-a--errores-típicos-del-despliegue-cloud)      | Troubleshooting con solución directa              | Referencia |
+| Bloque                                                                                                                        | Tema                                                            | Fase       |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ---------- |
+| [0. Infraestructura local Docker](#bloque-0--infraestructura-local-docker-compose)                                            | Compose, healthchecks, volúmenes, puertos                       | —          |
+| [0.0. Docker](#00--docker)                                                                                                    | Imágenes, contenedores, volúmenes, puertos, Dockerfile          | —          |
+| [1. Contenerización y CI](#bloque-1--contenerización-y-ci)                                                                    | Dockerfiles, `.dockerignore`, compose ampliado, CI              | Fase 1     |
+| [1.1.1. Ciclo de vida Maven](#111--el-ciclo-de-vida-de-maven-y-qué-hace-mvnw--b--pl-identity-service--am-package--dskiptests) | Fases de Maven, `package`, `-pl`/`-am`/`-DskipTests`            | Fase 1     |
+| [2. Operación local](#bloque-2--operación-local)                                                                              | Comandos útiles, logs, redespliegue                             | Referencia |
+| [3. Deploy cloud con Terraform](#bloque-3--despliegue-cloud-con-terraform-fase-13)                                            | GCP, Cloud SQL, Registry, Cloud Run, IAM, Mongo/Rabbit externos | Fase 13    |
+| [A. Errores típicos del Bloque 3](#apéndice-a--errores-típicos-del-despliegue-cloud)                                          | Troubleshooting con solución directa                            | Referencia |
 
 ---
 
 # Bloque 0 — Infraestructura local (Docker Compose)
 
-## 0.0 — ¿Qué es Docker? (apuntes para principiantes)
-
-> Si nunca has trabajado con Docker, lee este apartado primero. Es la base del Bloque 0 y del Bloque 1: todo lo que verás (compose, Dockerfiles, contenedores, imágenes) cae dentro de los conceptos que se explican aquí.
+## 0.0 — Docker
 
 **El problema que resuelve Docker**: las bases de datos (PostgreSQL, MongoDB, RabbitMQ, Redis) y las aplicaciones dependen de versiones exactas de ejecutables, bibliotecas y configuración. Instalarlas "a mano" en cada máquina da errores distintos según el sistema. Docker **empaqueta una aplicación y todo lo que necesita** en una unidad reproducible que corre igual en cualquier equipo.
 
-**Los conceptos esenciales (con la analogía del "pedido")**
+**Los conceptos esenciales**
 
-1. **Imagen** (`image`) — la *plantilla o receta*. Es un paquete de solo-lectura con el código, el runtime, las librerías y la config. Casos: `postgres:16-alpine`, `mongo:8.0`, `redis:7-alpine`, `eclipse-temurin:21-jre`. Se comparte y versiona. En Bloque 0 usamos **imágenes oficiales**; en Bloque 1 las **construimos nosotros** (Dockerfiles).
-
+1. **Imagen** (`image`) — la _plantilla o receta_. Es un paquete de solo-lectura con el código, el runtime, las librerías y la config. Casos: `postgres:16-alpine`, `mongo:8.0`, `redis:7-alpine`, `eclipse-temurin:21-jre`. Se comparte y versiona. En Bloque 0 usamos **imágenes oficiales**; en Bloque 1 las **construimos nosotros** (Dockerfiles).
    - Las imágenes se organizan por **`repositorio:etiqueta`** (repository:tag). `postgres:16-alpine` = repositorio `postgres`, tag `16-alpine`. El tag suele ser la versión; es lo que te asegura "esta imagen concreta".
    - `-alpine` es una variante **ultraligera** (basada en Alpine Linux): ocupa menos. Ideal para desarrollo.
 
-2. **Contenedor** (`container`) — una *instancia en ejecución* de una imagen. La imagen es el plano; el contenedor es el barco corriendo. Puedes tener **muchos contenedores de la misma imagen**. Los contenedores son efímeros: se crean, corren y se destruyen; los **datos** se guardan aparte (volúmenes, ver abajo).
+2. **Contenedor** (`container`) — una _instancia en ejecución_ de una imagen. Puedes tener **muchos contenedores de la misma imagen**. Los contenedores son efímeros: se crean, corren y se destruyen; los **datos** se guardan aparte (volúmenes).
 
 3. **Volumen** (`volume`) — el **almacenamiento persistente** que sobrevive a la vida del contenedor. Si un contenedor se elimina y se recrea, sin volumen se pierden sus datos. Con volumen (`volumes: postgres-data:/var/lib/postgresql/data`), los datos quedan guardados en el host y sobreviven.
 
@@ -58,21 +55,21 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 
 **Dockerfile: cómo se construye una imagen propia (Bloque 1)**
 
-Un `Dockerfile` es una receta que **dice paso a paso cómo construir** la imagen. Cada instrucción crea una **capa** del sistema de ficheros; Docker cachea capas, de modo que reconstruir es incremental (ver 2.2).
+Un `Dockerfile` nos dice paso a paso cómo construir la imagen. Cada instrucción crea una **capa** del sistema de ficheros; Docker cachea capas, de modo que reconstruir es incremental (ver 2.2).
 
 ```dockerfile
-FROM eclipse-temurin:21-jre          # parte de una base ya preparada
-WORKDIR /app                         # carpeta de trabajo dentro de la imagen
-COPY app.jar app.jar                 # copia el jar hacia la imagen
+FROM eclipse-temurin:21-jre             # parte de una base ya preparada
+WORKDIR /app                            # carpeta de trabajo dentro de la imagen
+COPY app.jar app.jar                    # copia el jar hacia la imagen
 ENTRYPOINT ["java", "-jar", "app.jar"]  # qué comando ejecuta al arrancar el contenedor
 ```
 
 - **`FROM ... AS nombre`**: define una **etapa** (stage). En un Dockerfile multi-stage hay varios `FROM`, y el último define la imagen final. Las etapas intermedias se descartan salvo lo que copies de ellas → imagen final pequeña (ver 1.1).
-- **`COPY --from=build <origen> <destino>`**: copia un fichero **desde otra etapa** (`build`) a la imagen final. Es el mecanismo clave del multi-stage: compilas con herramientas gordas (Maven) y solo copias el artefacto (el JAR) a la imagen final mínima.
-- **`EXPOSE`**: documenta el puerto que la app escucha (no lo publica; es informativo).
+- **`COPY --from=build <origen> <destino>`**: copia un fichero **desde otra etapa** (`build`) a la imagen final. Es el mecanismo clave del multi-stage: compilas con herramientas potentes (Maven) y solo copias el artefacto (el JAR) a la imagen final mínima.
+- **`EXPOSE`**: documenta el puerto que la app escucha (no lo publica; es **informativo**).
 - **`RUN`**: ejecuta un comando durante la construcción (p.ej. instalar `curl`).
 
-**Healthcheck: por qué `healthy`/`unhealthy`**
+**Healthcheck: `healthy`/`unhealthy`**
 
 Un contenedor puede estar **arrancado** (Docker lo levantó) pero su servicio interno **todavía no listo** (PostgreSQL inicializando, la JVM cargando). El `healthcheck` interroga al servicio interno (p.ej. `pg_isready`) para saber cuándo está realmente preparado. `docker compose ps` lo muestra en la columna STATUS (`healthy | unhealthy | starting`), y es la base del `depends_on: condition: service_healthy` (un servicio no arranca hasta que su dependencia está sana). Ver [0.2].
 
@@ -82,7 +79,7 @@ Docker solo corre **un** contenedor. **Compose** (`infrastructure/docker-compose
 
 **El término "contexto de build"** (`build.context`)
 
-Al construir una imagen, Docker manda **una carpeta íntegra** al demonio (el *contexto*, p.ej. `context: ..` → la raíz del monorepo). Solo puede copiar lo que está dentro de ese contexto (`COPY . .`). El `.dockerignore` excluye carpetas del contexto para que no viajen (véase `.dockerignore` en 1.2): así la imagen no manda `target/`, `node_modules/`, `.env` ni secretos.
+Al construir una imagen, Docker manda **una carpeta íntegra** al _demonio_ (_Docker daemon_). Solo puede copiar lo que está dentro de ese contexto (`COPY . .`). El `.dockerignore` excluye carpetas del contexto para que no viajen (véase `.dockerignore` en 1.2): así la imagen no manda `target/`, `node_modules/`, `.env` ni secretos.
 
 **El porqué de `docker compose ... up -d --build`**
 
@@ -253,13 +250,13 @@ ENTRYPOINT ["java", "-jar", "app.jar"]
 
 **Las fases del ciclo de vida (la cadena que cuenta aquí)**:
 
-| Fase | Qué hace |
-| --- | --- |
-| `validate` | Comprueba que el proyecto es correcto (estructura, dependencias). |
-| `compile` | Compila el código fuente (`.java` → `.class`). |
-| `test` | Compila y ejecuta los **tests** (`src/test/java`). |
-| `package` | Empaqueta lo compilado → genera el **artefacto** (`.jar`/`.war`). |
-| `verify`/`install`/`deploy` | Pasos posteriores (verificación, instalación local, despliegue). |
+| Fase                        | Qué hace                                                          |
+| --------------------------- | ----------------------------------------------------------------- |
+| `validate`                  | Comprueba que el proyecto es correcto (estructura, dependencias). |
+| `compile`                   | Compila el código fuente (`.java` → `.class`).                    |
+| `test`                      | Compila y ejecuta los **tests** (`src/test/java`).                |
+| `package`                   | Empaqueta lo compilado → genera el **artefacto** (`.jar`/`.war`). |
+| `verify`/`install`/`deploy` | Pasos posteriores (verificación, instalación local, despliegue).  |
 
 Como las fases son **acumulativas**, decir `mvn package` = hacer `validate + compile + test + package`. Es decir, **Maven ya corre los tests durante `package`** (por eso `-DskipTests` "salta" algo que por defecto ocurre).
 
@@ -271,10 +268,10 @@ Como las fases son **acumulativas**, decir `mvn package` = hacer `validate + com
 
 - **`./mvnw`** — el **Maven Wrapper**: un script que descarga una versión concreta de Maven automáticamente. Garantiza que **todos** (local, CI, Docker) usen la **misma versión**, sin instalar Maven a mano. Vive en la raíz del monorepo. `./` lo ejecuta desde la carpeta actual.
 - **`-B`** (batch mode) — desactiva el progreso/animation y los `colorcodes` de Maven: salida limpia y estable para CI/scripts/Docker. Sin él, Maven asume que hay una terminal interactiva (puede dar problemas en un build no interactivo).
-- **`-pl identity-service`** (project-list) — dice: *"compila **solo** este proyecto",* **no todo el monorepo**. Acelera el build: en un monorepo con 7 módulos, construir solo el que toca es mucho más rápido.
-- **`-am`** (also-make) — imprescindible compañero de `-pl`: *"y también los proyectos de los que **depende**"*. Mientras `-pl` limita el alcance, `-am` lo re-expande **hacia arriba** para incluir los módulos-padre/dependencias necesarios (aquí, el parent `booksocial-parent`). El módulo `identity-service` hereda de `booksocial-parent`: para construirlo, Maven necesita compilar/escanear antes su POM padre.
+- **`-pl identity-service`** (project-list) — dice: _"compila **solo** este proyecto",_ **no todo el monorepo**. Acelera el build: en un monorepo con 7 módulos, construir solo el que toca es mucho más rápido.
+- **`-am`** (also-make) — imprescindible compañero de `-pl`: _"y también los proyectos de los que **depende**"_. Mientras `-pl` limita el alcance, `-am` lo re-expande **hacia arriba** para incluir los módulos-padre/dependencias necesarios (aquí, el parent `booksocial-parent`). El módulo `identity-service` hereda de `booksocial-parent`: para construirlo, Maven necesita compilar/escanear antes su POM padre.
 - **`package`** — la fase a ejecutar (ver tabla): compila, testea y genera el JAR `identity-service-0.1.0-SNAPSHOT.jar` en `target/`.
-- **`-DskipTests`** — *"compila los tests pero no los ejecutes"*. Es **distinto de `-Dmaven.test.skip=true`** (que ni siquiera compila los tests). `-DskipTests` los compila (valida que siguen compilando) pero **no los corre** → build más rápido. Los tests "reales" se ejecutan en la **CI** (no interesa repetirlos en cada `docker build`).
+- **`-DskipTests`** — _"compila los tests pero no los ejecutes"_. Es **distinto de `-Dmaven.test.skip=true`** (que ni siquiera compila los tests). `-DskipTests` los compila (valida que siguen compilando) pero **no los corre** → build más rápido. Los tests "reales" se ejecutan en la **CI** (no interesa repetirlos en cada `docker build`).
 
 **Por qué el `RUN` combina `chmod +x mvnw &&`**: el script `mvnw` necesita permiso de ejecución, pero el COPY de Docker puede no preservarlo según el sistema (Windows). Se le da `+x` justo antes de lanzarlo.
 
@@ -315,7 +312,7 @@ identity-service:
   ports:
     - "8081:8081"
   env_file:
-    - ../identity-service/.env   # secretos desde el host, fuera de la imagen
+    - ../identity-service/.env # secretos desde el host, fuera de la imagen
   environment:
     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/booksocial
     SPRING_REDIS_HOST: redis
@@ -407,6 +404,22 @@ frontend:
     - run: npm run build
 ```
 
+## 1.5 — Verificación E2E en Docker (cierre de la Fase 1)
+
+Estado final esperado: **5 contenedores healthy** (postgres, mongodb, rabbitmq, identity-service, gateway).
+
+Suite de verificación vía gateway (con `Invoke-RestMethod`, ver errores de Fase 1):
+
+```
+register → 201 TokenResponse (cookie refresh_token)
+GET /users/me → 200 (identidad del usuario)
+login → 200 (cookie con jti)
+refresh → 200 (rotación, nueva cookie)
+logout → 204 (cookie limpiada)
+```
+
+Y en navegador: `npm start`(ng serve) en `:4200` → register → home → F5 (sesión restaurada por cookie) → logout → login → Google (ventana de incógnito).
+
 ---
 
 # Bloque 2 — Operación local
@@ -465,8 +478,6 @@ Despliegue del backend en **Google Cloud Platform** con **Terraform**, usando lo
 > El despliegue se hizo como **aprendizaje paso a paso**: se generan recursos reales (nivel free tier), se validan y —cuando aplica— se importan a Terraform las piezas que el plan no llegó a gestionar.
 
 ## 3.0 — Preparación y conceptos Terraform
-
-> Si es la **primera vez que usas Terraform**, lee primero este apartado (3.0.1). Es la base sobre la que se apoya todo el bloque: entender qué es el _estado_, un _provider_ y el ciclo `init → plan → apply` convierte el resto de la guía en sencillo.
 
 ### 3.0.1 — Terraform desde cero (apuntes para principiantes)
 
@@ -563,20 +574,20 @@ Todos los `apply`/`plan` de esta guía siguen este flujo: editas `.tf` → `terr
 
 **Referencia rápida de comandos usados en el Bloque 3**
 
-| Comando | Qué hace |
-| --- | --- |
-| `terraform init` | Descarga providers, prepara `.terraform/` y el estado local |
-| `terraform validate` | Valida sintaxis y estructura de los `.tf` (no conecta a GCP) |
-| `terraform plan` | Calcula los cambios (dry-run) |
-| `terraform apply` | Ejecuta los cambios (pide confirmación; `-auto-approve` no la pide) |
-| `terraform apply -auto-approve` | Idem sin preguntar (útil en scripts) |
-| `terraform output` / `terraform output gateway_url` | Muestra las salidas definidas en `outputs.tf` |
-| `terraform import <addr> <gcp-id>` | Adopta un recurso ya existente en GCP hacia el estado |
-| `terraform show <addr>` | Inspecciona un recurso del estado |
-| `terraform untaint <addr>` | Quita la marca "tainted" para gestionar una recreación |
-| `terraform state list` | Lista todos los recursos del estado |
-| `terraform destroy` | Elimina todo lo gestionado (¡cuidado!) |
-| `terraform fmt` | Formatea los `.tf` con estilo estándar |
+| Comando                                             | Qué hace                                                            |
+| --------------------------------------------------- | ------------------------------------------------------------------- |
+| `terraform init`                                    | Descarga providers, prepara `.terraform/` y el estado local         |
+| `terraform validate`                                | Valida sintaxis y estructura de los `.tf` (no conecta a GCP)        |
+| `terraform plan`                                    | Calcula los cambios (dry-run)                                       |
+| `terraform apply`                                   | Ejecuta los cambios (pide confirmación; `-auto-approve` no la pide) |
+| `terraform apply -auto-approve`                     | Idem sin preguntar (útil en scripts)                                |
+| `terraform output` / `terraform output gateway_url` | Muestra las salidas definidas en `outputs.tf`                       |
+| `terraform import <addr> <gcp-id>`                  | Adopta un recurso ya existente en GCP hacia el estado               |
+| `terraform show <addr>`                             | Inspecciona un recurso del estado                                   |
+| `terraform untaint <addr>`                          | Quita la marca "tainted" para gestionar una recreación              |
+| `terraform state list`                              | Lista todos los recursos del estado                                 |
+| `terraform destroy`                                 | Elimina todo lo gestionado (¡cuidado!)                              |
+| `terraform fmt`                                     | Formatea los `.tf` con estilo estándar                              |
 
 ### Estructura de carpetas
 
@@ -710,8 +721,6 @@ db_host    = "34.59.171.207"
 db_password = "TU_CONTRASEÑA_BD"
 jwt_secret  = "TU_SECRETO_JWT_BASE64URL"
 ```
-
-> **Ojo**: `APP_JWT_SECRET` debe ser una cadena **base64url sin espacios**. Si contiene un espacio, `JwtService` lanza `Illegal base64 character: ' '` al arrancar el contenedor.
 
 ## 3.1 — Cloud SQL Postgres (free tier)
 
@@ -955,12 +964,12 @@ terraform output gateway_url identity_url
 
 Resultado esperado (Fase 13, alcances A + B):
 
-| Servicio      | URL                                        |
-| ------------- | ------------------------------------------ |
-| gateway       | `https://gateway-h6b4lrpgmq-uc.a.run.app`  |
-| identity      | `https://identity-h6b4lrpgmq-uc.a.run.app` |
-| user-service  | `https://user-service-h6b4lrpgmq-uc.a.run.app` |
-| book-service  | `https://book-service-h6b4lrpgmq-uc.a.run.app`  |
+| Servicio     | URL                                            |
+| ------------ | ---------------------------------------------- |
+| gateway      | `https://gateway-h6b4lrpgmq-uc.a.run.app`      |
+| identity     | `https://identity-h6b4lrpgmq-uc.a.run.app`     |
+| user-service | `https://user-service-h6b4lrpgmq-uc.a.run.app` |
+| book-service | `https://book-service-h6b4lrpgmq-uc.a.run.app` |
 
 Estado de los servicios:
 
@@ -1002,10 +1011,10 @@ user-service y book-service necesitan **MongoDB** (read models CQRS) y **RabbitM
 
 ### 3.6.1 — Cuentas externas gratuitas
 
-| Servicio     | Cómo obtenerlo | Qué ofrece                                        |
-| ------------ | -------------- | ------------------------------------------------- |
+| Servicio      | Cómo obtenerlo                          | Qué ofrece                                                                                                                           |
+| ------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | MongoDB Atlas | https://www.mongodb.com/atlas → free M0 | Sierra M0 free tier, URI `mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/booksocial?retryWrites=true&w=majority&authSource=admin` |
-| CloudAMQP    | https://www.cloudamqp.com → plan lemur | Instancia RabbitMQ, URI `amqps://<user>:<pass>@<host>[:<port>]/[<vhost>]` |
+| CloudAMQP     | https://www.cloudamqp.com → plan lemur  | Instancia RabbitMQ, URI `amqps://<user>:<pass>@<host>[:<port>]/[<vhost>]`                                                            |
 
 > **Ojo con la URI de Mongo**: el **nombre de la base de datos debe estar en el path** (`/booksocial`). Sin él, Spring lanza `java.lang.IllegalArgumentException: Database name must not be empty` y el contenedor de Cloud Run muere (`Error code 9`). Con Atlas M0 se añade `?authSource=admin` (usuario admin) y `retryWrites=true`.
 
@@ -1194,22 +1203,22 @@ terraform init -migrate-state   # detecta el estado local y lo sube al bucket pr
 
 # Apéndice A — Errores típicos del despliegue cloud
 
-| Síntoma | Causa raíz | Solución |
-| --- | --- | --- |
-| `Error: Provider produced inconsistent final plan` al aplicar gateway | `IDENTITY_SERVICE_URI` referencia `identity.uri`, desconocido en el mismo apply | Reaplicar: identity ya está en el estado y el valor correlaciona |
-| `terminated: Application failed to start: Waited too long for connection to be ready` | La app espera a una dependencia (Red/BD) y el startup probe expira | Revisar logs de la revisión: `gcloud logging read "resource.type=cloud_run_revision AND resource.labels.revision_name=<rev>"` |
-| `FATAL: password authentication failed for user "booksocial"` | La app usa su password por defecto; el Cloud SQL user tiene `var.db_password` | Añadir `SPRING_DATASOURCE_PASSWORD` al contenedor |
-| `Tomcat started on port 8081` pero el probe falla | `server.port` ≠ `$PORT` de Cloud Run | `SERVER_PORT=8080` (o `server.port=${PORT}`) |
-| `/usr/local/bin/docker-entrypoint.sh: redis-server: I/O error` | El entrypoint de `redis:7-alpine` usa `su-exec` (setuid), no permitido en el sandbox | `command = ["redis-server"]` en el sidecar |
-| `Illegal base64 character: ' '` en `JwtService` | El `APP_JWT_SECRET` del tfvars contenía un espacio (o la clave `APP_JWT_SECRET=` de más) | Valor base64url limpio, sin espacios |
-| `443` + "service seems down": `Ready` vacío al describir | La condición de Cloud Run v2 se llama `Active`, no siempre `Ready` | Comprobar con `gcloud run services list` o la URL directamente |
-| 401 `{"error":"unauthorized",...}` al probar cualquier endpoint con body JSON con `curl.exe` en PowerShell | **PowerShell roba las comillas dobles** del JSON (bug de quoting) → body malformado (p.ej. `{email:cloud...}`) → `HttpMessageNotReadableException` en los logs del servicio | Escribir el JSON a un fichero y usar `curl.exe -d "@archivo.json"` (o `Invoke-RestMethod` con body en comillas simples) |
-| `Error code 9` / `Database name must not be empty` al desplegar user/book | URI de MongoDB Atlas sin el nombre de BD en el path (`mongodb+srv://...@cluster.mongodb.net` sin `/booksocial`) | Añadir `/booksocial?retryWrites=true&w=majority&authSource=admin` a la URI y reaplicar |
-| `GET /follows/following` → `401 Authentication required` | El controller usa path variable: los endpoints reales son `/follows/{userId}/followers` y `/follows/{userId}/following` | Usar la ruta con `{userId}` |
-| `411 Length Required` en POST sin body (p.ej. `POST /follows/6`) | El balanceador de Google exige `Content-Length` | Añadir `-H "Content-Length: 0"` (curl) |
-| `/actuator/health` → `DOWN` con `MongoCommandException error 8000 (AtlasError): not authorized on local` | Atlas M0 no autoriza al usuario en la BD `local` (el `MongoHealthIndicator` de Spring Boot 4.1 ejecuta `hello` contra `local`) | Inocuo: los endpoints de negocio funcionan; los indicadores Mongo/DB son aparte. Opcional: `management.health.mongodb.enabled: false` |
-| Apply se queda colgado creando Cloud SQL | El polling del provider no detecta operaciones DONE | `terraform import` de los recursos y continuar |
-| `FATAL: remaining connection slots are reserved for roles with privileges of the "pg_use_reserved_connections" role` (SQLState `53300`) al arrancar cualquier servicio con datasource | El tier `db-f1-micro`/shared-core de Cloud SQL admite muy pocas conexiones (~25 máx.); varios servicios Spring+JPA arrancando en paralelo llenan los slots | Reducir el número de servicios con Postgres desplegados a los que caben (≈2), o subir el tier de la instancia. `max_connections` **no es editable** en tier `shared-core`. Los servicios que **solo usan Mongo + Rabbit** (social, notification) **no** chocan con este límite y pueden desplegarse en paralelo |
+| Síntoma                                                                                                                                                                               | Causa raíz                                                                                                                                                                  | Solución                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Error: Provider produced inconsistent final plan` al aplicar gateway                                                                                                                 | `IDENTITY_SERVICE_URI` referencia `identity.uri`, desconocido en el mismo apply                                                                                             | Reaplicar: identity ya está en el estado y el valor correlaciona                                                                                                                                                                                                                                                |
+| `terminated: Application failed to start: Waited too long for connection to be ready`                                                                                                 | La app espera a una dependencia (Red/BD) y el startup probe expira                                                                                                          | Revisar logs de la revisión: `gcloud logging read "resource.type=cloud_run_revision AND resource.labels.revision_name=<rev>"`                                                                                                                                                                                   |
+| `FATAL: password authentication failed for user "booksocial"`                                                                                                                         | La app usa su password por defecto; el Cloud SQL user tiene `var.db_password`                                                                                               | Añadir `SPRING_DATASOURCE_PASSWORD` al contenedor                                                                                                                                                                                                                                                               |
+| `Tomcat started on port 8081` pero el probe falla                                                                                                                                     | `server.port` ≠ `$PORT` de Cloud Run                                                                                                                                        | `SERVER_PORT=8080` (o `server.port=${PORT}`)                                                                                                                                                                                                                                                                    |
+| `/usr/local/bin/docker-entrypoint.sh: redis-server: I/O error`                                                                                                                        | El entrypoint de `redis:7-alpine` usa `su-exec` (setuid), no permitido en el sandbox                                                                                        | `command = ["redis-server"]` en el sidecar                                                                                                                                                                                                                                                                      |
+| `Illegal base64 character: ' '` en `JwtService`                                                                                                                                       | El `APP_JWT_SECRET` del tfvars contenía un espacio (o la clave `APP_JWT_SECRET=` de más)                                                                                    | Valor base64url limpio, sin espacios                                                                                                                                                                                                                                                                            |
+| `443` + "service seems down": `Ready` vacío al describir                                                                                                                              | La condición de Cloud Run v2 se llama `Active`, no siempre `Ready`                                                                                                          | Comprobar con `gcloud run services list` o la URL directamente                                                                                                                                                                                                                                                  |
+| 401 `{"error":"unauthorized",...}` al probar cualquier endpoint con body JSON con `curl.exe` en PowerShell                                                                            | **PowerShell roba las comillas dobles** del JSON (bug de quoting) → body malformado (p.ej. `{email:cloud...}`) → `HttpMessageNotReadableException` en los logs del servicio | Escribir el JSON a un fichero y usar `curl.exe -d "@archivo.json"` (o `Invoke-RestMethod` con body en comillas simples)                                                                                                                                                                                         |
+| `Error code 9` / `Database name must not be empty` al desplegar user/book                                                                                                             | URI de MongoDB Atlas sin el nombre de BD en el path (`mongodb+srv://...@cluster.mongodb.net` sin `/booksocial`)                                                             | Añadir `/booksocial?retryWrites=true&w=majority&authSource=admin` a la URI y reaplicar                                                                                                                                                                                                                          |
+| `GET /follows/following` → `401 Authentication required`                                                                                                                              | El controller usa path variable: los endpoints reales son `/follows/{userId}/followers` y `/follows/{userId}/following`                                                     | Usar la ruta con `{userId}`                                                                                                                                                                                                                                                                                     |
+| `411 Length Required` en POST sin body (p.ej. `POST /follows/6`)                                                                                                                      | El balanceador de Google exige `Content-Length`                                                                                                                             | Añadir `-H "Content-Length: 0"` (curl)                                                                                                                                                                                                                                                                          |
+| `/actuator/health` → `DOWN` con `MongoCommandException error 8000 (AtlasError): not authorized on local`                                                                              | Atlas M0 no autoriza al usuario en la BD `local` (el `MongoHealthIndicator` de Spring Boot 4.1 ejecuta `hello` contra `local`)                                              | Inocuo: los endpoints de negocio funcionan; los indicadores Mongo/DB son aparte. Opcional: `management.health.mongodb.enabled: false`                                                                                                                                                                           |
+| Apply se queda colgado creando Cloud SQL                                                                                                                                              | El polling del provider no detecta operaciones DONE                                                                                                                         | `terraform import` de los recursos y continuar                                                                                                                                                                                                                                                                  |
+| `FATAL: remaining connection slots are reserved for roles with privileges of the "pg_use_reserved_connections" role` (SQLState `53300`) al arrancar cualquier servicio con datasource | El tier `db-f1-micro`/shared-core de Cloud SQL admite muy pocas conexiones (~25 máx.); varios servicios Spring+JPA arrancando en paralelo llenan los slots                  | Reducir el número de servicios con Postgres desplegados a los que caben (≈2), o subir el tier de la instancia. `max_connections` **no es editable** en tier `shared-core`. Los servicios que **solo usan Mongo + Rabbit** (social, notification) **no** chocan con este límite y pueden desplegarse en paralelo |
 
 ### A.1 — Procedimiento general de diagnóstico: un servicio no despega en Cloud Run
 
@@ -1240,4 +1249,4 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.revisi
 
 ---
 
-*Actualizado al cierre de la Fase 13 — alcances A (identity + gateway + Redis sidecar + Cloud SQL) y B (user-service + book-service + MongoDB Atlas M0 + CloudAMQP) desplegados y verificados E2E en GCP. Revisión posterior: tras probar los 8 servicios, se revirtió a una configuración estable en capa gratuita (identity + gateway + book-service, **más social-service + notification-service por ser solo Mongo+Rabbit**) por el límite de conexiones del `db-f1-micro` (ver nota en 3.7 y Apéndice A). Contenido pedagógico añadido para principiantes: [0.0](#00--qué-es-docker-apuntes-para-principiantes) (qué es Docker: imágenes, contenedores, volúmenes, puertos, Dockerfile, compose, contexto), [1.1.1](#111--el-ciclo-de-vida-de-maven-y-qué-hace-mvnw--b--pl-identity-service--am-package--dskiptests) (ciclo de vida de Maven y el comando del Dockerfile), [3.0.1](#301--terraform-desde-cero-apuntes-para-principiantes) (conceptos de Terraform), [3.7.1](#371--backend-remoto-gcs-mover-el-estado-local-a-la-nube) (backend remoto GCS) y [A.1](#a1--procedimiento-general-de-diagnóstico-un-servicio-no-despega-en-cloud-run) (diagnóstico).*
+_Actualizado al cierre de la Fase 13 — alcances A (identity + gateway + Redis sidecar + Cloud SQL) y B (user-service + book-service + MongoDB Atlas M0 + CloudAMQP) desplegados y verificados E2E en GCP. Revisión posterior: tras probar los 8 servicios, se revirtió a una configuración estable en capa gratuita (identity + gateway + book-service, **más social-service + notification-service por ser solo Mongo+Rabbit**) por el límite de conexiones del `db-f1-micro` (ver nota en 3.7 y Apéndice A). Contenido pedagógico añadido para principiantes: [0.0](#00--qué-es-docker-apuntes-para-principiantes) (qué es Docker: imágenes, contenedores, volúmenes, puertos, Dockerfile, compose, contexto), [1.1.1](#111--el-ciclo-de-vida-de-maven-y-qué-hace-mvnw--b--pl-identity-service--am-package--dskiptests) (ciclo de vida de Maven y el comando del Dockerfile), [3.0.1](#301--terraform-desde-cero-apuntes-para-principiantes) (conceptos de Terraform), [3.7.1](#371--backend-remoto-gcs-mover-el-estado-local-a-la-nube) (backend remoto GCS) y [A.1](#a1--procedimiento-general-de-diagnóstico-un-servicio-no-despega-en-cloud-run) (diagnóstico)._

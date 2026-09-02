@@ -24,11 +24,10 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 
 | Bloque                                                                                                          | Tema                                   | Fase       |
 | --------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------- |
-| [0. Cimientos](#bloque-0--cimientos-monorepo--infraestructura--ci)                                              | Monorepo, Docker, CI                   | —          |
+| [0. Build de backend](#bloque-0--build-de-backend-jdk-maven-y-parent-pom)                                       | JDK, Maven, Wrapper, Parent POM        | —          |
 | [1. Identity Service](#bloque-1--identity-service)                                                              | Auth, JWT, OAuth2, roles, reset, rate-limit | Fase 1 |
 | [2. API Gateway](#bloque-2--api-gateway)                                                                        | Enrutamiento, JWT, headers             | Fase 1     |
-| [4. Contenerización y CI](#bloque-4--contenerización-y-ci-ampliado)                                             | Dockerfiles, compose, CI               | Fase 1     |
-| [5. Errores y decisiones](#bloque-5--cierre-errores-resueltos-y-decisiones-de-diseño)                           | Retrospectiva Fase 1                   | Fase 1     |
+| [5. Errores y decisiones](#bloque-5--cierre-errores-resueltos-de-la-fase-1)                                     | Retrospectiva Fase 1                   | Fase 1     |
 | [6. user-service](#bloque-6--fase-2-user-service-perfil-con-cqrs-dual-write)                                    | CQRS, follows, RabbitMQ, People        | Fase 2     |
 | [7. book-service](#bloque-7--book-service-catálogo-de-libros-con-cqrs)                                          | Catálogo, búsqueda, roles              | Fase 3     |
 | [8. review-service](#bloque-8--review-service-reseñas--primer-evento-cruzado)                                   | Eventos cruzados, stats                | Fase 4     |
@@ -36,7 +35,7 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 | [11. social + notification](#bloque-11--fase-9-feed-social-social-service--notificaciones-notification-service) | Feed por eventos, notificaciones STOMP | Fase 9     |
 | [A. Apéndice: Seguridad](#apéndice-a--plantilla-de-seguridad-reutilizable)                                      | JwtService, filtros, config            | Referencia |
 | [B. Decisiones de diseño](#apéndice-b--decisiones-de-diseño)                                                    | Resumen arquitectónico                 | Referencia |
-| [C. Operación](#apéndice-c--operación-despliegue-logs-y-depuración)                                             | Despliegue, logs, depuración           | Referencia |
+| [C. Operación (backend)](#apéndice-c--operación-rápida-backend)                                                 | Redespliegue, dev local, logs          | Referencia |
 | [D. RabbitMQ](#apéndice-d--rabbitmq-del-publisher-al-consumer)                                                  | Broker, eventos, colas                 | Referencia |
 | [E. WebSocket (STOMP)](#apéndice-e--websocket-stomp-del-servidor-al-navegador)                                  | Push en tiempo real, WS                | Referencia |
 
@@ -83,11 +82,11 @@ La guía está organizada en **bloques cronológicos**: cada bloque se construye
 
 ---
 
-## Bloque 0 — Cimientos (monorepo + infraestructura + CI)
+## Bloque 0 — Build de backend: JDK, Maven y Parent POM
 
-Este bloque establece las bases del proyecto: estructura de monorepo, herramientas de build, infraestructura Docker y pipeline de CI. Es el punto de partida para cualquier desarrollador que se una al proyecto.
+Este bloque establece las bases del proyecto en lo relativo al **backend**: herramientas de build (JDK/Maven/Wrapper) y el Parent POM raíz. La estructura de carpetas, el `.gitignore`, Docker Compose y el CI son infraestructura y están detallados en [GUIDE-INFRA.md](./GUIDE-INFRA.md) (aquí solo se resume lo imprescindible). Es el punto de partida para cualquier desarrollador que se una al proyecto.
 
-**Objetivo**: tener el entorno de desarrollo listo y el repositorio configurado para que cualquier cambio se verifique automáticamente.
+**Objetivo**: tener el entorno de build del backend listo y entendible para que cualquier cambio se verifique automáticamente.
 
 ### 0.1 — Instalación de JDK 21 + Maven + wrapper mvnw
 
@@ -236,70 +235,10 @@ Los módulos deben declarar este POM como parent. Por ejemplo, `gateway/pom.xml`
 
 ### 0.3 — Estructura de carpetas y .gitignore
 
-La estructura inicial del proyecto será:
+La estructura del monorepo, el `.gitignore` (incluida la política de **secretos**: `.env` por módulo que nunca entran en Git/imágenes) y el detalle de `infrastructure/` están documentados en [GUIDE-INFRA.md](./GUIDE-INFRA.md). Resumen aplicable al backend:
 
-```
-  frontend/
-  gateway/
-  identity-service/
-  user-service/
-  book-service/
-  review-service/
-  shelf-service/
-  social-service/
-  club-service/
-  messaging-service/
-  news-service/
-  notification-service/
-  infrastructure/
-  docs/
-```
-
-- Cada `microservicio` tendrá **aislamiento total**: su propio código, _pom.xml_, _.env_ y _Dockerfile_. Esto permite que cada servicio gestione de forma independiente su configuración y ciclo de ejecución.
-
-- `infrastructure/` contiene todo aquello que pertenece a la infraestructura y no al código de negocio, como _Docker Compose_, _Terraform_ y configuraciones relacionadas.
-
-- `docs/` contiene la documentación del proyecto, incluyendo el `ROADMAP` y el estado de cada sesión de desarrollo.
-
-El `.gitignore` raíz tendrá cuatro bloques principales:
-
-```gitignore
-  # Java/Maven
-    target/
-    *.class
-    *.jar
-    !.mvn/wrapper/maven-wrapper.jar
-    .idea/
-    *.iml
-    .vscode/
-
-  # Node/Angular
-    node_modules/
-    dist/
-    .angular/cache/
-    *.log
-
-  # Entorno y secretos
-    .env
-    .env.*
-    application-local.yml
-    application-local.yaml
-    secrets/
-    *.pem
-    *.key
-
-  # Infraestructura
-    *.tfstate
-    *.tfstate.backup
-    *.tfvars
-    .terraform/
-```
-
-El bloque de **entorno y secretos** es especialmente importante. La política del proyecto es que ningún dato sensible viva en Git.
-
-Los archivos `.env` serán **específicos de cada módulo o microservicio**, en lugar de mantener un único `.env` global. Estos archivos contendrán la configuración sensible necesaria para cada servicio y se cargarán en runtime, como se explicará en el _Bloque 1_.
-
-De esta forma, el repositorio contiene el código y la configuración no sensible necesaria para entender el proyecto, pero nunca credenciales, tokens, claves privadas, contraseñas u otros secretos.
+- Cada microservicio tiene **aislamiento total**: su propio código, `pom.xml`, `.env` y `Dockerfile`.
+- La política de proyecto es que **ningún dato sensible viva en Git**: los `.env` de cada módulo se cargan en runtime y nunca entran en las imágenes Docker.
 
 ### 0.4 — infrastructure/docker-compose.yml
 
@@ -371,76 +310,19 @@ volumes:
   rabbitmq-data:
 ```
 
-> Si no se definen, el usuario y contraseña por defecto de RabbitMQ son: `guest / guest`
+### 0.4 — infrastructure/docker-compose.yml
 
-1. **Volúmenes**
-   Cada servicio utiliza un volumen:
+El `infrastructure/docker-compose.yml` define la infraestructura local (PostgreSQL 16, MongoDB 8, RabbitMQ 4, y posteriormente Redis 7). Su contenido completo y los conceptos de **volúmenes**, **healthchecks** y **puertos publicados** están detallados en [GUIDE-INFRA.md](./GUIDE-INFRA.md).
 
-```yml
-volumes:
-  - postgres-data:/var/lib/postgresql/data
-```
+Resumen para el backend:
 
-Los volúmenes permiten que los datos sobrevivan al ciclo de vida del contenedor.
-
-El contenedor de PostgreSQL se elimina y se crea de nuevo, pero los datos permanecen almacenados en postgres-data. Sin un volumen, al eliminar el contenedor también se perderían los datos almacenados dentro de él.
-
-Esto es especialmente importante durante el desarrollo, porque permite reiniciar la infraestructura sin tener que reconstruir las bases de datos continuamente.
-
-2. **Healthchecks**
-   Cada servicio tiene un healthcheck específico:
-
-| Servicio   | Comprobación                |
-| ---------- | --------------------------- |
-| PostgreSQL | `pg_isready`                |
-| MongoDB    | `mongosh` + `ping`          |
-| RabbitMQ   | `rabbitmq-diagnostics ping` |
-
-El `healthcheck` no significa simplemente que el contenedor se haya iniciado. Comprueba que el servicio que contiene está realmente disponible.
-
-Por ejemplo, un **contenedor de _PostgreSQL_** puede estar arrancado mientras PostgreSQL todavía está inicializándose. El healthcheck permite distinguir ambos estados.
-
-El estado puede consultarse con `docker compose ps` y veremos estados como: `healthy | unhealthy | starting`.
-
-Este mismo mecanismo será importante posteriormente cuando los microservicios se incorporen al `docker-compose.yml` y se utilice `depends_on` con condiciones basadas en healthcheck. Por ejemplo:
-
-```yml
-depends_on:
-  postgres:
-    condition: service_healthy
-```
-
-El microservicio puede esperar a que PostgreSQL esté realmente disponible antes de iniciar
-
-3. **Puertos publicados**
-   Los puertos se publican del contenedor hacia el host:
-
-   ```yml
-   ports:
-     - "5432:5432"
-   ```
-
-Mientras los microservicios se ejecuten directamente en el ordenador, podrán conectarse utilizando localhost:
-
-```
-  PostgreSQL → localhost:5432
-  MongoDB    → localhost:27017
-  RabbitMQ   → localhost:5672
-```
-
-**RabbitMQ** publica además el puerto `15672`:
-
-```yml
-ports:
-  - "5672:5672"
-  - "15672:15672"
-```
-
-El puerto `5672` es el utilizado por las aplicaciones para comunicarse con **RabbitMQ**, mientras que `15672` proporciona la interfaz web de administración. La consola estará disponible en: [http://localhost:15672](http://localhost:15672)
+- **Volúmenes**: los datos sobreviven al ciclo de vida del contenedor (p.ej. PostgreSQL se reconstruye pero `postgres-data` conserva los datos).
+- **Healthchecks** (`pg_isready`, `mongosh ping`, `rabbitmq-diagnostics ping`): distinguen "contenedor arrancado" de "servicio listo"; base del `depends_on: condition: service_healthy`.
+- **Puertos publicados**: mientras los servicios corren en el host se conectan a `localhost:5432`, `localhost:27017`, `localhost:5672` (y `15672` para la consola web de RabbitMQ).
 
 ### 0.5 — Workflow base de CI (ci.yml)
 
-El proyecto tendrá un workflow básico de Integración Continua (CI) en `.github/workflows/ci.yml`. Una configuración inicial es:
+El proyecto tiene un workflow de Integración Continua en `.github/workflows/ci.yml`, con un job `build` (backend) y un job `frontend`. La **configuración completa** (secrets, servicio PostgreSQL de apoyo, job frontend, detalles del `-B clean verify` y el problema del `mvnw`/`exit code 126`) está documentada en [GUIDE-INFRA.md](./GUIDE-INFRA.md). Resumen del workflow base de backend:
 
 ```yml
 name: CI
@@ -453,96 +335,23 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: "temurin"
           java-version: "21"
           cache: maven
-
       - name: Build backend with Maven wrapper
         run: |
           chmod +x mvnw
           ./mvnw -B clean verify
 ```
 
-1. ¿Cuándo se ejecuta?
+Puntos clave:
 
-```yml
-on:
-  push:
-    branches: [main]
-  pull_request:
-```
-
-- **Push a `main`:** Cada vez que se hace push directamente a main, GitHub Actions comprueba que el proyecto sigue compilando correctamente.
-
-- **Pull Request:** También se ejecuta cuando se crea o actualiza un Pull Request. Esto permite detectar problemas antes de integrar los cambios en main. El objetivo es evitar que código que no compila o cuyos tests fallan llegue a la rama principal.
-
-2. `checkout` y configuración de Java
-
-```yml
-- name: Checkout
-  uses: actions/checkout@v5
-```
-
-Descarga el contenido del repositorio en el runner de GitHub Actions para que los siguientes pasos puedan trabajar con el código.
-
-```yml
-- name: Set up Java
-  uses: actions/setup-java@v5
-  with:
-    distribution: temurin
-    java-version: "21"
-    cache: maven
-```
-
-Configura JDK 21 Temurin y habilita la caché de Maven. La caché evita descargar nuevamente todas las dependencias Maven en cada ejecución. Después del primer build, las ejecuciones posteriores pueden ser considerablemente más rápidas.
-
-3. El problema del `mvnw` en Linux
-   El proyecto utiliza el Maven Wrapper.
-
-En Windows se puede ejecutar:
-
-```PowerShell
-.\mvnw.cmd clean verify
-```
-
-Mientras que en Linux:
-
-```Bash
-./mvnw clean verify
-```
-
-> El primer workflow produjo un error: `exit code 126`. El problema era que `mvnw` no tenía el bit de ejecución necesario para ejecutarse como script en Linux. Esto puede ocurrir especialmente cuando el repositorio se trabaja desde Windows y posteriormente el código se ejecuta en un runner Linux. `chmod +x mvnw` → los ejecutables no guardan el bit de ejecución al commitear desde Windows.
-
-4. `./mvnw -B clean verify`
-   Hay tres elementos importantes:
-
-- `./mvnw`: Utiliza el Maven Wrapper del propio proyecto en lugar de depender de una instalación global de Maven en el runner.
-
-- `-B`: Significa _batch mode_. Maven ejecuta el proceso sin interacción de consola innecesaria, algo apropiado para CI.
-
-- `clean verify`:
-  - `clean` elimina los artefactos generados por builds anteriores.
-  - `verify` ejecuta el ciclo de vida de Maven hasta la fase verify, incluyendo las fases anteriores:
-  ```
-    validate
-    ↓
-    compile
-    ↓
-    test
-    ↓
-    package
-    ↓
-    verify
-  ```
-  Por tanto, los **tests** también se ejecutan durante el CI. Si la compilación falla o un test falla, GitHub Actions marca el workflow como fallido y el Pull Request queda señalado.
+- **Cuándo se ejecuta**: push a `main` y Pull Requests (evita que código que no compila o con tests fallidos llegue a `main`).
+- **`./mvnw -B clean verify`**: usa el Maven Wrapper y `verify` corre el ciclo completo de Maven (incluidos los tests). El `-B` (batch mode) es apropiado para CI y el `chmod +x mvnw` evita el `exit code 126` al commitear desde Windows. Detalles del ciclo de vida en GUIDE-INFRA 1.1.1.
 
 ## Bloque 1 — Identity Service
 
@@ -2100,22 +1909,9 @@ Un bucket con capacidad `N` y un relleno (refill) de `N` tokens por intervalo. C
 
 Para login/register (protección antibrute-force) el relleno **greedy** es el adecuado.
 
-#### Paso 1 — Añadir Redis al `infrastructure/docker-compose.yml`
+#### Paso 1 — Añadir Redis a la infraestructura
 
-```yaml
-  redis:
-    image: redis:7-alpine
-    container_name: booksocial-redis
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-```
-
-Y en el servicio `identity-service` se indica dónde está Redis (Spring Boot mapea `SPRING_REDIS_HOST` a `spring.data.redis.host`) y se espera a que esté sano:
+Redis 7 se añadió al `infrastructure/docker-compose.yml` (con healthcheck) y el servicio `identity-service` se conecta a él. El detalle del servicio `redis` en compose está en [GUIDE-INFRA.md](./GUIDE-INFRA.md) → Bloque 0. Para el backend lo relevante es que **identity debe conocer el host de Redis** (Spring Boot mapea `SPRING_REDIS_HOST` a `spring.data.redis.host`) y esperar a que esté sano:
 
 ```yaml
   identity-service:
@@ -2627,6 +2423,35 @@ Identity Service :8081
   ▼
 Gateway → Angular (200 UserResponse)
 ```
+
+---
+
+## Bloque 5 — Cierre: errores resueltos de la Fase 1
+
+Retrospectiva de los errores más relevantes encontrados durante la Fase 1 (Bloques 0-4), con su causa y solución directa. Los errores específicos de Docker/CI/operación están en [GUIDE-INFRA.md](./GUIDE-INFRA.md).
+
+1. **`POST /auth/logout` devolvía `401`**
+   - Causa: `/auth/logout` no estaba en `permitAll` y el cliente no envía access token al cerrar sesión (solo la cookie).
+   - Solución: añadir `/auth/logout` a la lista de `permitAll` del `SecurityConfig`.
+
+2. **`IncorrectResultSizeDataAccessException ... expected 1 but found 3` al completar el login de Google**
+   - Causa: el vínculo leía el atributo con la clave errónea (`attrs.get("googleId")`); el identificador persistente del OIDC claim es **`sub`**.
+   - Solución: leer `attrs.get("sub")` en `linkOrCreateOAuthUser`.
+
+3. **`401` al probar `/auth/register` y `/auth/login` con `curl.exe` desde PowerShell 5.1**
+   - Causa: PowerShell elimina las comillas dobles al pasar JSON como argumento → Spring recibe JSON inválido y el `RestAuthenticationEntryPoint` responde `401` en lugar de `400`.
+   - Solución: usar `Invoke-RestMethod` (con `ConvertTo-Json`) o guardar el body en un archivo y llamar `curl --data-binary "@body.json"`.
+
+4. **`#error=access_denied` con una segunda cuenta de Google**
+   - Causa: la app OAuth2 está en modo **Testing** y esa cuenta no estaba en los **Test users** de la pantalla de consentimiento.
+   - Solución: añadir la cuenta en OAuth consent screen → Audience → Test users.
+
+5. **`Process completed with exit code 126` en Actions**
+   - Causa: `./mvnw` sin bit de ejecución en el runner Linux (se commiteó desde Windows).
+   - Solución: `chmod +x mvnw` antes de ejecutar el wrapper en el workflow.
+
+6. **`GET /oauth2/authorization/google` devuelve `401` a través del gateway**
+   - No es un bug: el frontend llama a esa ruta **directamente contra `:8081`**, no vía gateway.
 
 ---
 
@@ -6022,29 +5847,12 @@ Rutas del gateway (mismo patrón strip-and-assert del Bloque 2: el gateway reiny
     - Path=/notifications/**
 ```
 
-En `docker-compose.yml` ambos siguen el mismo molde que el resto (healthchecks con `curl`, `depends_on` a mongodb y rabbitmq ambos `service_healthy`):
+En `docker-compose.yml` ambos siguen el **mismo molde** que el resto de servicios (healthchecks con `curl`, `depends_on` a mongodb y rabbitmq ambos `service_healthy`, Dockerfile multi-stage idéntico). El detalle de compose/Dockerfile está en [GUIDE-INFRA.md](./GUIDE-INFRA.md). Solo difieren en puerto y env:
 
 | Servicio               | Contenedor                | Puertos     | `env_file`                     | Overrides en compose                                                  | Healthcheck                                     |
 | ---------------------- | ------------------------- | ----------- | ------------------------------ | --------------------------------------------------------------------- | ----------------------------------------------- |
 | `social-service`       | `booksocial-social`       | `8086:8086` | `../social-service/.env`       | `SPRING_MONGODB_URI` → `mongodb`, `SPRING_RABBITMQ_HOST` → `rabbitmq` | `curl -f http://localhost:8086/actuator/health` |
 | `notification-service` | `booksocial-notification` | `8087:8087` | `../notification-service/.env` | ídem                                                                  | `curl -f http://localhost:8087/actuator/health` |
-
-```dockerfile
-# Dockerfile (multi-stage, idéntico al resto de servicios)
-# Stage 1: build
-FROM maven:3.9-eclipse-temurin-21 AS build
-WORKDIR /workspace
-COPY . .
-RUN chmod +x mvnw && ./mvnw -B -pl social-service -am package -DskipTests
-
-# Stage 2: runtime
-FROM eclipse-temurin:21-jre
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
-COPY --from=build /workspace/social-service/target/social-service-0.1.0-SNAPSHOT.jar app.jar
-EXPOSE 8086
-ENTRYPOINT ["java", "-jar", "app.jar"]
-```
 
 > **Cómo sobrevive el arranque local (IDE)**: el default `mongodb://...@localhost:27017/booksocial` de `application.yaml` sirve fuera de Docker; el compose lo sobreescribe con la env `SPRING_MONGODB_URI` apuntando al contenedor `mongodb`. Por eso el default no cambia aunque la URI de compose sea distinta.
 
@@ -6274,6 +6082,7 @@ Resumen de las decisiones arquitectónicas clave del proyecto:
 - **JWT stateless + secret compartido**: el gateway valida los tokens sin consultar al identity-service.
 - **Access corto (15 min) + refresh largo (7 días) rotativo**: el refresh viaja en cookie `httpOnly` + `SameSite=Lax`; el hash SHA-256 se guarda en BD (nunca el token en claro).
 - **Patrón strip-then-assert**: el gateway elimina los `X-User-*` del cliente y los reemplaza por los derivados del JWT → los servicios downstream confían en ellos.
+- **Roles calculados por edad**: se asigna `MINOR_USER` si la edad (desde `birth_date`) es menor de 18.
 - **GETs públicos**: el gateway y los servicios permiten `GET /books/**`, `GET /authors/**` y `GET /shelves/**` sin autenticación. Los POST/PUT/DELETE siguen requiriendo token.
 
 ### Persistencia
@@ -6406,11 +6215,9 @@ En el conjunto del proyecto, RabbitMQ es el "brazo push" **entre servicios** (ev
 
 ---
 
-## Apéndice C — Operación: despliegue, logs y depuración
+## Apéndice C — Operación rápida (backend)
 
-Referencia rápida del día a día con la app ya construida. Todos los comandos se ejecutan desde la **raíz del monorepo** y usan el compose de `infrastructure/docker-compose.yml`.
-
-### El stack
+Referencia mínima del día a día con el backend ya construido. Los comandos de **arranque/parada, redespliegue, logs y herramientas de inspección** (Docker Compose) están detallados en [GUIDE-INFRA.md](./GUIDE-INFRA.md) → Bloque 2 "Operación local". Resumen:
 
 | Contenedor                | Servicio             | Puerto          |
 | ------------------------- | -------------------- | --------------- |
@@ -6426,29 +6233,18 @@ Referencia rápida del día a día con la app ya construida. Todos los comandos 
 | `booksocial-social`       | social-service       | 8086            |
 | `booksocial-notification` | notification-service | 8087            |
 
-### Arrancar, parar y estado
-
-```powershell
-docker compose -f infrastructure/docker-compose.yml up -d          # arrancar todo (respeta depends_on + healthchecks)
-docker compose -f infrastructure/docker-compose.yml down           # parar todo (conserva volúmenes)
-docker compose -f infrastructure/docker-compose.yml ps             # estado + health de cada contenedor
-```
-
 ### Redesplegar un servicio tras cambiar su código
 
 ```powershell
 docker compose -f infrastructure/docker-compose.yml build book-service   # reconstruye la imagen
-docker compose -f infrastructure/docker-compose.yml up -d book-service   # recrea el contenedor con la imagen nueva
+docker compose -f infrastructure/docker-compose.yml up -d book-service   # recrea el contenedor
 ```
 
-Sustituye `book-service` por el servicio modificado (`gateway`, `identity-service`, `user-service`, `review-service`, `shelf-service`, `social-service`, `notification-service`). Solo ese servicio se reconstruye; bases de datos y RabbitMQ no se tocan.
-
-- El build es incremental por capas: al cambiar código fuente, Docker invalida la capa `COPY` y recompila solo lo necesario.
-- Si sospechas que el contenedor está sirviendo **código antiguo** (síntoma: un bug corregido sigue apareciendo), fuerza rebuild completo con `build --no-cache <servicio>`.
+Solo ese servicio se reconstruye; bases de datos y RabbitMQ no se tocan. Si el contenedor sirve **código antiguo**, fuerza rebuild: `docker compose build --no-cache <servicio>`.
 
 ### Desarrollo local sin reconstruir imágenes
 
-Para iterar rápido en un microservicio puedes ejecutarlo directamente en tu máquina, sin Docker: los puertos de las bases están publicados en localhost y las credenciales están en el `.env` del módulo.
+Para iterar rápido en un microservicio puedes ejecutarlo directamente en tu máquina, sin Docker: los puertos de las bases están publicados en `localhost` y las credenciales están en el `.env` del módulo.
 
 ```powershell
 cd book-service
@@ -6457,18 +6253,9 @@ cd book-service
 
 Mientras tanto el resto del stack sigue en sus contenedores. Recuerda que el gateway enruta a los contenedores (`BOOK_SERVICE_URI=http://book-service:8083`), así que para probar tu instancia local llama a `:8083` directamente.
 
-### Logs
+### Logs (diagnóstico)
 
-Todo el stdout de Spring va al log del contenedor. Los endpoints devuelven errores breves vía `GlobalExceptionHandler`, pero el stack trace completo está aquí.
-
-```powershell
-docker logs booksocial-book --tail 100          # últimas 100 líneas
-docker logs booksocial-book -f                  # seguir en vivo
-docker logs booksocial-book --since 10m         # últimos 10 minutos
-docker logs booksocial-gateway 2>&1 | Select-String ERROR   # filtrar errores
-```
-
-Qué buscar según el síntoma:
+Todo el stdout de Spring va al log del contenedor (`docker logs <contenedor>`). Qué buscar según el síntoma:
 
 | Síntoma                         | Dónde mirar                                     |
 | ------------------------------- | ----------------------------------------------- |
@@ -6477,39 +6264,9 @@ Qué buscar según el síntoma:
 | Servicio no arranca / unhealthy | `docker logs <contenedor>` al completo          |
 | Read model desactualizado       | log del consumidor (review/shelf) + UI RabbitMQ |
 
-### Herramientas de inspección
-
-```powershell
-# RabbitMQ: colas, exchanges, mensajes
-# http://localhost:15672  (guest / guest)
-
-# Mongo: read models
-docker exec booksocial-mongodb mongosh -u booksocial -p booksocial --authenticationDatabase admin booksocial --eval "db.books.find().limit(3)"
-docker exec booksocial-mongodb mongosh -u booksocial -p booksocial --authenticationDatabase admin booksocial --eval "db.shelves.find().limit(3)"
-
-# Postgres: tablas de comandos
-docker exec booksocial-postgres psql -U booksocial -d booksocial -c "SELECT isbn, title, author_id FROM books LIMIT 5;"
-```
-
 ### Frontend
 
-```powershell
-cd frontend
-npm start                # ng serve en :4200 con proxy a :8080 (proxy.conf.json)
-npm run build            # verificación de compilación (solo locale source)
-ng build                 # build de producción con 3 idiomas (en/es/pt)
-ng extract-i18n          # regenerar messages.xlf desde templates + $localize
-```
-
-Ojo: si editas `proxy.conf.json` hay que **reiniciar** `ng serve` — el proxy solo se lee al arrancar, el hot-reload no lo recoge.
-
-#### i18n — añadir un string nuevo
-
-1. En el template: añadir `i18n="@@nuevaClave"` al elemento.
-2. En `.ts` (si aplica): usar `` $localize`@@nuevaClave:Texto en inglés` ``.
-3. Ejecutar `ng extract-i18n` para regenerar `messages.xlf`.
-4. Copiar las nuevas `<trans-unit>` a `messages.es.xlf` y `messages.pt.xlf` con sus `<target>`.
-5. Verificar con `ng build`.
+Para arrancar/build/i18n del SPA, ver [GUIDE-FRONTEND.md](./GUIDE-FRONTEND.md). Resumen: `cd frontend` → `npm start` (ng serve en `:4200` con proxy a `:8080`). Si editas `proxy.conf.json` hay que **reiniciar** `ng serve` (el proxy solo se lee al arrancar).
 
 ---
 
